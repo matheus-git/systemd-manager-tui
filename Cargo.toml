@@ -7,6 +7,9 @@ license = "MIT"
 edition = "2024"
 
 [dependencies]
+zbus = "5.5.0"
+zvariant = "5.4.0"
+sysinfo = "0.34.2"
 crossterm = "0.28.1"
 ratatui = "0.29.0"
 color-eyre = "0.6.3"

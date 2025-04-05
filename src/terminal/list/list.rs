@@ -1,22 +1,36 @@
-use ratatui::Frame;
-use ratatui::style::Stylize;
-use ratatui::text::Line;
-use ratatui::widgets::{Block, Paragraph};
+use ratatui::{
+    Frame,
+    layout::Constraint,
+    widgets::{Block, Borders, Row, Table, TableState},
+};
 
 use crate::usecases::list_services::list_services;
 
-pub fn draw_list_services(frame: &mut Frame){
-    let title = Line::from("Ratatui Simple Template")
-        .bold()
-        .blue()
-        .centered();
-    let text = "Hello, Ratatui!\n\n\
-        Created using https://github.com/ratatui/templates\n\
-        Press `Esc`, `Ctrl-C` or `q` to stop running.";
-    frame.render_widget(
-        Paragraph::new(list_services()[0])
-            .block(Block::bordered().title(title))
-            .centered(),
-        frame.area(),
-    )
+pub fn draw_list_services(frame: &mut Frame) {
+    let area = frame.area();
+
+    let mut rows = Vec::new();
+
+    if let Ok(services) = list_services() {
+        rows = services
+            .into_iter()
+            .map(|cols| Row::new(cols))
+            .collect();
+    }
+
+    let table = Table::new(
+            rows,
+            [
+                Constraint::Percentage(20),
+                Constraint::Percentage(30),
+                Constraint::Length(10),
+                Constraint::Length(10),
+                Constraint::Length(10),
+            ],
+        )
+        .header(Row::new(["Name", "Description", "Load", "Active", "Sub"]))
+        .block(Block::default().title("Systemd Services").borders(Borders::ALL));
+
+    frame.render_widget(table, area);
 }
+
