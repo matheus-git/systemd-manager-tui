@@ -2,7 +2,6 @@ use zbus::{blocking::Connection, blocking::Proxy};
 use std::error::Error;
 use zvariant::OwnedObjectPath;
 
-
 pub fn list_services() -> Result<Vec<Vec<String>>, Box<dyn Error>> {
     let connection = Connection::system()?;
 

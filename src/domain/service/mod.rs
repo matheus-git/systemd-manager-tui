@@ -1,1 +1,2 @@
-pub mod services;
+pub mod service;
+pub mod service_repository;
