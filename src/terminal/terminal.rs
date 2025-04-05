@@ -1,11 +1,7 @@
 use color_eyre::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use ratatui::{
-    DefaultTerminal, Frame,
-    style::Stylize,
-    text::Line,
-    widgets::{Block, Paragraph},
-};
+use ratatui::{DefaultTerminal, Frame};
+
 
 use super::list::list::draw_list_services;
 
@@ -14,7 +10,7 @@ pub enum Status {
     #[default]
     Log,
     List,
-    Pop_up
+    PopUp
 }
 
 #[derive(Debug, Default)]
