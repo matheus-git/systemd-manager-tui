@@ -7,7 +7,7 @@ use ratatui::{
     widgets::{Block, Paragraph},
 };
 
-use super::list::list::list_services;
+use super::list::list::draw_list_services;
 
 #[derive(Debug, Default)]
 pub enum Status {
@@ -38,7 +38,7 @@ impl App {
     }
 
     fn render(&mut self, frame: &mut Frame) {
-       list_services(frame); 
+       draw_list_services(frame); 
     }
 
     fn handle_crossterm_events(&mut self) -> Result<()> {

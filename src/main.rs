@@ -7,6 +7,7 @@ use ratatui::{
     widgets::{Block, Paragraph},
 };
 
+mod usecases;
 mod terminal;
 use terminal::terminal::App;
 
