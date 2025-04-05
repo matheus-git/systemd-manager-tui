@@ -19,16 +19,16 @@ impl ServiceRepository for SystemdServiceAdapter {
         )?;
 
         let units: Vec<(
-            String,         // unit name
-            String,         // description
-            String,         // load state
-            String,         // active state
-            String,         // sub state
-            String,         // followed
-            OwnedObjectPath,// object path
-            u32,            // job id
-            String,         // job type
-            OwnedObjectPath // job object path
+            String,         
+            String,         
+            String,         
+            String,         
+            String,         
+            String,         
+            OwnedObjectPath,
+            u32,            
+            String,         
+            OwnedObjectPath 
         )> = proxy.call("ListUnits", &())?;
 
         let services = units
