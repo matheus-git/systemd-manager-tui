@@ -7,6 +7,7 @@ use color_eyre::Result;
 use crate::usecases::list_services::list_services;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use ratatui::style::{Style, Color, Modifier};
+use ratatui::layout::Rect;
 
 pub struct TableServices {
     pub table_state: TableState,
@@ -38,9 +39,27 @@ impl TableServices {
         Self { table_state, rows }
     }
 
-    pub fn render(&mut self, frame: &mut Frame){
-        let area = frame.area();
+    pub fn refresh(&mut self){
+        let rows = if let Ok(services) = list_services() {
+            services
+                .into_iter()
+                .map(|service| {
+                    Row::new(vec![
+                        service.name,
+                        service.active_state,
+                        service.file_state,
+                        service.load_state,
+                        service.description,
+                    ])
+                })
+                .collect()
+        } else {
+            vec![Row::new(vec!["Error loading services", "", "", "", ""])]
+        };
+        self.rows = rows;
+    }
 
+    pub fn render(&mut self, frame: &mut Frame, area: Rect){
         let table = Table::new(
             self.rows.clone(),
             [
@@ -56,7 +75,7 @@ impl TableServices {
                     .style(Style::default().fg(Color::White).add_modifier(Modifier::BOLD))
             )
             .block(Block::default().title("Systemd Services").borders(Borders::ALL))
-            .highlight_style(
+            .row_highlight_style(
                 Style::default()
                     .bg(Color::Blue)
                     .fg(Color::White)
@@ -71,6 +90,7 @@ impl TableServices {
         match (key.modifiers, key.code) {
             (_,KeyCode::Down) => self.table_state.select_next(),
             (_,KeyCode::Up) => self.table_state.select_previous(),
+            (_, KeyCode::Char('r')) => self.refresh(),
             _ => {}
         }
     }
