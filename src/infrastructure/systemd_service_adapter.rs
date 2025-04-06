@@ -1,5 +1,4 @@
-use zbus::blocking::Connection;
-use zbus::blocking::Proxy;
+use zbus::blocking::{Connection, Proxy};
 use zbus::zvariant::OwnedObjectPath;
 
 use crate::domain::service::service::Service;
@@ -7,7 +6,53 @@ use crate::domain::service::service_repository::ServiceRepository;
 
 pub struct SystemdServiceAdapter;
 
+impl SystemdServiceAdapter {
+    fn manager_proxy(&self) -> Result<Proxy<'_>, Box<dyn std::error::Error>> {
+        let connection = Connection::system()?;
+        let proxy = Proxy::new(
+            &connection,
+            "org.freedesktop.systemd1",
+            "/org/freedesktop/systemd1",
+            "org.freedesktop.systemd1.Manager",
+        )?;
+        Ok(proxy)
+    }
+}
+
 impl ServiceRepository for SystemdServiceAdapter {
+    fn start_service(&self, name: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let proxy = self.manager_proxy()?;
+        proxy.call::<&str, (&str, &str), ()>("StartUnit", &(name, "replace"));
+        Ok(())
+    }
+
+    fn stop_service(&self, name: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let proxy = self.manager_proxy()?;
+        proxy.call::<&str, (&str, &str), ()>("StopUnit", &(name, "replace"));
+        Ok(())
+    }
+
+    fn restart_service(&self, name: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let proxy = self.manager_proxy()?;
+        proxy.call::<&str, (&str, &str), ()>("RestartUnit", &(name, "replace"));
+        Ok(())
+    }
+
+    fn enable_service(&self, name: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let proxy = self.manager_proxy()?;
+        let args: (&[&str], bool, bool) = (&[name], false, true);
+        proxy.call::<_, _, ()>("EnableUnitFiles", &args);
+
+        Ok(())
+    }
+
+    fn disable_service(&self, name: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let proxy = self.manager_proxy()?;
+        let args: (&[&str], bool) = (&[name], false);
+        proxy.call::<_, _, ()>("DisableUnitFiles", &args);
+        Ok(())
+    }
+
     fn list_services(&self) -> Result<Vec<Service>, Box<dyn std::error::Error>> {
         let connection = Connection::system()?;
 
@@ -19,16 +64,16 @@ impl ServiceRepository for SystemdServiceAdapter {
         )?;
 
         let units: Vec<(
-            String,         
-            String,         
-            String,         
-            String,         
-            String,         
-            String,         
-            OwnedObjectPath,
-            u32,            
-            String,         
-            OwnedObjectPath 
+            String,         // name
+            String,         // description
+            String,         // load_state
+            String,         // active_state
+            String,         // sub_state
+            String,         // followed
+            OwnedObjectPath,// object_path
+            u32,            // job_id
+            String,         // job_type
+            OwnedObjectPath // job_object
         )> = proxy.call("ListUnits", &())?;
 
         let services = units
