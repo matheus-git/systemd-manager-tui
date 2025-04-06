@@ -27,7 +27,7 @@ Must be run as sudo (or root). It's recommended to build a binary since it's sim
     ```
 3. Run it ( opcional )
     ```
-      ./target/release/systemd-manager-tui
+      sudo /target/release/systemd-manager-tui
     ```
 
 ## Main libraries
