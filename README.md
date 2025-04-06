@@ -37,6 +37,10 @@ Must be run as sudo (or root).
 - ratatui - 0.29.0
 - zbus - 5.5.0
 
+## Possible Improvements
+
+- View log
+
 ## Contributing
 
 Contributions are welcome! Please open an issue or submit a pull request for any improvements or bug fixes.
