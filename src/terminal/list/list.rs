@@ -3,9 +3,8 @@ use ratatui::{
     layout::Constraint,
     widgets::{Block, Borders, Row, Table, TableState},
 };
-use color_eyre::Result;
 use crate::usecases::list_services::list_services;
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::style::{Style, Color, Modifier};
 use ratatui::layout::Rect;
 use std::time::Duration;
@@ -54,10 +53,6 @@ impl TableServices {
     }
 
     pub fn refresh(&mut self, filter_text: String) {
-   // if self.old_filter_text == filter_text {
-   //     return;
-   // }
-
     let lower_filter = filter_text.to_lowercase();
 
     if let Ok(services) = list_services() {
@@ -86,7 +81,6 @@ impl TableServices {
         self.rows = vec![Row::new(vec!["Error loading services", "", "", "", ""])];
     }
 
-    //self.table_state.select(Some(0));
     self.old_filter_text = filter_text;
 }
 
@@ -184,7 +178,6 @@ fn enable_service(&mut self) {
                 if let Some(service) = self.services.get(selected) {
                     SystemdServiceAdapter.restart_service(service.name.as_str()).expect("REASON");
                     thread::sleep(Duration::from_millis(200));
-
                     self.refresh(self.old_filter_text.clone());
                 }
             }

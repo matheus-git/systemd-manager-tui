@@ -1,27 +1,18 @@
 use color_eyre::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use ratatui::{DefaultTerminal, Frame};
-use ratatui::style::{Style, Color};
-use ratatui::widgets::{Paragraph, Block, Borders, Wrap};
-use ratatui::text::Text;
-use ratatui::layout::{Constraint, Direction, Layout, Rect};
+use ratatui::DefaultTerminal;
+use ratatui::style::{Modifier, Style, Color};
+use ratatui::widgets::{Paragraph, Block, Borders};
+use ratatui::layout::{Constraint, Layout};
 use std::rc::Rc;
 use std::cell::RefCell;
 use super::list::list::TableServices;
 use super::filter::filter::Filter;
-
-#[derive(Debug, Default)]
-pub enum Status {
-    #[default]
-    Log,
-    List,
-    PopUp
-}
+use ratatui::text::{Line, Span};
 
 #[derive(Debug, Default)]
 pub struct App { 
     running: bool,
-    status: Status
 }
 
 impl App {
@@ -38,13 +29,38 @@ impl App {
         while self.running {
             terminal.draw(|frame| {
                 let area = frame.area();
-                let chunks = Layout::vertical(
-                    [Constraint::Max(4), Constraint::Fill(1)]
-                );
-                let [filter_box, list] = chunks.areas(area);
+
+                let chunks = Layout::vertical([
+                    Constraint::Length(4),    
+                    Constraint::Min(10),     
+                    Constraint::Length(6),  
+                ])
+                    .split(area);
+
+                let filter_box = chunks[0];
+                let list = chunks[1];
+                let help_area = chunks[2];
 
                 filter.draw(frame, filter_box);
                 table_service.borrow_mut().render(frame, list);
+
+                let help_text = vec![
+                    Line::from(vec![
+                        Span::styled("Actions on the selected service", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                    ]),
+                    Line::from("↑/↓: Navigate | Start: s | Restart: r | Enable: e | Disable: d | Stop: x | Refresh all: u"),
+                    Line::from(""),
+                    Line::from(vec![
+                        Span::styled("Exit", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                        Span::raw(": Ctrl + c"),
+                    ]),
+                ];
+
+                let help_block = Paragraph::new(help_text)
+                    .block(Block::default().title("Shortcuts").borders(Borders::ALL))
+                    .wrap(ratatui::widgets::Wrap { trim: true });
+
+                frame.render_widget(help_block, help_area);
             })?;
 
             self.handle_crossterm_events(|key| {

@@ -1,11 +1,10 @@
-use color_eyre::Result;
 use ratatui::{
-    crossterm::event::{self, KeyEvent, Event, KeyCode, KeyEventKind},
-    layout::{Constraint, Layout, Position, Rect},
-    style::{Color, Modifier, Style, Stylize},
-    text::{Line, Span, Text},
-    widgets::{Block, List, ListItem, Paragraph},
-    DefaultTerminal, Frame,
+    crossterm::event::{KeyEvent, KeyCode, KeyEventKind},
+    layout::{Constraint, Layout, Rect},
+    style::{Color, Style, Stylize},
+    text::{Line, Text},
+    widgets::{Block, Paragraph},
+    Frame,
 };
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -16,7 +15,6 @@ pub struct Filter {
     pub input: String,
     character_index: usize,
     input_mode: InputMode,
-    messages: Vec<String>,
     table_service: Option<Rc<RefCell<TableServices>>>,
 }
 
@@ -30,7 +28,6 @@ impl Filter {
         Self {
             input: String::new(),
             input_mode: InputMode::Normal,
-            messages: Vec::new(),
             character_index: 0,
             table_service: None
         }
@@ -81,10 +78,6 @@ impl Filter {
 
     fn clamp_cursor(&self, new_cursor_pos: usize) -> usize {
         new_cursor_pos.clamp(0, self.input.chars().count())
-    }
-
-    fn reset_cursor(&mut self) {
-        self.character_index = 0;
     }
 
     fn submit_message(&mut self) {
