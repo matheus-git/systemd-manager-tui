@@ -931,18 +931,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "services-manager-tui"
-version = "0.1.0"
-dependencies = [
- "color-eyre",
- "crossterm",
- "libc",
- "ratatui",
- "zbus",
- "zvariant",
-]
-
-[[package]]
 name = "sharded-slab"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1045,6 +1033,18 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
+]
+
+[[package]]
+name = "systemd-manager-tui"
+version = "0.1.0"
+dependencies = [
+ "color-eyre",
+ "crossterm",
+ "libc",
+ "ratatui",
+ "zbus",
+ "zvariant",
 ]
 
 [[package]]
