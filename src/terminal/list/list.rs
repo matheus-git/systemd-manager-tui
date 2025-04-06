@@ -12,6 +12,7 @@ use ratatui::layout::Rect;
 pub struct TableServices {
     pub table_state: TableState,
     pub rows: Vec<Row<'static>>,
+    old_filter_text: String
 }
 
 impl TableServices {
@@ -36,13 +37,20 @@ impl TableServices {
         let mut table_state = TableState::default();
         table_state.select(Some(0));
 
-        Self { table_state, rows }
+        Self { table_state, rows, old_filter_text: "".to_string() }
     }
 
-    pub fn refresh(&mut self){
+    pub fn refresh(&mut self, filter_text: String) {
+        if self.old_filter_text == filter_text {
+            return;
+        }
+
+        let lower_filter = filter_text.to_lowercase();
+
         let rows = if let Ok(services) = list_services() {
             services
                 .into_iter()
+                .filter(|service| service.name.to_lowercase().contains(&lower_filter))
                 .map(|service| {
                     Row::new(vec![
                         service.name,
@@ -56,7 +64,10 @@ impl TableServices {
         } else {
             vec![Row::new(vec!["Error loading services", "", "", "", ""])]
         };
+        self.table_state.select(Some(0));
+
         self.rows = rows;
+        self.old_filter_text = filter_text;
     }
 
     pub fn render(&mut self, frame: &mut Frame, area: Rect){
@@ -90,7 +101,7 @@ impl TableServices {
         match (key.modifiers, key.code) {
             (_,KeyCode::Down) => self.table_state.select_next(),
             (_,KeyCode::Up) => self.table_state.select_previous(),
-            (_, KeyCode::Char('r')) => self.refresh(),
+            //(_, KeyCode::Char('r')) => self.refresh(self.old_filter_text.clone()),
             _ => {}
         }
     }

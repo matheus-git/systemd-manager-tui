@@ -5,7 +5,8 @@ use ratatui::style::{Style, Color};
 use ratatui::widgets::{Paragraph, Block, Borders, Wrap};
 use ratatui::text::Text;
 use ratatui::layout::{Constraint, Direction, Layout, Rect};
-
+use std::rc::Rc;
+use std::cell::RefCell;
 use super::list::list::TableServices;
 use super::filter::filter::Filter;
 
@@ -30,23 +31,24 @@ impl App {
 
     pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         self.running = true;
-        let mut table_service = TableServices::new();
+        let table_service = Rc::new(RefCell::new(TableServices::new()));
         let mut filter = Filter::new();
+        filter.set_table_service(Rc::clone(&table_service));
 
         while self.running {
             terminal.draw(|frame| {
                 let area = frame.area();
                 let chunks = Layout::vertical(
-                    [Constraint::Length(4), Constraint::Fill(1)]
+                    [Constraint::Max(4), Constraint::Fill(1)]
                 );
                 let [filter_box, list] = chunks.areas(area);
 
                 filter.draw(frame, filter_box);
-                table_service.render(frame, list);
+                table_service.borrow_mut().render(frame, list);
             })?;
 
             self.handle_crossterm_events(|key| {
-                table_service.on_key_event(key);
+                table_service.borrow_mut().on_key_event(key);
                 filter.on_key_event(key);
             })?;
         }
@@ -63,8 +65,6 @@ where
                 self.on_key_event(key);
                 external_handler(key);
             },
-            Event::Mouse(_) => {}
-            Event::Resize(_, _) => {}
             _ => {}
         }
         Ok(())
@@ -72,7 +72,7 @@ where
 
     fn on_key_event(&mut self, key: KeyEvent) {
         match (key.modifiers, key.code) {
-            (_, KeyCode::Char('q'))
+            (_, KeyCode::Esc)
             | (KeyModifiers::CONTROL, KeyCode::Char('c') | KeyCode::Char('C')) => self.quit(),
             _ => {}
         }

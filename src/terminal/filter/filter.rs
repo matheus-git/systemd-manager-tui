@@ -7,12 +7,17 @@ use ratatui::{
     widgets::{Block, List, ListItem, Paragraph},
     DefaultTerminal, Frame,
 };
+use std::rc::Rc;
+use std::cell::RefCell;
+
+use super::super::list::list::TableServices;
 
 pub struct Filter {
     pub input: String,
     character_index: usize,
     input_mode: InputMode,
     messages: Vec<String>,
+    table_service: Option<Rc<RefCell<TableServices>>>,
 }
 
 enum InputMode {
@@ -27,9 +32,13 @@ impl Filter {
             input_mode: InputMode::Normal,
             messages: Vec::new(),
             character_index: 0,
+            table_service: None
         }
     }
 
+        pub fn set_table_service(&mut self, ts: Rc<RefCell<TableServices>>) {
+        self.table_service = Some(ts);
+    }
     fn move_cursor_left(&mut self) {
         let cursor_moved_left = self.character_index.saturating_sub(1);
         self.character_index = self.clamp_cursor(cursor_moved_left);
@@ -78,32 +87,21 @@ impl Filter {
     }
 
     fn submit_message(&mut self) {
-        self.messages.push(self.input.clone());
-        self.input.clear();
-        self.reset_cursor();
+        if let Some(ref ts) = self.table_service {
+            // aqui você pode chamar funções do TableServices, por exemplo:
+            let mut ts_mut = ts.borrow_mut();
+            ts_mut.refresh(self.input.clone());
+        }
     }
 
     pub fn on_key_event(&mut self, key: KeyEvent) {
-        match self.input_mode {
-            InputMode::Normal => match key.code {
-                KeyCode::Char('e') => {
-                    self.input_mode = InputMode::Editing;
-                }
-                KeyCode::Char('q') => {
-
-                }
-                _ => {}
-            },
-            InputMode::Editing if key.kind == KeyEventKind::Press => match key.code {
-                KeyCode::Enter => self.submit_message(),
-                KeyCode::Char(to_insert) => self.enter_char(to_insert),
-                KeyCode::Backspace => self.delete_char(),
-                KeyCode::Left => self.move_cursor_left(),
-                KeyCode::Right => self.move_cursor_right(),
-                KeyCode::Esc => self.input_mode = InputMode::Normal,
-                _ => {}
-            },
-            InputMode::Editing => {}
+        match (key.modifiers, key.code) {
+            (_, KeyCode::Enter) => self.submit_message(),
+            (_, KeyCode::Char(to_insert)) => self.enter_char(to_insert),
+            (_, KeyCode::Backspace) => self.delete_char(),
+            (_, KeyCode::Left) => self.move_cursor_left(),
+            (_, KeyCode::Right) => self.move_cursor_right(),
+            _ => {}
         }
     }
 
@@ -114,28 +112,17 @@ impl Filter {
         ]);
         let [help_area, input_area] = vertical.areas(area);
 
-        let (msg, style) = match self.input_mode {
-            InputMode::Normal => (
-                vec![
-                    "Press ".into(),
-                    "q".bold(),
-                    " to exit, ".into(),
-                    "e".bold(),
-                    " to start editing.".into(),
-                ],
-                Style::default()
-            ),
-            InputMode::Editing => (
-                vec![
-                    "Press ".into(),
-                    "Esc".bold(),
-                    " to stop editing, ".into(),
-                    "Enter".bold(),
-                    " to record the message".into(),
-                ],
-                Style::default(),
-            ),
-        };
+        let (msg, style) =  (
+            vec![
+                "Press ".into(),
+                "Esc".bold(),
+                " to stop editing, ".into(),
+                "Enter".bold(),
+                " to record the message".into(),
+            ],
+            Style::default(),
+        )
+        ;
         let text = Text::from(Line::from(msg)).patch_style(style);
         let help_message = Paragraph::new(text);
         frame.render_widget(help_message, help_area);
@@ -143,7 +130,7 @@ impl Filter {
         let input = Paragraph::new(self.input.as_str())
             .style(match self.input_mode {
                 InputMode::Normal => Style::default(),
-                InputMode::Editing => Style::default().fg(Color::Yellow),
+                InputMode::Editing => Style::default(),
             })
             .block(Block::bordered().title("Input"));
         frame.render_widget(input, input_area);
