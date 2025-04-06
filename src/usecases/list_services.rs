@@ -2,6 +2,9 @@ use crate::{domain::service::service_repository::ServiceRepository, infrastructu
 use crate::domain::service::service::Service;
 
 pub fn list_services() -> Result<Vec<Service>, Box<dyn std::error::Error>> {
-    SystemdServiceAdapter.list_services()
+    let mut services = SystemdServiceAdapter.list_services()?;
+    services.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+    Ok(services)
 }
+
 

@@ -29,7 +29,9 @@ impl App {
         let mut table_service = TableServices::new();
         while self.running {
             terminal.draw(|frame| table_service.render(frame)) ?;
-            table_service.handle_crossterm_events()?;
+            self.handle_crossterm_events(|key| {
+                table_service.on_key_event(key);
+            })?;
         }
         Ok(())
     }
@@ -37,9 +39,15 @@ impl App {
     fn render(&mut self, frame: &mut Frame) {
     }
 
-    fn handle_crossterm_events(&mut self) -> Result<()> {
+    fn handle_crossterm_events<F>(&mut self, mut external_handler: F) -> Result<()>
+    where
+        F: FnMut(KeyEvent),
+    {
         match event::read()? {
-            Event::Key(key) if key.kind == KeyEventKind::Press => self.on_key_event(key),
+            Event::Key(key) if key.kind == KeyEventKind::Press => {
+                self.on_key_event(key);
+                external_handler(key);
+            },
             Event::Mouse(_) => {}
             Event::Resize(_, _) => {}
             _ => {}

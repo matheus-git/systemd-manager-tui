@@ -11,7 +11,6 @@ use ratatui::style::{Style, Color, Modifier};
 pub struct TableServices {
     pub table_state: TableState,
     pub rows: Vec<Row<'static>>,
-    running: bool
 }
 
 impl TableServices {
@@ -33,18 +32,10 @@ impl TableServices {
             vec![Row::new(vec!["Error loading services", "", "", "", ""])]
         };
 
-        let table_state = TableState::default();
+        let mut table_state = TableState::default();
+        table_state.select(Some(0));
 
-        Self { table_state, rows, running: true }
-    }
-
-    pub fn run(mut self, frame: &mut Frame) -> Result<()> {
-        self.running = true;
-        while self.running {
-            self.render(frame);
-            self.handle_crossterm_events()?;
-        }
-        Ok(())
+        Self { table_state, rows }
     }
 
     pub fn render(&mut self, frame: &mut Frame){
@@ -74,17 +65,7 @@ impl TableServices {
         frame.render_stateful_widget(table, area, &mut self.table_state);
     }
 
-    pub fn handle_crossterm_events(&mut self) -> Result<()> {
-        match event::read()? {
-            Event::Key(key) if key.kind == KeyEventKind::Press => self.on_key_event(key),
-            Event::Mouse(_) => {}
-            Event::Resize(_, _) => {}
-            _ => {}
-        }
-        Ok(())
-    }
-
-    fn on_key_event(&mut self, key: KeyEvent) {
+    pub fn on_key_event(&mut self, key: KeyEvent) {
         match (key.modifiers, key.code) {
             (_,KeyCode::Down) => self.table_state.select_next(),
             (_,KeyCode::Up) => self.table_state.select_previous(),
