@@ -33,7 +33,7 @@ impl Filter {
         }
     }
 
-        pub fn set_table_service(&mut self, ts: Rc<RefCell<TableServices>>) {
+    pub fn set_table_service(&mut self, ts: Rc<RefCell<TableServices>>) {
         self.table_service = Some(ts);
     }
     fn move_cursor_left(&mut self) {
@@ -83,6 +83,7 @@ impl Filter {
     fn submit_message(&mut self) {
         if let Some(ref ts) = self.table_service {
             let mut ts_mut = ts.borrow_mut();
+            ts_mut.toogle_ignore_key_events(false);
             ts_mut.refresh(self.input.clone());
         }
         self.input_mode = InputMode::Normal
@@ -92,6 +93,10 @@ impl Filter {
         match self.input_mode {
             InputMode::Normal => match key.code {
                 KeyCode::Char('i') => {
+                    if let Some(ref ts) = self.table_service {
+                        let mut ts_mut = ts.borrow_mut();
+                        ts_mut.toogle_ignore_key_events(true);
+                    }
                     self.input_mode = InputMode::Editing;
                 }
                 KeyCode::Char('q') => {
@@ -105,7 +110,13 @@ impl Filter {
                 KeyCode::Backspace => self.delete_char(),
                 KeyCode::Left => self.move_cursor_left(),
                 KeyCode::Right => self.move_cursor_right(),
-                KeyCode::Esc => self.input_mode = InputMode::Normal,
+                KeyCode::Esc => self.input_mode = {
+                    if let Some(ref ts) = self.table_service {
+                        let mut ts_mut = ts.borrow_mut();
+                        ts_mut.toogle_ignore_key_events(false);
+                    }
+                    InputMode::Normal
+                },
                 _ => {}
             },
             InputMode::Editing => {}

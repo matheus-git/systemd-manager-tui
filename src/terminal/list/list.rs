@@ -17,11 +17,12 @@ pub struct TableServices {
     pub table_state: TableState,
     pub rows: Vec<Row<'static>>,
     pub services: Vec<Service>,
-    old_filter_text: String
+    old_filter_text: String,
+    ignore_key_events: bool
 }
 
 impl TableServices {
-        pub fn new() -> Self {
+    pub fn new() -> Self {
         let mut services = vec![];
         let rows = if let Ok(list) = list_services() {
             services = list;
@@ -49,40 +50,49 @@ impl TableServices {
             rows,
             services,
             old_filter_text: "".to_string(),
+            ignore_key_events: false
         }
     }
 
-    pub fn refresh(&mut self, filter_text: String) {
-    let lower_filter = filter_text.to_lowercase();
-
-    if let Ok(services) = list_services() {
-        let filtered_services: Vec<Service> = services
-            .into_iter()
-            .filter(|service| service.name.to_lowercase().contains(&lower_filter))
-            .collect();
-
-        let rows = filtered_services
-            .iter()
-            .map(|service| {
-                Row::new(vec![
-                    service.name.clone(),
-                    service.active_state.clone(),
-                    service.file_state.clone(),
-                    service.load_state.clone(),
-                    service.description.clone(),
-                ])
-            })
-            .collect();
-
-        self.services = filtered_services;
-        self.rows = rows;
-    } else {
-        self.services = vec![];
-        self.rows = vec![Row::new(vec!["Error loading services", "", "", "", ""])];
+    pub fn toogle_ignore_key_events(&mut self, has_ignore_key_events: bool){
+        self.ignore_key_events = has_ignore_key_events
     }
 
-    self.old_filter_text = filter_text;
-}
+    pub fn refresh(&mut self, filter_text: String) {
+        if self.ignore_key_events {
+            return;
+        }
+
+        let lower_filter = filter_text.to_lowercase();
+
+        if let Ok(services) = list_services() {
+            let filtered_services: Vec<Service> = services
+                .into_iter()
+                .filter(|service| service.name.to_lowercase().contains(&lower_filter))
+                .collect();
+
+            let rows = filtered_services
+                .iter()
+                .map(|service| {
+                    Row::new(vec![
+                        service.name.clone(),
+                        service.active_state.clone(),
+                        service.file_state.clone(),
+                        service.load_state.clone(),
+                        service.description.clone(),
+                    ])
+                })
+                .collect();
+
+            self.services = filtered_services;
+            self.rows = rows;
+        } else {
+            self.services = vec![];
+            self.rows = vec![Row::new(vec!["Error loading services", "", "", "", ""])];
+        }
+
+        self.old_filter_text = filter_text;
+    }
 
     pub fn render(&mut self, frame: &mut Frame, area: Rect){
         let table = Table::new(
@@ -124,7 +134,7 @@ impl TableServices {
             _ => {}
         }
     }
-fn enable_service(&mut self) {
+    fn enable_service(&mut self) {
         match self.table_state.selected() {
             Some(selected) => {
                 if let Some(service) = self.services.get(selected) {
