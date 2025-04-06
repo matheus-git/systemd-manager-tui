@@ -29,7 +29,7 @@ Must be run as sudo (or root).
     ```
 3. Run it ( opcional )
     ```
-      sudo /target/release/systemd-manager-tui
+      sudo target/release/systemd-manager-tui
     ```
 
 ## Main libraries
