@@ -12,7 +12,9 @@ The available operations are listing, starting, stopping, restarting, enabling, 
 
 ## Usage
 
-Must be run as sudo (or root). It's recommended to build a binary since it's simpler to run with sudo than to configure sudo to allow "sudo cargo run".
+Must be run as sudo (or root).
+
+**It's recommended to build a binary since it's simpler to run with sudo than to configure sudo to allow "sudo cargo run".**
 
 ### Run in development mode
   ```
