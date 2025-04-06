@@ -3,7 +3,7 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifier
 use ratatui::{DefaultTerminal, Frame};
 
 
-use super::list::list::draw_list_services;
+use super::list::list::TableServices;
 
 #[derive(Debug, Default)]
 pub enum Status {
@@ -26,15 +26,15 @@ impl App {
 
     pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         self.running = true;
+        let mut table_service = TableServices::new();
         while self.running {
-            terminal.draw(|frame| self.render(frame))?;
-            self.handle_crossterm_events()?;
+            terminal.draw(|frame| table_service.render(frame)) ?;
+            table_service.handle_crossterm_events()?;
         }
         Ok(())
     }
 
     fn render(&mut self, frame: &mut Frame) {
-       draw_list_services(frame); 
     }
 
     fn handle_crossterm_events(&mut self) -> Result<()> {
