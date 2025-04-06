@@ -2,34 +2,34 @@
 
 ![rust](https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white)
 
-Uma programa para gerenciamento de processos systemd através de uma interface tui. 
+A program for managing systemd services through a TUI (Text User Interface).
 
-As operações são listagem, start, stop, restart, enable e disable de processos systemd usando a api d-bus. 
+The available operations are listing, starting, stopping, restarting, enabling, and disabling systemd services using the D-Bus API.
 
 ## Screenshots
 
 
 ## Usage
 
-Deve ser executado com sudo ( or root ), recomenda-se a criação de um binário e adição de um alias no .bashrc ( por exemplo ).
+Must be run as sudo (or root). It's recommended to build a binary and add an alias in your .bashrc (for convenience).
 
-### Executar em modo de desenvolvimento:
+### Run in development mode
   ```
    sudo cargo run
   ```
 
-### Criar binário:
+### Build binary
 
-1. Gere o binário
+1. Build the binary
     ```
       cargo build --release
     ```
-3. Executá-lo
+3. Run it ( opcional )
     ```
       ./target/release/systemd-manager-tui
     ```
 
-## Principais libs
+## Main libraries
 
 - ratatui - 0.29.0
 - zbus - 5.5.0
