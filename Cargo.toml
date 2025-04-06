@@ -7,6 +7,7 @@ license = "MIT"
 edition = "2024"
 
 [dependencies]
+libc = "0.2"
 zbus = "5.5.0"
 zvariant = "5.4.0"
 crossterm = "0.28.1"
