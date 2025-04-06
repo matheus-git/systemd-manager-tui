@@ -21,10 +21,10 @@ impl TableServices {
                 .map(|service| {
                     Row::new(vec![
                         service.name,
-                        service.description,
-                        service.load_state,
                         service.active_state,
-                        service.sub_state,
+                        service.file_state,
+                        service.load_state,
+                        service.description,
                     ])
                 })
                 .collect()
@@ -41,18 +41,20 @@ impl TableServices {
     pub fn render(&mut self, frame: &mut Frame){
         let area = frame.area();
 
-
         let table = Table::new(
             self.rows.clone(),
             [
                 Constraint::Percentage(20),
+                Constraint::Length(10),
+                Constraint::Length(10),
+                Constraint::Length(10),
                 Constraint::Percentage(30),
-                Constraint::Length(10),
-                Constraint::Length(10),
-                Constraint::Length(10),
             ],
         )
-            .header(Row::new(["Name", "Description", "Load", "Active", "Sub"]))
+            .header(
+                Row::new(["Name", "Active", "State", "Load", "Description"])
+                    .style(Style::default().fg(Color::White).add_modifier(Modifier::BOLD))
+            )
             .block(Block::default().title("Systemd Services").borders(Borders::ALL))
             .highlight_style(
                 Style::default()

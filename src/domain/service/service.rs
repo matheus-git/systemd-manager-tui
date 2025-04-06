@@ -7,6 +7,7 @@ pub struct Service {
    pub active_state: String,
    pub sub_state: String,
    pub followed: String,
+   pub file_state: String,
    pub object_path: OwnedObjectPath,
    pub job_id: u32,
    pub job_type: String,

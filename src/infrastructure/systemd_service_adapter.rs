@@ -35,6 +35,10 @@ impl ServiceRepository for SystemdServiceAdapter {
             .into_iter()
             .filter(|(name, ..)| name.ends_with(".service"))
             .map(|(name, description, load_state, active_state, sub_state, followed, object_path, job_id, job_type, job_object)| {
+                let state: String = proxy
+                    .call("GetUnitFileState", (&name))
+                    .unwrap_or_else(|_| "unknown".into());
+
                 Service {
                     name,
                     description,
@@ -42,6 +46,7 @@ impl ServiceRepository for SystemdServiceAdapter {
                     active_state,
                     sub_state,
                     followed,
+                    file_state: state,
                     object_path,
                     job_id,
                     job_type,
