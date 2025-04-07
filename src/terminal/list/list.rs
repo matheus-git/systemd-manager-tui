@@ -135,6 +135,10 @@ impl TableServices {
         }
     }
     fn enable_service(&mut self) {
+        if self.ignore_key_events {
+            return;
+        }
+
         match self.table_state.selected() {
             Some(selected) => {
                 if let Some(service) = self.services.get(selected) {
@@ -148,6 +152,10 @@ impl TableServices {
         }
     }
     fn disable_service(&mut self) {
+        if self.ignore_key_events {
+            return;
+        }
+
         match self.table_state.selected() {
             Some(selected) => {
                 if let Some(service) = self.services.get(selected) {
@@ -161,6 +169,9 @@ impl TableServices {
         }
     }
     fn stop_service(&mut self) {
+        if self.ignore_key_events {
+            return;
+        }
         match self.table_state.selected() {
             Some(selected) => {
                 if let Some(service) = self.services.get(selected) {
@@ -174,6 +185,9 @@ impl TableServices {
         }
     }
     fn start_service(&mut self) {
+        if self.ignore_key_events {
+            return;
+        }
         match self.table_state.selected() {
             Some(selected) => {
                 if let Some(service) = self.services.get(selected) {
@@ -187,6 +201,9 @@ impl TableServices {
         }
     }
     fn restart_service(&mut self) {
+        if self.ignore_key_events {
+            return;
+        }
         match self.table_state.selected() {
             Some(selected) => {
                 if let Some(service) = self.services.get(selected) {
