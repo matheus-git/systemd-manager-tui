@@ -17,6 +17,12 @@ impl SystemdServiceAdapter {
         )?;
         Ok(proxy)
     }
+
+    pub fn reload_daemon(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let proxy = self.manager_proxy()?;
+        proxy.call_method::<&str, ()>("Reload", &())?; 
+        Ok(())
+    }
 }
 
 impl ServiceRepository for SystemdServiceAdapter {

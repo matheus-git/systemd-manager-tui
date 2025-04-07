@@ -140,6 +140,7 @@ impl TableServices {
                 if let Some(service) = self.services.get(selected) {
                     SystemdServiceAdapter.enable_service(service.name.as_str()).expect("REASON");
                     thread::sleep(Duration::from_millis(200));
+                    let _ = SystemdServiceAdapter.reload_daemon();
                     self.refresh(self.old_filter_text.clone());
                 }
             }
@@ -152,6 +153,7 @@ impl TableServices {
                 if let Some(service) = self.services.get(selected) {
                     SystemdServiceAdapter.disable_service(service.name.as_str()).expect("REASON");
                     thread::sleep(Duration::from_millis(200));
+                    let _ = SystemdServiceAdapter.reload_daemon();
                     self.refresh(self.old_filter_text.clone());
                 }
             }
@@ -164,6 +166,7 @@ impl TableServices {
                 if let Some(service) = self.services.get(selected) {
                     SystemdServiceAdapter.stop_service(service.name.as_str()).expect("REASON");
                     thread::sleep(Duration::from_millis(200));
+                    let _ = SystemdServiceAdapter.reload_daemon();
                     self.refresh(self.old_filter_text.clone());
                 }
             }
@@ -176,6 +179,7 @@ impl TableServices {
                 if let Some(service) = self.services.get(selected) {
                     SystemdServiceAdapter.start_service(service.name.as_str()).expect("REASON");
                     thread::sleep(Duration::from_millis(200));
+                    let _ = SystemdServiceAdapter.reload_daemon();
                     self.refresh(self.old_filter_text.clone());
                 }
             }
@@ -188,6 +192,7 @@ impl TableServices {
                 if let Some(service) = self.services.get(selected) {
                     SystemdServiceAdapter.restart_service(service.name.as_str()).expect("REASON");
                     thread::sleep(Duration::from_millis(200));
+                    let _ = SystemdServiceAdapter.reload_daemon();
                     self.refresh(self.old_filter_text.clone());
                 }
             }
