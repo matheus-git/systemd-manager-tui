@@ -12,7 +12,9 @@ The available operations are listing, starting, stopping, restarting, enabling, 
 
 ## Usage
 
-Must be run as sudo (or root). It's recommended to build a binary and add an alias in your .bashrc (for convenience).
+Must be run as sudo (or root).
+
+**It's recommended to build a binary since it's simpler to run with sudo than to configure sudo to run "sudo cargo run".**
 
 ### Run in development mode
   ```
@@ -27,13 +29,17 @@ Must be run as sudo (or root). It's recommended to build a binary and add an ali
     ```
 3. Run it ( opcional )
     ```
-      ./target/release/systemd-manager-tui
+      sudo target/release/systemd-manager-tui
     ```
 
 ## Main libraries
 
 - ratatui - 0.29.0
 - zbus - 5.5.0
+
+## Possible Improvements
+
+- View log
 
 ## Contributing
 
