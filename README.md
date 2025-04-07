@@ -40,6 +40,12 @@ Must be run as sudo (or root).
 ## Future Improvements
 
 - View log
+- Usability
+- Performance
+
+## Weekly Updates
+
+This project is actively maintained and updated every weekend.  
 
 ## Contributing
 
