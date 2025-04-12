@@ -10,12 +10,13 @@ use ratatui::{
 use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::domain::service::service::Service;
+use crate::terminal::terminal::Actions;
 
 pub struct ServiceDetails {
     service: Option<Service>,
     log_lines: Option<String>,  
     scroll: u16,
-    sender: Option<Sender<String>>
+    sender: Option<Sender<Actions>>
 }
 
 impl ServiceDetails {
@@ -28,7 +29,7 @@ impl ServiceDetails {
         }
     }
 
-    pub fn set_sender(&mut self, sender: Sender<String>){
+    pub fn set_sender(&mut self, sender: Sender<Actions>){
         self.sender = Some(sender);
     }
 
@@ -44,7 +45,7 @@ impl ServiceDetails {
                     .scroll((self.scroll,0)) 
                     .wrap(Wrap { trim: false})
                     .block(Block::default()
-                        .title(format!("{} logs (newest at the top)", &service.name))
+                        .title(format!(" {} logs (newest at the top) ", &service.name))
                         .borders(Borders::ALL)
                         .title_alignment(Alignment::Center));
 
@@ -69,9 +70,14 @@ impl ServiceDetails {
             KeyCode::Down => {
                 self.scroll += 1;
             },
+            KeyCode::Char('v') => {
+                if let Some(sender) = &self.sender {
+                    let _ = sender.send(Actions::RefreshLog);
+                }
+            },
             KeyCode::Char('q') => {
                 if let Some(sender) = &self.sender {
-                    let _ = sender.send("".to_string());
+                    let _ = sender.send(Actions::GoList);
                 }
             },
             _ => {}

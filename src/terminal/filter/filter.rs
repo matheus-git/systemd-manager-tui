@@ -14,11 +14,12 @@ use super::super::list::list::TableServices;
 pub struct Filter {
     pub input: String,
     character_index: usize,
-    input_mode: InputMode,
+    pub input_mode: InputMode,
     table_service: Option<Rc<RefCell<TableServices>>>,
 }
 
-enum InputMode {
+#[derive(PartialEq)]
+pub enum InputMode {
     Normal,
     Editing,
 }

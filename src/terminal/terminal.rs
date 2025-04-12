@@ -13,12 +13,17 @@ use std::rc::Rc;
 use std::cell::RefCell;
 
 use super::list::list::TableServices;
-use super::filter::filter::Filter;
+use super::filter::filter::{Filter, InputMode};
 use super::details::details::ServiceDetails;
 
 enum Status {
     List,
     Details
+}
+
+pub enum Actions {
+    RefreshLog,
+    GoList
 }
 
 pub struct App { 
@@ -51,12 +56,18 @@ impl App {
         let filter = Rc::clone(&self.filter);
         let service_details = Rc::clone(&self.details);
 
-        let (tx, rx): (Sender<String>, Receiver<String>) = channel();
+        let (tx, rx): (Sender<Actions>, Receiver<Actions>) = channel();
         service_details.borrow_mut().set_sender(tx);
 
         while self.running {
-            while let Ok(_msg) = rx.try_recv() {
-                self.status = Status::List;
+            match rx.try_recv() {
+                Ok(Actions::GoList) => {
+                    self.status = Status::List
+                },
+                Ok(Actions::RefreshLog) => {
+                    self.log();
+                },
+                Err(_) => {}
             }
             match self.status {
                 Status::Details => self.draw_details_status(&mut terminal, &service_details)?,
@@ -106,8 +117,8 @@ impl App {
         })?;
 
         self.handle_crossterm_events(|key| {
+            table_service.borrow_mut().on_key_event(key);
             filter.borrow_mut().on_key_event(key);
-            table_service.borrow_mut().on_key_event(key)
         })?;
         Ok(())
     }
@@ -160,10 +171,15 @@ where
     fn on_key_event(&mut self, key: KeyEvent) {
         match (key.modifiers, key.code) {
             (KeyModifiers::CONTROL, KeyCode::Char('c') | KeyCode::Char('C')) => self.quit(),
-            (_, KeyCode::Char('v')) => self.log(),
+            (_, KeyCode::Char('v')) => {
+                if self.filter.borrow_mut().input_mode == InputMode::Normal {
+                    self.log();
+                }
+            }
             _ => {}
         }
     }
+
 
     fn quit(&mut self) {
         self.running = false;

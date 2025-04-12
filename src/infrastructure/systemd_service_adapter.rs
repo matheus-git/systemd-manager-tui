@@ -24,64 +24,64 @@ impl SystemdServiceAdapter {
         Ok(())
     }
     pub fn get_service_log(&self, service_name: &str) -> Result<(Service, String), Box<dyn std::error::Error>> {
-    let connection = Connection::system()?;
+        let connection = Connection::system()?;
 
-    let proxy = Proxy::new(
-        &connection,
-        "org.freedesktop.systemd1",
-        "/org/freedesktop/systemd1",
-        "org.freedesktop.systemd1.Manager",
-    )?;
+        let proxy = Proxy::new(
+            &connection,
+            "org.freedesktop.systemd1",
+            "/org/freedesktop/systemd1",
+            "org.freedesktop.systemd1.Manager",
+        )?;
 
-    let units: Vec<(
-        String,         // name
-        String,         // description
-        String,         // load_state
-        String,         // active_state
-        String,         // sub_state
-        String,         // followed
-        OwnedObjectPath,// object_path
-        u32,            // job_id
-        String,         // job_type
-        OwnedObjectPath // job_object
-    )> = proxy.call("ListUnits", &())?;
+        let units: Vec<(
+            String,         // name
+            String,         // description
+            String,         // load_state
+            String,         // active_state
+            String,         // sub_state
+            String,         // followed
+            OwnedObjectPath,// object_path
+            u32,            // job_id
+            String,         // job_type
+            OwnedObjectPath // job_object
+        )> = proxy.call("ListUnits", &())?;
 
-    let unit = units.into_iter()
-        .find(|(name, ..)| name == service_name)
-        .ok_or_else(|| format!("Serviço '{}' não encontrado.", service_name))?;
+        let unit = units.into_iter()
+            .find(|(name, ..)| name == service_name)
+            .ok_or_else(|| format!("Serviço '{}' não encontrado.", service_name))?;
 
-    let file_state: String = proxy
-        .call("GetUnitFileState", &service_name)
-        .unwrap_or_else(|_| "unknown".into());
+        let file_state: String = proxy
+            .call("GetUnitFileState", &service_name)
+            .unwrap_or_else(|_| "unknown".into());
 
-    let service = Service {
-        name: unit.0,
-        description: unit.1,
-        load_state: unit.2,
-        active_state: unit.3,
-        sub_state: unit.4,
-        followed: unit.5,
-        object_path: unit.6,
-        job_id: unit.7,
-        job_type: unit.8,
-        job_object: unit.9,
-        file_state,
-    };
+        let service = Service {
+            name: unit.0,
+            description: unit.1,
+            load_state: unit.2,
+            active_state: unit.3,
+            sub_state: unit.4,
+            followed: unit.5,
+            object_path: unit.6,
+            job_id: unit.7,
+            job_type: unit.8,
+            job_object: unit.9,
+            file_state,
+        };
 
-    let output = std::process::Command::new("journalctl")
-        .arg("-eu")
-        .arg(service_name)
-        .arg("--no-pager")
-        .output()?;
+        let output = std::process::Command::new("journalctl")
+            .arg("-eu")
+            .arg(service_name)
+            .arg("--no-pager")
+            .output()?;
 
-    let log = if output.status.success() {
-        String::from_utf8_lossy(&output.stdout).to_string()
-    } else {
-        String::from_utf8_lossy(&output.stderr).to_string()
-    };
+        let log = if output.status.success() {
+            String::from_utf8_lossy(&output.stdout).to_string()
+        } else {
+            String::from_utf8_lossy(&output.stderr).to_string()
+        };
 
-    Ok((service, log))
-}
+        Ok((service, log))
+    }
 }
 
 impl ServiceRepository for SystemdServiceAdapter {
