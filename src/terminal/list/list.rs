@@ -7,11 +7,8 @@ use crate::usecases::services_manager::ServicesManager;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::style::{Style, Color, Modifier};
 use ratatui::layout::Rect;
-use std::time::Duration;
-use std::thread;
 
 use crate::domain::service::service::Service;
-use crate::{domain::service::service_repository::ServiceRepository, infrastructure::systemd_service_adapter::SystemdServiceAdapter};
 
 pub struct TableServices {
     pub table_state: TableState,
@@ -122,90 +119,38 @@ impl TableServices {
     }
 
     pub fn on_key_event(&mut self, key: KeyEvent) {
+        if self.ignore_key_events {
+            return;
+        }
+
         match (key.modifiers, key.code) {
             (_,KeyCode::Down) => self.table_state.select_next(),
             (_,KeyCode::Up) => self.table_state.select_previous(),
-            (_, KeyCode::Char('r')) => self.restart_service(),
-            (_, KeyCode::Char('s')) => self.start_service(),
-            (_, KeyCode::Char('e')) => self.enable_service(),
-            (_, KeyCode::Char('d')) => self.disable_service(),
-            (_, KeyCode::Char('u')) => self.refresh(self.old_filter_text.clone()),
-            (_, KeyCode::Char('x')) => self.stop_service(),
+            (_, KeyCode::Char('r')) => self.act_on_selected_service("restart"),
+            (_, KeyCode::Char('s')) => self.act_on_selected_service("start"),
+            (_, KeyCode::Char('e')) => self.act_on_selected_service("enable"),
+            (_, KeyCode::Char('d')) => self.act_on_selected_service("disable"),
+            (_, KeyCode::Char('u')) => self.act_on_selected_service("refresh_all"),
+            (_, KeyCode::Char('x')) => self.act_on_selected_service("stop"),
             _ => {}
         }
     }
-    fn enable_service(&mut self) {
-        if self.ignore_key_events {
-            return;
-        }
 
-        match self.table_state.selected() {
-            Some(selected) => {
-                if let Some(service) = self.services.get(selected) {
-                    ServicesManager::enable_service(&service.name);
-                    self.refresh(self.old_filter_text.clone());
+    fn act_on_selected_service(&mut self, action: &str) {
+        if let Some(selected_index) = self.table_state.selected(){
+            if let Some(service) = self.services.get(selected_index) {
+                match action {
+                    "start" => ServicesManager::start_service(&service.name),
+                    "stop"  => ServicesManager::stop_service(&service.name),
+                    "restart" => ServicesManager::restart_service(&service.name),
+                    "enable" => ServicesManager::enable_service(&service.name),
+                    "disable" => ServicesManager::disable_service(&service.name),
+                    _ => {}
                 }
+                self.refresh(self.old_filter_text.clone());
             }
-            None => {},
         }
     }
-    fn disable_service(&mut self) {
-        if self.ignore_key_events {
-            return;
-        }
-
-        match self.table_state.selected() {
-            Some(selected) => {
-                if let Some(service) = self.services.get(selected) {
-                    ServicesManager::disable_service(&service.name);
-                    self.refresh(self.old_filter_text.clone());
-                }
-            }
-            None => {},
-        }
-    }
-    fn stop_service(&mut self) {
-        if self.ignore_key_events {
-            return;
-        }
-        match self.table_state.selected() {
-            Some(selected) => {
-                if let Some(service) = self.services.get(selected) {
-                    ServicesManager::stop_service(&service.name);
-                    self.refresh(self.old_filter_text.clone());
-                }
-            }
-            None => {},
-        }
-    }
-    fn start_service(&mut self) {
-        if self.ignore_key_events {
-            return;
-        }
-        match self.table_state.selected() {
-            Some(selected) => {
-                if let Some(service) = self.services.get(selected) {
-                    ServicesManager::start_service(&service.name);
-                    self.refresh(self.old_filter_text.clone());
-                }
-            }
-            None => {},
-        }
-    }
-    fn restart_service(&mut self) {
-        if self.ignore_key_events {
-            return;
-        }
-        match self.table_state.selected() {
-            Some(selected) => {
-                if let Some(service) = self.services.get(selected) {
-                    ServicesManager::restart_service(&service.name);
-                    self.refresh(self.old_filter_text.clone());
-                }
-            }
-            None => {},
-        }
-    }   
 }
 
 
