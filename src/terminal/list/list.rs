@@ -10,6 +10,21 @@ use ratatui::layout::Rect;
 
 use crate::domain::service::service::Service;
 
+fn generate_rows(services: &Vec<Service>) -> Vec<Row<'static>> {
+    services 
+        .iter()
+        .map(|service| {
+            Row::new(vec![
+                service.name.clone(),
+                format!("{} ({})",service.active_state.clone(), service.sub_state.clone() ) ,
+                service.file_state.clone(),
+                service.load_state.clone(),
+                service.description.clone(),
+            ])
+        })
+        .collect()
+}
+
 pub struct TableServices {
     pub table_state: TableState,
     pub rows: Vec<Row<'static>>,
@@ -20,23 +35,15 @@ pub struct TableServices {
 
 impl TableServices {
     pub fn new() -> Self {
-        let mut services = vec![];
-        let rows = if let Ok(list) = ServicesManager::list_services() {
-            services = list;
-            services
-                .iter()
-                .map(|service| {
-                    Row::new(vec![
-                        service.name.clone(),
-                        service.active_state.clone(),
-                        service.file_state.clone(),
-                        service.load_state.clone(),
-                        service.description.clone(),
-                    ])
-                })
-                .collect()
-        } else {
-            vec![Row::new(vec!["Error loading services", "", "", "", ""])]
+        let (services, rows) = match ServicesManager::list_services() {
+            Ok(svcs) => {
+                let rows = generate_rows(&svcs);
+                (svcs, rows)
+            },
+            Err(_) => {
+                let error_row = Row::new(vec!["Error loading services", "", "", "", ""]);
+                (vec![], vec![error_row])
+            }
         };
 
         let mut table_state = TableState::default();
@@ -46,49 +53,9 @@ impl TableServices {
             table_state,
             rows,
             services,
-            old_filter_text: "".to_string(),
-            ignore_key_events: false
+            old_filter_text: String::new(),
+            ignore_key_events: false,
         }
-    }
-
-    pub fn toogle_ignore_key_events(&mut self, has_ignore_key_events: bool){
-        self.ignore_key_events = has_ignore_key_events
-    }
-
-    pub fn refresh(&mut self, filter_text: String) {
-        if self.ignore_key_events {
-            return;
-        }
-
-        let lower_filter = filter_text.to_lowercase();
-
-        if let Ok(services) = ServicesManager::list_services() {
-            let filtered_services: Vec<Service> = services
-                .into_iter()
-                .filter(|service| service.name.to_lowercase().contains(&lower_filter))
-                .collect();
-
-            let rows = filtered_services
-                .iter()
-                .map(|service| {
-                    Row::new(vec![
-                        service.name.clone(),
-                        service.active_state.clone(),
-                        service.file_state.clone(),
-                        service.load_state.clone(),
-                        service.description.clone(),
-                    ])
-                })
-                .collect();
-
-            self.services = filtered_services;
-            self.rows = rows;
-        } else {
-            self.services = vec![];
-            self.rows = vec![Row::new(vec!["Error loading services", "", "", "", ""])];
-        }
-
-        self.old_filter_text = filter_text;
     }
 
     pub fn render(&mut self, frame: &mut Frame, area: Rect){
@@ -96,7 +63,7 @@ impl TableServices {
             self.rows.clone(),
             [
                 Constraint::Percentage(20),
-                Constraint::Length(10),
+                Constraint::Length(20),
                 Constraint::Length(10),
                 Constraint::Length(10),
                 Constraint::Percentage(30),
@@ -116,6 +83,29 @@ impl TableServices {
             .highlight_symbol(">> ");
 
         frame.render_stateful_widget(table, area, &mut self.table_state);
+    }
+
+    pub fn toogle_ignore_key_events(&mut self, has_ignore_key_events: bool){
+        self.ignore_key_events = has_ignore_key_events
+    }
+
+    pub fn refresh(&mut self, filter_text: String) {
+        let lower_filter = filter_text.to_lowercase();
+
+        if let Ok(services) = ServicesManager::list_services() {
+            let filtered_services: Vec<Service> = services
+                .into_iter()
+                .filter(|service| service.name.to_lowercase().contains(&lower_filter))
+                .collect();
+
+            self.rows = generate_rows(&filtered_services);
+            self.services = filtered_services;
+        } else {
+            self.services = vec![];
+            self.rows = vec![Row::new(vec!["Error loading services", "", "", "", ""])];
+        }
+
+        self.old_filter_text = filter_text;
     }
 
     pub fn on_key_event(&mut self, key: KeyEvent) {
