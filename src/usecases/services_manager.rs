@@ -3,7 +3,7 @@ use crate::domain::service::service::Service;
 use std::time::Duration;
 use std::thread;
 
-const SLEEP_DURATION: u64 = 500;
+const SLEEP_DURATION: u64 = 200;
 
 pub struct ServicesManager;
 

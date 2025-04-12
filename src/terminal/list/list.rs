@@ -114,9 +114,25 @@ impl TableServices {
         }
 
         match (key.modifiers, key.code) {
-            (_,KeyCode::Down) => self.table_state.select_next(),
-            (_,KeyCode::Up) => self.table_state.select_previous(),
-            (_, KeyCode::Char('r')) => self.act_on_selected_service("restart"),
+            (_, KeyCode::Down) => {
+                if let Some(selected_index) = self.table_state.selected() {
+                    if selected_index == self.rows.len() - 1 {
+                        self.table_state.select(Some(0));
+                    } else {
+                        self.table_state.select_next();
+                    }
+                }
+            }
+
+            (_, KeyCode::Up) => {
+                if let Some(selected_index) = self.table_state.selected() {
+                    if selected_index == 0 {
+                        self.table_state.select(Some(self.rows.len() - 1));
+                    } else {
+                        self.table_state.select_previous();
+                    }
+                }
+            }            (_, KeyCode::Char('r')) => self.act_on_selected_service("restart"),
             (_, KeyCode::Char('s')) => self.act_on_selected_service("start"),
             (_, KeyCode::Char('e')) => self.act_on_selected_service("enable"),
             (_, KeyCode::Char('d')) => self.act_on_selected_service("disable"),
