@@ -6,6 +6,10 @@ authors = ["Matheus-git <mathiew0@gmail.com>"]
 license = "MIT"
 edition = "2024"
 
+[profile.release]
+codegen-units = 1
+lto = true
+
 [dependencies]
 libc = "0.2"
 zbus = "5.5.0"
