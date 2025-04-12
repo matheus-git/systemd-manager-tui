@@ -28,33 +28,33 @@ impl SystemdServiceAdapter {
 impl ServiceRepository for SystemdServiceAdapter {
     fn start_service(&self, name: &str) -> Result<(), Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
-        let _ = proxy.call::<&str, (&str, &str), ()>("StartUnit", &(name, "replace"));
+        let _ = proxy.call::<&str, (&str, &str), ()>("StartUnit", &(name, "replace"))?;
         Ok(())
     }
 
     fn stop_service(&self, name: &str) -> Result<(), Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
-        let _ = proxy.call::<&str, (&str, &str), ()>("StopUnit", &(name, "replace"));
+        let _ = proxy.call::<&str, (&str, &str), ()>("StopUnit", &(name, "replace"))?;
         Ok(())
     }
 
     fn restart_service(&self, name: &str) -> Result<(), Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
-        let _ = proxy.call::<&str, (&str, &str), ()>("RestartUnit", &(name, "replace"));
+        let _ = proxy.call::<&str, (&str, &str), ()>("RestartUnit", &(name, "replace"))?;
         Ok(())
     }
 
     fn enable_service(&self, name: &str) -> Result<(), Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
         let args: (&[&str], bool, bool) = (&[name], false, true);
-        let _ = proxy.call::<_, _, ()>("EnableUnitFiles", &args);
+        let _ = proxy.call::<_, _, ()>("EnableUnitFiles", &args)?;
         Ok(())
     }
 
     fn disable_service(&self, name: &str) -> Result<(), Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
         let args: (&[&str], bool) = (&[name], false);
-        let _ = proxy.call::<_, _, ()>("DisableUnitFiles", &args);
+        let _ = proxy.call::<_, _, ()>("DisableUnitFiles", &args)?;
         Ok(())
     }
 

@@ -3,7 +3,7 @@ use ratatui::{
     layout::Constraint,
     widgets::{Block, Borders, Row, Table, TableState},
 };
-use crate::usecases::list_services::list_services;
+use crate::usecases::services_manager::ServicesManager;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::style::{Style, Color, Modifier};
 use ratatui::layout::Rect;
@@ -24,7 +24,7 @@ pub struct TableServices {
 impl TableServices {
     pub fn new() -> Self {
         let mut services = vec![];
-        let rows = if let Ok(list) = list_services() {
+        let rows = if let Ok(list) = ServicesManager::list_services() {
             services = list;
             services
                 .iter()
@@ -65,7 +65,7 @@ impl TableServices {
 
         let lower_filter = filter_text.to_lowercase();
 
-        if let Ok(services) = list_services() {
+        if let Ok(services) = ServicesManager::list_services() {
             let filtered_services: Vec<Service> = services
                 .into_iter()
                 .filter(|service| service.name.to_lowercase().contains(&lower_filter))
@@ -142,9 +142,7 @@ impl TableServices {
         match self.table_state.selected() {
             Some(selected) => {
                 if let Some(service) = self.services.get(selected) {
-                    SystemdServiceAdapter.enable_service(service.name.as_str()).expect("REASON");
-                    thread::sleep(Duration::from_millis(200));
-                    let _ = SystemdServiceAdapter.reload_daemon();
+                    ServicesManager::enable_service(&service.name);
                     self.refresh(self.old_filter_text.clone());
                 }
             }
@@ -159,9 +157,7 @@ impl TableServices {
         match self.table_state.selected() {
             Some(selected) => {
                 if let Some(service) = self.services.get(selected) {
-                    SystemdServiceAdapter.disable_service(service.name.as_str()).expect("REASON");
-                    thread::sleep(Duration::from_millis(200));
-                    let _ = SystemdServiceAdapter.reload_daemon();
+                    ServicesManager::disable_service(&service.name);
                     self.refresh(self.old_filter_text.clone());
                 }
             }
@@ -175,9 +171,7 @@ impl TableServices {
         match self.table_state.selected() {
             Some(selected) => {
                 if let Some(service) = self.services.get(selected) {
-                    SystemdServiceAdapter.stop_service(service.name.as_str()).expect("REASON");
-                    thread::sleep(Duration::from_millis(200));
-                    let _ = SystemdServiceAdapter.reload_daemon();
+                    ServicesManager::stop_service(&service.name);
                     self.refresh(self.old_filter_text.clone());
                 }
             }
@@ -191,9 +185,7 @@ impl TableServices {
         match self.table_state.selected() {
             Some(selected) => {
                 if let Some(service) = self.services.get(selected) {
-                    SystemdServiceAdapter.start_service(service.name.as_str()).expect("REASON");
-                    thread::sleep(Duration::from_millis(200));
-                    let _ = SystemdServiceAdapter.reload_daemon();
+                    ServicesManager::start_service(&service.name);
                     self.refresh(self.old_filter_text.clone());
                 }
             }
@@ -207,9 +199,7 @@ impl TableServices {
         match self.table_state.selected() {
             Some(selected) => {
                 if let Some(service) = self.services.get(selected) {
-                    SystemdServiceAdapter.restart_service(service.name.as_str()).expect("REASON");
-                    thread::sleep(Duration::from_millis(200));
-                    let _ = SystemdServiceAdapter.reload_daemon();
+                    ServicesManager::restart_service(&service.name);
                     self.refresh(self.old_filter_text.clone());
                 }
             }
