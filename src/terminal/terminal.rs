@@ -140,6 +140,7 @@ impl App {
             ]),
             Line::from("Navigate: ↑/↓ | Start: s | Stop: x | Restart: r | Enable: e | Disable: d | Refresh all: u | View logs: v"),
             Line::from(""),
+            Line::from(""),
             Line::from(vec![
                 Span::styled("Exit", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
                 Span::raw(": Ctrl + c"),
