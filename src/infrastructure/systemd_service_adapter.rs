@@ -23,7 +23,7 @@ impl SystemdServiceAdapter {
         proxy.call_method::<&str, ()>("Reload", &())?; 
         Ok(())
     }
-    pub fn get_service_log(&self, service_name: &str, lines: usize) -> Result<(Service, String), Box<dyn std::error::Error>> {
+    pub fn get_service_log(&self, service_name: &str) -> Result<(Service, String), Box<dyn std::error::Error>> {
     let connection = Connection::system()?;
 
     let proxy = Proxy::new(
@@ -71,7 +71,6 @@ impl SystemdServiceAdapter {
     let output = std::process::Command::new("journalctl")
         .arg("-eu")
         .arg(service_name)
-
         .arg("--no-pager")
         .output()?;
 

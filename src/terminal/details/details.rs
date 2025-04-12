@@ -4,7 +4,7 @@ use ratatui::{
     layout::{Constraint, Layout, Rect, Alignment},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Padding, Paragraph, Wrap},
+    widgets::{Block, Borders, Paragraph, Wrap},
     Frame,
 };
 use crossterm::event::{KeyCode, KeyEvent};

@@ -7,8 +7,7 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::Frame;
 
-use std::thread;
-use std::sync::mpsc::{self, Sender, Receiver, channel};
+use std::sync::mpsc::{Sender, Receiver, channel};
 
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -136,7 +135,7 @@ impl App {
 
     fn log(&mut self){
         if let Some(service) =  self.table_service.borrow_mut().get_selected_service() {
-            if let Ok(log) = crate::infrastructure::systemd_service_adapter::SystemdServiceAdapter.get_service_log(&service.name, 20) {
+            if let Ok(log) = crate::infrastructure::systemd_service_adapter::SystemdServiceAdapter.get_service_log(&service.name) {
                 self.details.borrow_mut().set_service(log.0);
                 self.details.borrow_mut().set_log_lines(log.1);
                 self.status = Status::Details;
