@@ -69,7 +69,7 @@ impl SystemdServiceAdapter {
     };
 
     let output = std::process::Command::new("journalctl")
-        .arg("-xeu")
+        .arg("-eu")
         .arg(service_name)
 
         .arg("--no-pager")
