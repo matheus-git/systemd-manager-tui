@@ -7,6 +7,9 @@ use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::Frame;
 
+use std::thread;
+use std::sync::mpsc::{self, Sender, Receiver, channel};
+
 use std::rc::Rc;
 use std::cell::RefCell;
 
@@ -44,15 +47,20 @@ impl App {
 
     pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         self.running = true;
+        let (tx, rx): (Sender<String>, Receiver<String>) = channel();
+
         let table_service = Rc::clone(&self.table_service);
         let filter = Rc::clone(&self.filter);
         let service_details = Rc::clone(&self.details);
-
+        service_details.borrow_mut().set_sender(tx);
         while self.running {
-           match self.status {
-               Status::Details => self.draw_details_status(&mut terminal, &service_details)?,
-               Status::List => self.draw_list_status(&mut terminal, &filter, &table_service)?
-           } 
+            while let Ok(_msg) = rx.try_recv() {
+                self.status = Status::List;
+            }
+            match self.status {
+                Status::Details => self.draw_details_status(&mut terminal, &service_details)?,
+                Status::List => self.draw_list_status(&mut terminal, &filter, &table_service)?
+            } 
         }
 
         Ok(())

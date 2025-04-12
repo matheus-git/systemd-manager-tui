@@ -1,3 +1,5 @@
+use std::sync::mpsc::Sender;
+
 use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style},
@@ -13,6 +15,7 @@ pub struct ServiceDetails {
     service: Option<Service>,
     log_lines: Option<String>,  
     scroll: u16,
+    sender: Option<Sender<String>>
 }
 
 impl ServiceDetails {
@@ -21,37 +24,19 @@ impl ServiceDetails {
             service: None,
             log_lines: None,
             scroll: 0,
+            sender: None
         }
     }
 
+    pub fn set_sender(&mut self, sender: Sender<String>){
+        self.sender = Some(sender);
+    }
+
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
-        let [info_box, log_box] = Layout::vertical([
-            Constraint::Length(5),
+        let [log_box] = Layout::vertical([
             Constraint::Min(0),
         ])
         .areas(area);
-
-        if let Some(service) = &self.service {
-            let info_text = Text::from(vec![
-                Line::from(vec![
-                    Span::styled("Nome: ", Style::default().add_modifier(Modifier::BOLD)),
-                    Span::raw(&service.name),
-                ]),
-                Line::from(vec![
-                    Span::styled("Status: ", Style::default().add_modifier(Modifier::BOLD)),
-                    Span::raw(&service.active_state),
-                ]),
-            ]);
-
-            let info = Paragraph::new(info_text)
-                .block(Block::default().title("Informações").borders(Borders::ALL));
-            frame.render_widget(info, info_box);
-        } else {
-            let info_text = Text::from("Nenhum serviço selecionado.");
-            let info = Paragraph::new(info_text)
-                .block(Block::default().title("Informações").borders(Borders::ALL));
-            frame.render_widget(info, info_box);
-        }
 
         if let Some(log_lines) = &self.log_lines {
             let log_paragraph = Paragraph::new(log_lines.clone())  
@@ -78,7 +63,12 @@ impl ServiceDetails {
             }
             KeyCode::Down => {
                 self.scroll += 1;
-            }
+            },
+            KeyCode::Char('q') => {
+                if let Some(sender) = &self.sender {
+                    sender.send("cliquei".to_string());
+                }
+            },
             _ => {}
         }
     }
