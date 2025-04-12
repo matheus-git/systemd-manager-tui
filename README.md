@@ -39,9 +39,11 @@ Must be run as sudo (or root).
 
 ## Future Improvements
 
-- View log
-- Usability
-- Performance
+- Auto-refresh logs
+- Monitor CPU and memory usage per service
+- View detailed information for each service
+- Display user-specific systemd services
+- Remotely monitor services
 
 ## Weekly Updates
 
