@@ -4,7 +4,7 @@
 
 A program for managing systemd services through a TUI (Text User Interface).
 
-The available operations are listing, starting, stopping, restarting, enabling, and disabling systemd services using the D-Bus API.
+The available operations are view log, listing, starting, stopping, restarting, enabling, and disabling systemd services using the D-Bus API.
 
 ## Screenshots
 ![screenshot1](assets/screeshot1.png)
