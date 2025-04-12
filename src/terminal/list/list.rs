@@ -130,6 +130,8 @@ impl TableServices {
                     } else {
                         self.table_state.select_next();
                     }
+                }else {
+                    self.table_state.select(Some(0));
                 }
             }
 
@@ -140,8 +142,11 @@ impl TableServices {
                     } else {
                         self.table_state.select_previous();
                     }
+                }else {
+                    self.table_state.select(Some(0));
                 }
-            }            (_, KeyCode::Char('r')) => self.act_on_selected_service("restart"),
+            },
+            (_, KeyCode::Char('r')) => self.act_on_selected_service("restart"),
             (_, KeyCode::Char('s')) => self.act_on_selected_service("start"),
             (_, KeyCode::Char('e')) => self.act_on_selected_service("enable"),
             (_, KeyCode::Char('d')) => self.act_on_selected_service("disable"),

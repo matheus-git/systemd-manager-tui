@@ -86,8 +86,8 @@ impl Filter {
             let mut ts_mut = ts.borrow_mut();
             ts_mut.toogle_ignore_key_events(false);
             ts_mut.refresh(self.input.clone());
-        }
         self.input_mode = InputMode::Normal
+        }
     }
 
     pub fn on_key_event(&mut self, key: KeyEvent) {
