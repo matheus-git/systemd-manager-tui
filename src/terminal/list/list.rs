@@ -89,6 +89,15 @@ impl TableServices {
         self.ignore_key_events = has_ignore_key_events
     }
 
+    pub fn get_selected_service(&self) -> Option<&Service>{
+        if let Some(selected_index) = self.table_state.selected() {
+            if let Some(service) = self.services.get(selected_index) {
+                return Some(&service);
+            }
+        }
+        return None
+    }
+
     pub fn refresh(&mut self, filter_text: String) {
         let lower_filter = filter_text.to_lowercase();
 
@@ -143,18 +152,16 @@ impl TableServices {
     }
 
     fn act_on_selected_service(&mut self, action: &str) {
-        if let Some(selected_index) = self.table_state.selected(){
-            if let Some(service) = self.services.get(selected_index) {
-                match action {
-                    "start" => ServicesManager::start_service(&service.name),
-                    "stop"  => ServicesManager::stop_service(&service.name),
-                    "restart" => ServicesManager::restart_service(&service.name),
-                    "enable" => ServicesManager::enable_service(&service.name),
-                    "disable" => ServicesManager::disable_service(&service.name),
-                    _ => {}
-                }
-                self.refresh(self.old_filter_text.clone());
+        if let Some(service) = self.get_selected_service() {
+            match action {
+                "start" => ServicesManager::start_service(&service.name),
+                "stop"  => ServicesManager::stop_service(&service.name),
+                "restart" => ServicesManager::restart_service(&service.name),
+                "enable" => ServicesManager::enable_service(&service.name),
+                "disable" => ServicesManager::disable_service(&service.name),
+                _ => {}
             }
+            self.refresh(self.old_filter_text.clone());
         }
     }
 }
