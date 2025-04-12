@@ -14,11 +14,12 @@ use super::super::list::list::TableServices;
 pub struct Filter {
     pub input: String,
     character_index: usize,
-    input_mode: InputMode,
+    pub input_mode: InputMode,
     table_service: Option<Rc<RefCell<TableServices>>>,
 }
 
-enum InputMode {
+#[derive(PartialEq)]
+pub enum InputMode {
     Normal,
     Editing,
 }
@@ -85,8 +86,8 @@ impl Filter {
             let mut ts_mut = ts.borrow_mut();
             ts_mut.toogle_ignore_key_events(false);
             ts_mut.refresh(self.input.clone());
-        }
         self.input_mode = InputMode::Normal
+        }
     }
 
     pub fn on_key_event(&mut self, key: KeyEvent) {
@@ -99,9 +100,14 @@ impl Filter {
                     }
                     self.input_mode = InputMode::Editing;
                 }
-                KeyCode::Char('q') => {
-
-                }
+                KeyCode::Esc => {
+                    self.input = String::new();
+                    if let Some(ref ts) = self.table_service {
+                        let mut ts_mut = ts.borrow_mut();
+                        ts_mut.toogle_ignore_key_events(false);
+                        ts_mut.refresh(self.input.clone());
+                    }
+                },
                 _ => {}
             },
             InputMode::Editing if key.kind == KeyEventKind::Press => match key.code {
