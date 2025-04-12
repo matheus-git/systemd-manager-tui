@@ -16,11 +16,13 @@ use super::list::list::TableServices;
 use super::filter::filter::{Filter, InputMode};
 use super::details::details::ServiceDetails;
 
+#[derive(PartialEq)]
 enum Status {
     List,
     Details
 }
 
+#[derive(PartialEq)]
 pub enum Actions {
     RefreshLog,
     GoList
@@ -31,22 +33,30 @@ pub struct App {
     status: Status,
     table_service: Rc<RefCell<TableServices>>,
     filter: Rc<RefCell<Filter>>,
-    details: Rc<RefCell<ServiceDetails>>
+    details: Rc<RefCell<ServiceDetails>>,
+    sender: Sender<Actions>,
+    receiver: Receiver<Actions>
 }
 
 impl App {
     pub fn new() -> Self {
+        let (sender, receiver): (Sender<Actions>, Receiver<Actions>) = channel();
         Self {
             running: true,
             status: Status::List,
             table_service: Rc::new(RefCell::new(TableServices::new())),
             filter: Rc::new(RefCell::new(Filter::new())),
-            details: Rc::new(RefCell::new(ServiceDetails::new()))
+            details: Rc::new(RefCell::new(ServiceDetails::new())),
+            sender,
+            receiver
         }
     }
 
     pub fn init(&mut self) {
         self.filter.borrow_mut().set_table_service(Rc::clone(&self.table_service));
+        
+        self.details.borrow_mut().set_sender(self.sender.clone());
+        self.details.borrow_mut().init_refresh_thread();
     }
 
     pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
@@ -56,16 +66,15 @@ impl App {
         let filter = Rc::clone(&self.filter);
         let service_details = Rc::clone(&self.details);
 
-        let (tx, rx): (Sender<Actions>, Receiver<Actions>) = channel();
-        service_details.borrow_mut().set_sender(tx);
-
         while self.running {
-            match rx.try_recv() {
+            match self.receiver.try_recv() {
                 Ok(Actions::GoList) => {
                     self.status = Status::List
                 },
                 Ok(Actions::RefreshLog) => {
-                    self.log();
+                    if self.status == Status::Details {
+                        self.log();
+                    }
                 },
                 Err(_) => {}
             }
@@ -107,7 +116,7 @@ impl App {
             let [filter_box, list_box, help_area_box] = Layout::vertical([
                 Constraint::Length(4),    
                 Constraint::Min(10),     
-                Constraint::Length(6),  
+                Constraint::Length(7),  
             ])
                 .areas(area);
 

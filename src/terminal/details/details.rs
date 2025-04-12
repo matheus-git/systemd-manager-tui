@@ -29,6 +29,9 @@ impl ServiceDetails {
         }
     }
 
+    pub fn init_refresh_thread(&self) {
+    }
+
     pub fn set_sender(&mut self, sender: Sender<Actions>){
         self.sender = Some(sender);
     }
