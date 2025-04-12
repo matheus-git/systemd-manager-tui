@@ -1,10 +1,10 @@
 use std::sync::mpsc::Sender;
 
 use ratatui::{
-    layout::{Constraint, Layout, Rect},
+    layout::{Constraint, Layout, Rect, Alignment},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Block, Borders, Padding, Paragraph, Wrap},
     Frame,
 };
 use crossterm::event::{KeyCode, KeyEvent};
@@ -36,21 +36,26 @@ impl ServiceDetails {
         let [log_box] = Layout::vertical([
             Constraint::Min(0),
         ])
-        .areas(area);
+            .areas(area);
 
-        if let Some(log_lines) = &self.log_lines {
-            let log_paragraph = Paragraph::new(log_lines.clone())  
-                .scroll((self.scroll,0)) 
-                .wrap(Wrap { trim: false})
-                .block(Block::default().title("Logs").borders(Borders::ALL));
+        if let Some(service) = &self.service {
+            if let Some(log_lines) = &self.log_lines {
+                let log_paragraph = Paragraph::new(log_lines.clone())  
+                    .scroll((self.scroll,0)) 
+                    .wrap(Wrap { trim: false})
+                    .block(Block::default()
+                        .title(format!("{} logs (newest at the top)", &service.name))
+                        .borders(Borders::ALL)
+                        .title_alignment(Alignment::Center));
 
-            frame.render_widget(log_paragraph, log_box);
-        } else {
-            let log_text = Text::from("Nenhum log disponível.");
-            let log_paragraph = Paragraph::new(log_text)
-                .block(Block::default().title("Logs").borders(Borders::ALL));
+                frame.render_widget(log_paragraph, log_box);
+            } else {
+                let log_text = Text::from("No logs available.");
+                let log_paragraph = Paragraph::new(log_text)
+                    .block(Block::default().title("Logs").borders(Borders::ALL));
 
-            frame.render_widget(log_paragraph, log_box);
+                frame.render_widget(log_paragraph, log_box);
+            }
         }
     }
 
@@ -66,26 +71,46 @@ impl ServiceDetails {
             },
             KeyCode::Char('q') => {
                 if let Some(sender) = &self.sender {
-                    sender.send("cliquei".to_string());
+                    let _ = sender.send("".to_string());
                 }
             },
             _ => {}
         }
     }
 
-    
+    pub fn draw_shortcuts(&mut self, frame: &mut Frame, help_area: Rect){
+        let help_text = vec![
+            Line::from(vec![
+                Span::styled("Actions", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            ]),
+            Line::from("Scroll: ↑/↓ | Refresh: v | Go back: q"),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("Exit", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
+                Span::raw(": Ctrl + c"),
+            ]),
+        ];
+
+        let help_block = Paragraph::new(help_text)
+            .block(Block::default().title("Shortcuts").borders(Borders::ALL))
+            .wrap(ratatui::widgets::Wrap { trim: true });
+
+        frame.render_widget(help_block, help_area);
+    }
+
     pub fn set_service(&mut self, service: Service) {
         self.service = Some(service);
     }
 
     pub fn set_log_lines(&mut self, log_lines: String) {
-    let reversed = log_lines
-        .lines()
-        .rev() // inverte a ordem das linhas
-        .collect::<Vec<_>>()
-        .join("\n");
+        let reversed = log_lines
+            .lines()
+            .rev() 
+            .collect::<Vec<_>>()
+            .join("\n");
 
-    self.log_lines = Some(reversed);
-    self.scroll = 0; // começa do topo agora
-}}
+        self.log_lines = Some(reversed);
+        self.scroll = 0;
+    }
+}
 

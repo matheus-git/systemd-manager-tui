@@ -47,12 +47,14 @@ impl App {
 
     pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         self.running = true;
-        let (tx, rx): (Sender<String>, Receiver<String>) = channel();
 
         let table_service = Rc::clone(&self.table_service);
         let filter = Rc::clone(&self.filter);
         let service_details = Rc::clone(&self.details);
+
+        let (tx, rx): (Sender<String>, Receiver<String>) = channel();
         service_details.borrow_mut().set_sender(tx);
+
         while self.running {
             while let Ok(_msg) = rx.try_recv() {
                 self.status = Status::List;
@@ -77,11 +79,11 @@ impl App {
                 .areas(area);
 
             service_details.borrow_mut().render(frame, list_box);
-            self.draw_shortcuts(frame, help_area_box);                
+            service_details.borrow_mut().draw_shortcuts(frame, help_area_box);                
         })?;
 
 
-        self.handle_crossterm_events(|key| {
+            self.handle_crossterm_events(|key| {
             service_details.borrow_mut().on_key_event(key)
         })?;
 
@@ -117,7 +119,7 @@ impl App {
             Line::from(vec![
                 Span::styled("Actions on the selected service", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
             ]),
-            Line::from("↑/↓: Navigate | Start: s | Restart: r | Enable: e | Disable: d | Stop: x | Refresh all: u"),
+            Line::from("Navigate: ↑/↓ | Start: s | Stop: x | Restart: r | Enable: e | Disable: d | Refresh all: u | View logs: v"),
             Line::from(""),
             Line::from(vec![
                 Span::styled("Exit", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),

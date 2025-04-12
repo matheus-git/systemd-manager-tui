@@ -99,9 +99,14 @@ impl Filter {
                     }
                     self.input_mode = InputMode::Editing;
                 }
-                KeyCode::Char('q') => {
-
-                }
+                KeyCode::Esc => {
+                    self.input = String::new();
+                    if let Some(ref ts) = self.table_service {
+                        let mut ts_mut = ts.borrow_mut();
+                        ts_mut.toogle_ignore_key_events(false);
+                        ts_mut.refresh(self.input.clone());
+                    }
+                },
                 _ => {}
             },
             InputMode::Editing if key.kind == KeyEventKind::Press => match key.code {
