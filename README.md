@@ -4,7 +4,7 @@
 
 A program for managing systemd services through a TUI (Text User Interface).
 
-The available operations are view log, listing, starting, stopping, restarting, enabling, and disabling systemd services using the D-Bus API.
+The available operations include viewing logs, listing, starting, stopping, restarting, enabling, and disabling systemd services using the D-Bus API.
 
 ## Screenshots
 ![screenshot1](assets/screeshot1.png)
@@ -43,7 +43,7 @@ Must be run as sudo (or root).
 - Monitor CPU and memory usage per service
 - View detailed information for each service
 - Display user-specific systemd services
-- Remotely monitor services
+- Remotely manage services
 
 ## Weekly Updates
 
