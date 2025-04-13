@@ -2,7 +2,7 @@
 
 ![rust](https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white)
 
-A program for managing systemd services through a TUI (Text User Interface).
+A program for managing systemd services through a TUI (Terminal User Interfaces).
 
 The available operations include viewing logs, listing, starting, stopping, restarting, enabling, and disabling systemd services using the D-Bus API.
 
