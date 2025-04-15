@@ -12,6 +12,7 @@ use std::sync::mpsc::{Sender, Receiver, channel};
 use std::rc::Rc;
 use std::cell::RefCell;
 
+use crate::usecases::services_manager::ServicesManager;
 use super::list::list::TableServices;
 use super::filter::filter::{Filter, InputMode};
 use super::details::details::ServiceDetails;
@@ -156,9 +157,9 @@ impl App {
 
     fn log(&mut self){
         if let Some(service) =  self.table_service.borrow_mut().get_selected_service() {
-            if let Ok(log) = crate::infrastructure::systemd_service_adapter::SystemdServiceAdapter.get_service_log(&service.name) {
-                self.details.borrow_mut().set_service(log.0);
-                self.details.borrow_mut().set_log_lines(log.1);
+            if let Ok(log) = ServicesManager::get_log(&service) {
+                self.details.borrow_mut().set_log_lines(log);
+                self.details.borrow_mut().set_service_name(service.name.clone());
                 self.status = Status::Details;
             }
         }

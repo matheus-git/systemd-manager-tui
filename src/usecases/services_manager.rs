@@ -46,4 +46,9 @@ impl ServicesManager {
         services.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
         Ok(services)
     }   
+
+    pub fn get_log(service: &Service) -> Result<String, Box<dyn Error>> {
+        let log = SystemdServiceAdapter.get_service_log(&service.name)?;
+        Ok(log)
+    }
 }
