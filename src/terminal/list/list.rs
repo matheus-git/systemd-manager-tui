@@ -184,7 +184,7 @@ impl TableServices {
     fn handle_result(&mut self, result: Result<(), Box<dyn Error>>) {
         match result {
             Ok(_) => {},
-            Err(_) => {}
+            Err(e) => {panic!("{e}")}
         }
     }
 }
