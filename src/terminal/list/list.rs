@@ -7,6 +7,7 @@ use crate::usecases::services_manager::ServicesManager;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::style::{Style, Color, Modifier};
 use ratatui::layout::Rect;
+use std::error::Error;
 
 use crate::domain::service::service::Service;
 
@@ -23,6 +24,15 @@ fn generate_rows(services: &Vec<Service>) -> Vec<Row<'static>> {
             ])
         })
         .collect()
+}
+
+pub enum ServiceAction {
+    Start,
+    Stop,
+    Restart,
+    Enable,
+    Disable,
+    RefreshAll,
 }
 
 pub struct TableServices {
@@ -99,22 +109,18 @@ impl TableServices {
     }
 
     pub fn refresh(&mut self, filter_text: String) {
+        self.old_filter_text = filter_text.clone();
+        self.services = self.filter_services(&filter_text);
+        self.rows = generate_rows(&self.services);
+    }
+
+    fn filter_services(&self, filter_text: &str) -> Vec<Service> {
         let lower_filter = filter_text.to_lowercase();
-
         if let Ok(services) = ServicesManager::list_services() {
-            let filtered_services: Vec<Service> = services
-                .into_iter()
-                .filter(|service| service.name.to_lowercase().contains(&lower_filter))
-                .collect();
-
-            self.rows = generate_rows(&filtered_services);
-            self.services = filtered_services;
+            services.into_iter().filter(|service| service.name.to_lowercase().contains(&lower_filter)).collect()
         } else {
-            self.services = vec![];
-            self.rows = vec![Row::new(vec!["Error loading services", "", "", "", ""])];
+            vec![]
         }
-
-        self.old_filter_text = filter_text;
     }
 
     pub fn on_key_event(&mut self, key: KeyEvent) {
@@ -122,51 +128,63 @@ impl TableServices {
             return;
         }
 
-        match (key.modifiers, key.code) {
-            (_, KeyCode::Down) => {
-                if let Some(selected_index) = self.table_state.selected() {
-                    if selected_index == self.rows.len() - 1 {
-                        self.table_state.select(Some(0));
-                    } else {
-                        self.table_state.select_next();
-                    }
-                }else {
-                    self.table_state.select(Some(0));
-                }
-            }
-
-            (_, KeyCode::Up) => {
-                if let Some(selected_index) = self.table_state.selected() {
-                    if selected_index == 0 {
-                        self.table_state.select(Some(self.rows.len() - 1));
-                    } else {
-                        self.table_state.select_previous();
-                    }
-                }else {
-                    self.table_state.select(Some(0));
-                }
-            },
-            (_, KeyCode::Char('r')) => self.act_on_selected_service("restart"),
-            (_, KeyCode::Char('s')) => self.act_on_selected_service("start"),
-            (_, KeyCode::Char('e')) => self.act_on_selected_service("enable"),
-            (_, KeyCode::Char('d')) => self.act_on_selected_service("disable"),
-            (_, KeyCode::Char('u')) => self.act_on_selected_service("refresh_all"),
-            (_, KeyCode::Char('x')) => self.act_on_selected_service("stop"),
+        match key.code {
+            KeyCode::Down => self.select_next(),
+            KeyCode::Up => self.select_previous(),
+            KeyCode::Char('r') => self.act_on_selected_service(ServiceAction::Restart),
+            KeyCode::Char('s') => self.act_on_selected_service(ServiceAction::Start),
+            KeyCode::Char('e') => self.act_on_selected_service(ServiceAction::Enable),
+            KeyCode::Char('d') => self.act_on_selected_service(ServiceAction::Disable),
+            KeyCode::Char('u') => self.act_on_selected_service(ServiceAction::RefreshAll),
+            KeyCode::Char('x') => self.act_on_selected_service(ServiceAction::Stop),
             _ => {}
         }
     }
 
-    fn act_on_selected_service(&mut self, action: &str) {
+    fn select_next(&mut self) {
+        if let Some(selected_index) = self.table_state.selected() {
+            let next_index = if selected_index == self.rows.len() - 1 {
+                0
+            } else {
+                selected_index + 1
+            };
+            self.table_state.select(Some(next_index));
+        } else {
+            self.table_state.select(Some(0));
+        }
+    }
+
+    fn select_previous(&mut self) {
+        if let Some(selected_index) = self.table_state.selected() {
+            let prev_index = if selected_index == 0 {
+                self.rows.len() - 1
+            } else {
+                selected_index - 1
+            };
+            self.table_state.select(Some(prev_index));
+        } else {
+            self.table_state.select(Some(0));
+        }
+    }
+
+    fn act_on_selected_service(&mut self, action: ServiceAction) {
         if let Some(service) = self.get_selected_service() {
             match action {
-                "start" => ServicesManager::start_service(&service.name),
-                "stop"  => ServicesManager::stop_service(&service.name),
-                "restart" => ServicesManager::restart_service(&service.name),
-                "enable" => ServicesManager::enable_service(&service.name),
-                "disable" => ServicesManager::disable_service(&service.name),
-                _ => {}
+                ServiceAction::Start => self.handle_result(ServicesManager::start_service(&service)),
+                ServiceAction::Stop => self.handle_result(ServicesManager::stop_service(&service)),
+                ServiceAction::Restart => self.handle_result(ServicesManager::restart_service(&service)),
+                ServiceAction::Enable => self.handle_result(ServicesManager::enable_service(&service)),
+                ServiceAction::Disable => self.handle_result(ServicesManager::disable_service(&service)),
+                ServiceAction::RefreshAll => self.refresh(self.old_filter_text.clone()),
             }
-            self.refresh(self.old_filter_text.clone());
+        }
+        self.refresh(self.old_filter_text.clone());
+    }
+
+    fn handle_result(&mut self, result: Result<(), Box<dyn Error>>) {
+        match result {
+            Ok(_) => {},
+            Err(e) => {panic!("{e}")}
         }
     }
 }

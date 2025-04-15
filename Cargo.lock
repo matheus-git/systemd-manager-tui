@@ -1044,7 +1044,6 @@ dependencies = [
  "libc",
  "ratatui",
  "zbus",
- "zvariant",
 ]
 
 [[package]]

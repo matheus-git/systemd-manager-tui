@@ -9,12 +9,11 @@ use ratatui::{
 };
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::domain::service::service::Service;
 use crate::terminal::terminal::Actions;
 
 pub struct ServiceDetails {
-    service: Option<Service>,
     log_lines: Option<String>,  
+    service_name: String,
     scroll: u16,
     sender: Option<Sender<Actions>>
 }
@@ -22,8 +21,8 @@ pub struct ServiceDetails {
 impl ServiceDetails {
     pub fn new() -> Self {
         Self {
-            service: None,
             log_lines: None,
+            service_name: String::new(),
             scroll: 0,
             sender: None
         }
@@ -36,19 +35,22 @@ impl ServiceDetails {
         self.sender = Some(sender);
     }
 
+    pub fn set_service_name(&mut self, service_name: String){
+        self.service_name = service_name;
+    }
+
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
         let [log_box] = Layout::vertical([
             Constraint::Min(0),
         ])
             .areas(area);
 
-        if let Some(service) = &self.service {
             if let Some(log_lines) = &self.log_lines {
                 let log_paragraph = Paragraph::new(log_lines.clone())  
                     .scroll((self.scroll,0)) 
                     .wrap(Wrap { trim: false})
                     .block(Block::default()
-                        .title(format!(" {} logs (newest at the top) ", &service.name))
+                        .title(format!(" {} logs (newest at the top) ", self.service_name))
                         .borders(Borders::ALL)
                         .title_alignment(Alignment::Center));
 
@@ -60,7 +62,6 @@ impl ServiceDetails {
 
                 frame.render_widget(log_paragraph, log_box);
             }
-        }
     }
 
     pub fn on_key_event(&mut self, key: KeyEvent) {
@@ -105,10 +106,6 @@ impl ServiceDetails {
             .wrap(ratatui::widgets::Wrap { trim: true });
 
         frame.render_widget(help_block, help_area);
-    }
-
-    pub fn set_service(&mut self, service: Service) {
-        self.service = Some(service);
     }
 
     pub fn set_log_lines(&mut self, log_lines: String) {

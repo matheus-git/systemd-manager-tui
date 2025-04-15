@@ -2,45 +2,53 @@ use crate::{domain::service::service_repository::ServiceRepository, infrastructu
 use crate::domain::service::service::Service;
 use std::time::Duration;
 use std::thread;
+use std::error::Error;
 
 const SLEEP_DURATION: u64 = 200;
 
 pub struct ServicesManager;
 
 impl ServicesManager {
-    pub fn start_service(name: &str) {
-        let _ = SystemdServiceAdapter.start_service(name);
+    pub fn start_service(service: &Service) -> Result<(), Box<dyn Error>> {
+        SystemdServiceAdapter.start_service(&service.name)?;
         thread::sleep(Duration::from_millis(SLEEP_DURATION));
+        Ok(())
     }
 
-    pub fn stop_service(name: &str) {
-        let _ = SystemdServiceAdapter.stop_service(name);
+    pub fn stop_service(service: &Service) -> Result<(), Box<dyn Error>> {
+        SystemdServiceAdapter.stop_service(&service.name)?;
         thread::sleep(Duration::from_millis(SLEEP_DURATION));
+        Ok(())
     }
 
-    pub fn restart_service(name: &str) {
-        let _ = SystemdServiceAdapter.restart_service(name);
+    pub fn restart_service(service: &Service) -> Result<(), Box<dyn Error>> {
+        SystemdServiceAdapter.restart_service(&service.name)?;
         thread::sleep(Duration::from_millis(SLEEP_DURATION));
+        Ok(())
     }
 
-    pub fn enable_service(name: &str) {
-        let _ = SystemdServiceAdapter.enable_service(name);
+    pub fn enable_service(service: &Service) -> Result<(), Box<dyn Error>> {
+        SystemdServiceAdapter.enable_service(&service.name)?;
         thread::sleep(Duration::from_millis(SLEEP_DURATION));
-        let _ = SystemdServiceAdapter.reload_daemon();
+        SystemdServiceAdapter.reload_daemon()?;
+        Ok(())
     }
 
-    pub fn disable_service(name: &str) {
-        let _ = SystemdServiceAdapter.disable_service(name);
+    pub fn disable_service(service: &Service) -> Result<(), Box<dyn Error>> {
+        SystemdServiceAdapter.disable_service(&service.name)?;
         thread::sleep(Duration::from_millis(SLEEP_DURATION));
-        let _ = SystemdServiceAdapter.reload_daemon();
+        SystemdServiceAdapter.reload_daemon()?;
+        Ok(())
     }
 
-    pub fn list_services() -> Result<Vec<Service>, Box<dyn std::error::Error>> {
+    pub fn list_services() -> Result<Vec<Service>, Box<dyn Error>> {
         let mut services = SystemdServiceAdapter.list_services()?;
         services.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
         Ok(services)
     }   
+
+    pub fn get_log(service: &Service) -> Result<String, Box<dyn Error>> {
+        let log = SystemdServiceAdapter.get_service_log(&service.name)?;
+        Ok(log)
+    }
 }
-
-
-
