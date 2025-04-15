@@ -1,4 +1,4 @@
-use zvariant::OwnedObjectPath;
+use zbus::zvariant::OwnedObjectPath;
 
 pub struct Service {
    pub name: String,
