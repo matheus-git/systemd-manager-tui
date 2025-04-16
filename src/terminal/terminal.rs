@@ -159,7 +159,7 @@ impl App {
         if let Some(service) =  self.table_service.borrow_mut().get_selected_service() {
             if let Ok(log) = ServicesManager::get_log(&service) {
                 self.details.borrow_mut().set_log_lines(log);
-                self.details.borrow_mut().set_service_name(service.name.clone());
+                self.details.borrow_mut().set_service_name(service.name().to_string());
                 self.status = Status::Details;
             }
         }

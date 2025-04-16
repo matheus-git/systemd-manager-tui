@@ -16,11 +16,11 @@ fn generate_rows(services: &Vec<Service>) -> Vec<Row<'static>> {
         .iter()
         .map(|service| {
             Row::new(vec![
-                service.name.clone(),
-                format!("{} ({})",service.active_state.clone(), service.sub_state.clone() ) ,
-                service.file_state.clone(),
-                service.load_state.clone(),
-                service.description.clone(),
+                service.name().to_string(),
+                format!("{} ({})",service.state().active(), service.state().sub() ),
+                service.state().file().to_string(),
+                service.state().load().to_string(),
+                service.description().to_string(),
             ])
         })
         .collect()
@@ -117,7 +117,7 @@ impl TableServices {
     fn filter_services(&self, filter_text: &str) -> Vec<Service> {
         let lower_filter = filter_text.to_lowercase();
         if let Ok(services) = ServicesManager::list_services() {
-            services.into_iter().filter(|service| service.name.to_lowercase().contains(&lower_filter)).collect()
+            services.into_iter().filter(|service| service.name().to_lowercase().contains(&lower_filter)).collect()
         } else {
             vec![]
         }

@@ -1,15 +1,25 @@
-use zbus::zvariant::OwnedObjectPath;
+use super::service_state::ServiceState;
 
 pub struct Service {
-   pub name: String,
-   pub description: String,
-   pub load_state: String,
-   pub active_state: String,
-   pub sub_state: String,
-   pub followed: String,
-   pub file_state: String,
-   pub object_path: OwnedObjectPath,
-   pub job_id: u32,
-   pub job_type: String,
-   pub job_object: OwnedObjectPath
+   name: String,
+   description: String,
+   state: ServiceState
 } 
+
+impl Service {
+    pub fn new(name: String, description: String, state: ServiceState) -> Self {
+        Service { name, description, state }
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub fn description(&self) -> &str {
+        &self.description
+    }
+
+    pub fn state(&self) -> &ServiceState {
+        &self.state
+    }
+}

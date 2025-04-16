@@ -2,6 +2,7 @@ use zbus::blocking::{Connection, Proxy};
 use zbus::zvariant::OwnedObjectPath;
 
 use crate::domain::service::service::Service;
+use crate::domain::service::service_state::ServiceState;
 use crate::domain::service::service_repository::ServiceRepository;
 
 pub struct SystemdServiceAdapter;
@@ -68,40 +69,19 @@ impl ServiceRepository for SystemdServiceAdapter {
     fn list_services(&self) -> Result<Vec<Service>, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
 
-        let units: Vec<(
-            String,         // name
-            String,         // description
-            String,         // load_state
-            String,         // active_state
-            String,         // sub_state
-            String,         // followed
-            OwnedObjectPath,// object_path
-            u32,            // job_id
-            String,         // job_type
-            OwnedObjectPath // job_object
-        )> = proxy.call("ListUnits", &())?;
+        let units: Vec<(String, String, String, String, String, String, OwnedObjectPath, u32, String, OwnedObjectPath )> = proxy.call("ListUnits", &())?;
 
         let services = units
             .into_iter()
             .filter(|(name, ..)| name.ends_with(".service"))
-            .map(|(name, description, load_state, active_state, sub_state, followed, object_path, job_id, job_type, job_object)| {
+            .map(|(name, description, load_state, active_state, sub_state, _followed, _object_path, _job_id, _job_type, _job_object)| {
                 let state: String = proxy
                     .call("GetUnitFileState", &name)
                     .unwrap_or_else(|_| "unknown".into());
+                
+                let service_state = ServiceState::new(load_state, active_state, sub_state, state);
 
-                Service {
-                    name,
-                    description,
-                    load_state,
-                    active_state,
-                    sub_state,
-                    followed,
-                    file_state: state,
-                    object_path,
-                    job_id,
-                    job_type,
-                    job_object,
-                }
+                Service::new(name, description, service_state)
             })
             .collect();
 
