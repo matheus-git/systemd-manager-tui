@@ -9,13 +9,13 @@ use ratatui::{
 };
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::terminal::terminal::Actions;
+use crate::terminal::terminal::{Actions, AppEvent};
 
 pub struct ServiceDetails {
     log_lines: Option<String>,  
     service_name: String,
     scroll: u16,
-    sender: Option<Sender<Actions>>
+    sender: Option<Sender<AppEvent>>
 }
 
 impl ServiceDetails {
@@ -31,7 +31,7 @@ impl ServiceDetails {
     pub fn init_refresh_thread(&self) {
     }
 
-    pub fn set_sender(&mut self, sender: Sender<Actions>){
+    pub fn set_sender(&mut self, sender: Sender<AppEvent>){
         self.sender = Some(sender);
     }
 
@@ -76,12 +76,12 @@ impl ServiceDetails {
             },
             KeyCode::Char('v') => {
                 if let Some(sender) = &self.sender {
-                    let _ = sender.send(Actions::RefreshLog);
+                    let _ = sender.send(AppEvent::Action(Actions::RefreshLog));
                 }
             },
             KeyCode::Char('q') => {
                 if let Some(sender) = &self.sender {
-                    let _ = sender.send(Actions::GoList);
+                    let _ = sender.send(AppEvent::Action(Actions::GoList));
                 }
             },
             _ => {}
