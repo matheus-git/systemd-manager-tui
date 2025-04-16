@@ -6,8 +6,9 @@ use ratatui::widgets::{Paragraph, Block, Borders};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::Frame;
-
-use std::sync::mpsc::{Sender, Receiver, channel};
+use std::sync::mpsc::{self, Sender, Receiver};
+use std::thread;
+use std::time::Duration;
 
 use std::rc::Rc;
 use std::cell::RefCell;
@@ -29,34 +30,56 @@ pub enum Actions {
     GoList
 }
 
+pub enum AppEvent {
+    Key(KeyEvent),
+    Action(Actions),
+}
+
+fn spawn_key_event_listener(event_tx: Sender<AppEvent>) {
+    thread::spawn(move || {
+        loop {
+            if event::poll(Duration::from_millis(100)).unwrap_or(false) {
+                if let Ok(Event::Key(key_event)) = event::read() {
+                    if key_event.kind == KeyEventKind::Press {
+                        if event_tx.send(AppEvent::Key(key_event)).is_err() {
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
 pub struct App { 
     running: bool,
     status: Status,
     table_service: Rc<RefCell<TableServices>>,
     filter: Rc<RefCell<Filter>>,
     details: Rc<RefCell<ServiceDetails>>,
-    sender: Sender<Actions>,
-    receiver: Receiver<Actions>
+    event_rx: Receiver<AppEvent>,
+    event_tx: Sender<AppEvent>,
 }
 
 impl App {
     pub fn new() -> Self {
-        let (sender, receiver): (Sender<Actions>, Receiver<Actions>) = channel();
+        let (event_tx, event_rx) = mpsc::channel::<AppEvent>();
         Self {
             running: true,
             status: Status::List,
             table_service: Rc::new(RefCell::new(TableServices::new())),
             filter: Rc::new(RefCell::new(Filter::new())),
             details: Rc::new(RefCell::new(ServiceDetails::new())),
-            sender,
-            receiver
+            event_rx,
+            event_tx
         }
     }
 
     pub fn init(&mut self) {
         self.filter.borrow_mut().set_table_service(Rc::clone(&self.table_service));
-        
-        self.details.borrow_mut().set_sender(self.sender.clone());
+
+        spawn_key_event_listener(self.event_tx.clone());
+        self.details.borrow_mut().set_sender(self.event_tx.clone());
         self.details.borrow_mut().init_refresh_thread();
     }
 
@@ -67,22 +90,32 @@ impl App {
         let filter = Rc::clone(&self.filter);
         let service_details = Rc::clone(&self.details);
 
+
         while self.running {
-            match self.receiver.try_recv() {
-                Ok(Actions::GoList) => {
-                    self.status = Status::List
-                },
-                Ok(Actions::RefreshLog) => {
-                    if self.status == Status::Details {
-                        self.log();
-                    }
-                },
-                Err(_) => {}
-            }
             match self.status {
                 Status::Details => self.draw_details_status(&mut terminal, &service_details)?,
                 Status::List => self.draw_list_status(&mut terminal, &filter, &table_service)?
             } 
+
+            match self.event_rx.recv()? {
+                AppEvent::Key(key) => match self.status {
+                    Status::Details => {
+                        self.on_key_event(key);
+                        self.details.borrow_mut().on_key_event(key)
+                    },
+                    Status::List => {
+                        self.on_key_event(key);
+                        self.table_service.borrow_mut().on_key_event(key);
+                        self.filter.borrow_mut().on_key_event(key);
+                    }
+                },
+                AppEvent::Action(Actions::GoList) => self.status = Status::List,
+                AppEvent::Action(Actions::RefreshLog) => {
+                    if self.status == Status::Details {
+                        self.log();
+                    }
+                },
+            }
         }
 
         Ok(())
@@ -100,11 +133,6 @@ impl App {
 
             service_details.borrow_mut().render(frame, list_box);
             service_details.borrow_mut().draw_shortcuts(frame, help_area_box);                
-        })?;
-
-
-            self.handle_crossterm_events(|key| {
-            service_details.borrow_mut().on_key_event(key)
         })?;
 
         Ok(())
@@ -126,10 +154,6 @@ impl App {
             self.draw_shortcuts(frame, help_area_box);                
         })?;
 
-        self.handle_crossterm_events(|key| {
-            table_service.borrow_mut().on_key_event(key);
-            filter.borrow_mut().on_key_event(key);
-        })?;
         Ok(())
     }
 
@@ -163,20 +187,6 @@ impl App {
                 self.status = Status::Details;
             }
         }
-    }
-
-    fn handle_crossterm_events<F>(&mut self, mut external_handler: F) -> Result<()>
-where
-        F: FnMut(KeyEvent),
-    {
-        match event::read()? {
-            Event::Key(key) if key.kind == KeyEventKind::Press => {
-                self.on_key_event(key);
-                external_handler(key);
-            },
-            _ => {}
-        }
-        Ok(())
     }
 
     fn on_key_event(&mut self, key: KeyEvent) {
