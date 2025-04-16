@@ -50,7 +50,6 @@ fn spawn_key_event_listener(event_tx: Sender<AppEvent>) {
         }
     });
 }
-
 pub struct App { 
     running: bool,
     status: Status,
@@ -77,7 +76,7 @@ impl App {
 
     pub fn init(&mut self) {
         self.filter.borrow_mut().set_table_service(Rc::clone(&self.table_service));
-
+        
         spawn_key_event_listener(self.event_tx.clone());
         self.details.borrow_mut().set_sender(self.event_tx.clone());
         self.details.borrow_mut().init_refresh_thread();
@@ -86,7 +85,7 @@ impl App {
     pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         self.running = true;
 
-        let table_service = Rc::clone(&self.table_service);
+    let table_service = Rc::clone(&self.table_service);
         let filter = Rc::clone(&self.filter);
         let service_details = Rc::clone(&self.details);
 
@@ -117,7 +116,7 @@ impl App {
                 },
             }
         }
-
+        
         Ok(())
     }
 
