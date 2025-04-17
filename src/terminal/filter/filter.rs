@@ -11,11 +11,11 @@ use std::cell::RefCell;
 
 use super::super::list::list::TableServices;
 
-pub struct Filter {
+pub struct Filter<'a> {
     pub input: String,
     character_index: usize,
     pub input_mode: InputMode,
-    table_service: Option<Rc<RefCell<TableServices>>>,
+    table_service: Option<Rc<RefCell<TableServices<'a>>>>,
 }
 
 #[derive(PartialEq)]
@@ -24,7 +24,7 @@ pub enum InputMode {
     Editing,
 }
 
-impl Filter {
+impl<'a> Filter<'a> {
     pub const fn new() -> Self {
         Self {
             input: String::new(),
@@ -34,7 +34,7 @@ impl Filter {
         }
     }
 
-    pub fn set_table_service(&mut self, ts: Rc<RefCell<TableServices>>) {
+    pub fn set_table_service(&mut self, ts: Rc<RefCell<TableServices<'a>>>) {
         self.table_service = Some(ts);
     }
     fn move_cursor_left(&mut self) {

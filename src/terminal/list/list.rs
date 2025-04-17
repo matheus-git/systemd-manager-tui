@@ -35,7 +35,8 @@ pub enum ServiceAction {
     RefreshAll,
 }
 
-pub struct TableServices {
+pub struct TableServices<'a> {
+    table: Table<'a>,
     pub table_state: TableState,
     pub rows: Vec<Row<'static>>,
     pub services: Vec<Service>,
@@ -43,7 +44,7 @@ pub struct TableServices {
     ignore_key_events: bool
 }
 
-impl TableServices {
+impl<'a> TableServices<'a> {
     pub fn new() -> Self {
         let (services, rows) = match ServicesManager::list_services() {
             Ok(svcs) => {
@@ -58,19 +59,8 @@ impl TableServices {
 
         let mut table_state = TableState::default();
         table_state.select(Some(0));
-
-        Self {
-            table_state,
-            rows,
-            services,
-            old_filter_text: String::new(),
-            ignore_key_events: false,
-        }
-    }
-
-    pub fn render(&mut self, frame: &mut Frame, area: Rect){
         let table = Table::new(
-            self.rows.clone(),
+            rows.clone(),
             [
                 Constraint::Percentage(20),
                 Constraint::Length(20),
@@ -91,8 +81,18 @@ impl TableServices {
                     .add_modifier(Modifier::BOLD),
             )
             .highlight_symbol(">> ");
+        Self {
+            table,
+            table_state,
+            rows,
+            services,
+            old_filter_text: String::new(),
+            ignore_key_events: false,
+        }
+    }
 
-        frame.render_stateful_widget(table, area, &mut self.table_state);
+    pub fn render(&mut self, frame: &mut Frame, area: Rect){
+        frame.render_stateful_widget(self.table.clone(), area, &mut self.table_state);
     }
 
     pub fn toogle_ignore_key_events(&mut self, has_ignore_key_events: bool){
@@ -112,6 +112,7 @@ impl TableServices {
         self.old_filter_text = filter_text.clone();
         self.services = self.filter_services(&filter_text);
         self.rows = generate_rows(&self.services);
+        self.table = self.table.clone().rows(self.rows.clone());
     }
 
     fn filter_services(&self, filter_text: &str) -> Vec<Service> {

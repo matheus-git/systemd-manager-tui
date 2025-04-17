@@ -50,17 +50,17 @@ fn spawn_key_event_listener(event_tx: Sender<AppEvent>) {
         }
     });
 }
-pub struct App { 
+pub struct App<'a> { 
     running: bool,
     status: Status,
-    table_service: Rc<RefCell<TableServices>>,
-    filter: Rc<RefCell<Filter>>,
+    table_service: Rc<RefCell<TableServices<'a>>>,
+    filter: Rc<RefCell<Filter<'a>>>,
     details: Rc<RefCell<ServiceDetails>>,
     event_rx: Receiver<AppEvent>,
     event_tx: Sender<AppEvent>,
 }
 
-impl App {
+impl App<'_> {
     pub fn new() -> Self {
         let (event_tx, event_rx) = mpsc::channel::<AppEvent>();
         Self {
