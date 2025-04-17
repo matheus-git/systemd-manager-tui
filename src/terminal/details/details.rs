@@ -1,7 +1,7 @@
 use std::sync::mpsc::Sender;
 
 use ratatui::{
-    layout::{Constraint, Layout, Rect, Alignment},
+    layout::{Rect, Alignment},
     style::{Color, Modifier, Style},
     text::{Line, Span, Text},
     widgets::{Block, Borders, Paragraph, Wrap},
@@ -11,17 +11,17 @@ use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::terminal::terminal::{Actions, AppEvent};
 
-pub struct ServiceDetails {
-    log_lines: Option<String>,  
+pub struct ServiceDetails<'a> {
+    log_paragraph: Option<Paragraph<'a>>,
     service_name: String,
     scroll: u16,
     sender: Option<Sender<AppEvent>>
 }
 
-impl ServiceDetails {
+impl ServiceDetails<'_> {
     pub fn new() -> Self {
         Self {
-            log_lines: None,
+            log_paragraph: None,
             service_name: String::new(),
             scroll: 0,
             sender: None
@@ -40,28 +40,13 @@ impl ServiceDetails {
     }
 
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
-        let [log_box] = Layout::vertical([
-            Constraint::Min(0),
-        ])
-            .areas(area);
 
-            if let Some(log_lines) = &self.log_lines {
-                let log_paragraph = Paragraph::new(log_lines.clone())  
-                    .scroll((self.scroll,0)) 
-                    .wrap(Wrap { trim: false})
-                    .block(Block::default()
-                        .title(format!(" {} logs (newest at the top) ", self.service_name))
-                        .borders(Borders::ALL)
-                        .title_alignment(Alignment::Center));
+        let paragraph = self.log_paragraph.clone().unwrap_or_else(|| {
+            Paragraph::new(Text::from("No logs available."))
+                .block(Block::default().title("Logs").borders(Borders::ALL))
+        }).scroll((self.scroll,0));
 
-                frame.render_widget(log_paragraph, log_box);
-            } else {
-                let log_text = Text::from("No logs available.");
-                let log_paragraph = Paragraph::new(log_text)
-                    .block(Block::default().title("Logs").borders(Borders::ALL));
-
-                frame.render_widget(log_paragraph, log_box);
-            }
+        frame.render_widget(paragraph, area);
     }
 
     pub fn on_key_event(&mut self, key: KeyEvent) {
@@ -115,7 +100,13 @@ impl ServiceDetails {
             .collect::<Vec<_>>()
             .join("\n");
 
-        self.log_lines = Some(reversed);
+        self.log_paragraph = Some(Paragraph::new(reversed.clone())  
+            .scroll((0,0)) 
+            .wrap(Wrap { trim: false})
+            .block(Block::default()
+                .title(format!(" {} logs (newest at the top) ", self.service_name))
+                .borders(Borders::ALL)
+                .title_alignment(Alignment::Center)));
         self.scroll = 0;
     }
 }

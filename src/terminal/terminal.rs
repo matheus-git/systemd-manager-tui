@@ -55,7 +55,7 @@ pub struct App<'a> {
     status: Status,
     table_service: Rc<RefCell<TableServices<'a>>>,
     filter: Rc<RefCell<Filter<'a>>>,
-    details: Rc<RefCell<ServiceDetails>>,
+    details: Rc<RefCell<ServiceDetails<'a>>>,
     event_rx: Receiver<AppEvent>,
     event_tx: Sender<AppEvent>,
 }
@@ -125,7 +125,7 @@ impl App<'_> {
             let area = frame.area();
 
             let [list_box, help_area_box] = Layout::vertical([
-                Constraint::Min(10),     
+                Constraint::Min(0),     
                 Constraint::Length(6),  
             ])
                 .areas(area);
@@ -181,8 +181,8 @@ impl App<'_> {
     fn log(&mut self){
         if let Some(service) =  self.table_service.borrow_mut().get_selected_service() {
             if let Ok(log) = ServicesManager::get_log(&service) {
-                self.details.borrow_mut().set_log_lines(log);
                 self.details.borrow_mut().set_service_name(service.name().to_string());
+                self.details.borrow_mut().set_log_lines(log);
                 self.status = Status::Details;
             }
         }
