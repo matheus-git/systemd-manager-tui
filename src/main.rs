@@ -2,7 +2,7 @@ mod infrastructure;
 mod domain;
 mod usecases;
 mod terminal;
-use terminal::terminal::App;
+use terminal::app::App;
 
 fn main() -> color_eyre::Result<()> {
     if unsafe { libc::geteuid() } != 0 {

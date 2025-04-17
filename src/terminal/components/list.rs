@@ -9,7 +9,7 @@ use ratatui::style::{Style, Color, Modifier};
 use ratatui::layout::Rect;
 use std::error::Error;
 
-use crate::domain::service::service::Service;
+use crate::domain::service::Service;
 
 fn generate_rows(services: &[Service]) -> Vec<Row<'static>> {
     services 

@@ -1,5 +1,5 @@
-use crate::{domain::service::service_repository::ServiceRepository, infrastructure::systemd_service_adapter::SystemdServiceAdapter};
-use crate::domain::service::service::Service;
+use crate::{domain::service_repository::ServiceRepository, infrastructure::systemd_service_adapter::SystemdServiceAdapter};
+use crate::domain::service::Service;
 use std::time::Duration;
 use std::thread;
 use std::error::Error;

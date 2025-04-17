@@ -14,9 +14,9 @@ use std::rc::Rc;
 use std::cell::RefCell;
 
 use crate::usecases::services_manager::ServicesManager;
-use super::list::list::TableServices;
-use super::filter::filter::{Filter, InputMode};
-use super::details::details::ServiceDetails;
+use super::components::list::TableServices;
+use super::components::filter::{Filter, InputMode};
+use super::components::details::ServiceDetails;
 
 #[derive(PartialEq)]
 enum Status {

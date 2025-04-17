@@ -9,7 +9,7 @@ use ratatui::{
 };
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::terminal::terminal::{Actions, AppEvent};
+use crate::terminal::app::{Actions, AppEvent};
 
 pub struct ServiceDetails<'a> {
     log_paragraph: Option<Paragraph<'a>>,

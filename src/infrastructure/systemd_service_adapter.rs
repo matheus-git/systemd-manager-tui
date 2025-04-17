@@ -1,9 +1,9 @@
 use zbus::blocking::{Connection, Proxy};
 use zbus::zvariant::OwnedObjectPath;
 
-use crate::domain::service::service::Service;
-use crate::domain::service::service_state::ServiceState;
-use crate::domain::service::service_repository::ServiceRepository;
+use crate::domain::service::Service;
+use crate::domain::service_state::ServiceState;
+use crate::domain::service_repository::ServiceRepository;
 
 type SystemdUnit = (String, String, String, String, String, String, OwnedObjectPath, u32, String, OwnedObjectPath);
 
