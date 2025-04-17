@@ -50,17 +50,17 @@ fn spawn_key_event_listener(event_tx: Sender<AppEvent>) {
         }
     });
 }
-pub struct App { 
+pub struct App<'a> { 
     running: bool,
     status: Status,
-    table_service: Rc<RefCell<TableServices>>,
-    filter: Rc<RefCell<Filter>>,
-    details: Rc<RefCell<ServiceDetails>>,
+    table_service: Rc<RefCell<TableServices<'a>>>,
+    filter: Rc<RefCell<Filter<'a>>>,
+    details: Rc<RefCell<ServiceDetails<'a>>>,
     event_rx: Receiver<AppEvent>,
     event_tx: Sender<AppEvent>,
 }
 
-impl App {
+impl App<'_> {
     pub fn new() -> Self {
         let (event_tx, event_rx) = mpsc::channel::<AppEvent>();
         Self {
@@ -125,7 +125,7 @@ impl App {
             let area = frame.area();
 
             let [list_box, help_area_box] = Layout::vertical([
-                Constraint::Min(10),     
+                Constraint::Min(0),     
                 Constraint::Length(6),  
             ])
                 .areas(area);
@@ -181,8 +181,8 @@ impl App {
     fn log(&mut self){
         if let Some(service) =  self.table_service.borrow_mut().get_selected_service() {
             if let Ok(log) = ServicesManager::get_log(&service) {
-                self.details.borrow_mut().set_log_lines(log);
                 self.details.borrow_mut().set_service_name(service.name().to_string());
+                self.details.borrow_mut().set_log_lines(log);
                 self.status = Status::Details;
             }
         }
