@@ -40,10 +40,7 @@ fn spawn_key_event_listener(event_tx: Sender<AppEvent>) {
         loop {
             if event::poll(Duration::from_millis(100)).unwrap_or(false) {
                 if let Ok(Event::Key(key_event)) = event::read() {
-                    if key_event.kind == KeyEventKind::Press {
-                        if event_tx.send(AppEvent::Key(key_event)).is_err() {
-                            break;
-                        }
+                    if key_event.kind == KeyEventKind::Press && event_tx.send(AppEvent::Key(key_event)).is_err() {                            break;
                     }
                 }
             }
@@ -76,7 +73,7 @@ impl App<'_> {
 
     pub fn init(&mut self) {
         self.filter.borrow_mut().set_table_service(Rc::clone(&self.table_service));
-        
+
         spawn_key_event_listener(self.event_tx.clone());
         self.details.borrow_mut().set_sender(self.event_tx.clone());
         self.details.borrow_mut().init_refresh_thread();
@@ -85,7 +82,7 @@ impl App<'_> {
     pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         self.running = true;
 
-    let table_service = Rc::clone(&self.table_service);
+        let table_service = Rc::clone(&self.table_service);
         let filter = Rc::clone(&self.filter);
         let service_details = Rc::clone(&self.details);
 
@@ -116,7 +113,7 @@ impl App<'_> {
                 },
             }
         }
-        
+
         Ok(())
     }
 
@@ -180,7 +177,7 @@ impl App<'_> {
 
     fn log(&mut self){
         if let Some(service) =  self.table_service.borrow_mut().get_selected_service() {
-            if let Ok(log) = ServicesManager::get_log(&service) {
+            if let Ok(log) = ServicesManager::get_log(service) {
                 self.details.borrow_mut().set_service_name(service.name().to_string());
                 self.details.borrow_mut().set_log_lines(log);
                 self.status = Status::Details;

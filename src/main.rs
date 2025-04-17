@@ -1,5 +1,3 @@
-use libc;
-
 mod infrastructure;
 mod domain;
 mod usecases;

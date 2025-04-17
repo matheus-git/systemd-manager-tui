@@ -11,7 +11,7 @@ use std::error::Error;
 
 use crate::domain::service::service::Service;
 
-fn generate_rows(services: &Vec<Service>) -> Vec<Row<'static>> {
+fn generate_rows(services: &[Service]) -> Vec<Row<'static>> {
     services 
         .iter()
         .map(|service| {
@@ -44,7 +44,7 @@ pub struct TableServices<'a> {
     ignore_key_events: bool
 }
 
-impl<'a> TableServices<'a> {
+impl TableServices<'_> {
     pub fn new() -> Self {
         let (services, rows) = match ServicesManager::list_services() {
             Ok(svcs) => {
@@ -102,10 +102,10 @@ impl<'a> TableServices<'a> {
     pub fn get_selected_service(&self) -> Option<&Service>{
         if let Some(selected_index) = self.table_state.selected() {
             if let Some(service) = self.services.get(selected_index) {
-                return Some(&service);
+                return Some(service);
             }
         }
-        return None
+        None
     }
 
     pub fn refresh(&mut self, filter_text: String) {
@@ -171,11 +171,11 @@ impl<'a> TableServices<'a> {
     fn act_on_selected_service(&mut self, action: ServiceAction) {
         if let Some(service) = self.get_selected_service() {
             match action {
-                ServiceAction::Start => self.handle_result(ServicesManager::start_service(&service)),
-                ServiceAction::Stop => self.handle_result(ServicesManager::stop_service(&service)),
-                ServiceAction::Restart => self.handle_result(ServicesManager::restart_service(&service)),
-                ServiceAction::Enable => self.handle_result(ServicesManager::enable_service(&service)),
-                ServiceAction::Disable => self.handle_result(ServicesManager::disable_service(&service)),
+                ServiceAction::Start => self.handle_result(ServicesManager::start_service(service)),
+                ServiceAction::Stop => self.handle_result(ServicesManager::stop_service(service)),
+                ServiceAction::Restart => self.handle_result(ServicesManager::restart_service(service)),
+                ServiceAction::Enable => self.handle_result(ServicesManager::enable_service(service)),
+                ServiceAction::Disable => self.handle_result(ServicesManager::disable_service(service)),
                 ServiceAction::RefreshAll => self.refresh(self.old_filter_text.clone()),
             }
         }

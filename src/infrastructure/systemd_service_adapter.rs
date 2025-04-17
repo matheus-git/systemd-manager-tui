@@ -5,6 +5,8 @@ use crate::domain::service::service::Service;
 use crate::domain::service::service_state::ServiceState;
 use crate::domain::service::service_repository::ServiceRepository;
 
+type SystemdUnit = (String, String, String, String, String, String, OwnedObjectPath, u32, String, OwnedObjectPath);
+
 pub struct SystemdServiceAdapter;
 
 impl SystemdServiceAdapter {
@@ -69,7 +71,7 @@ impl ServiceRepository for SystemdServiceAdapter {
     fn list_services(&self) -> Result<Vec<Service>, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
 
-        let units: Vec<(String, String, String, String, String, String, OwnedObjectPath, u32, String, OwnedObjectPath )> = proxy.call("ListUnits", &())?;
+        let units: Vec<SystemdUnit> = proxy.call("ListUnits", &())?;
 
         let services = units
             .into_iter()
