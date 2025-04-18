@@ -136,6 +136,8 @@ impl TableServices<'_> {
         match key.code {
             KeyCode::Down => self.select_next(),
             KeyCode::Up => self.select_previous(),
+            KeyCode::PageDown => self.select_page_down(),
+            KeyCode::PageUp => self.select_page_up(),
             KeyCode::Char('r') => self.act_on_selected_service(ServiceAction::Restart),
             KeyCode::Char('s') => self.act_on_selected_service(ServiceAction::Start),
             KeyCode::Char('e') => self.act_on_selected_service(ServiceAction::Enable),
@@ -144,6 +146,36 @@ impl TableServices<'_> {
             KeyCode::Char('x') => self.act_on_selected_service(ServiceAction::Stop),
             KeyCode::Char('v') => self.sender.send(AppEvent::Action(Actions::GoLog)).unwrap(),
             _ => {}
+        }
+    }
+
+    fn select_page_down(&mut self) {
+        let jump = 10;
+        if let Some(selected_index) = self.table_state.selected() {
+            let new_index = selected_index + jump;
+            let wrapped_index = if new_index >= self.rows.len() {
+                (new_index) % self.rows.len()
+            } else {
+                new_index
+            };
+            self.table_state.select(Some(wrapped_index));
+        } else {
+            self.table_state.select(Some(0));
+        }
+    }
+
+    fn select_page_up(&mut self) {
+        let jump = 10;
+        if let Some(selected_index) = self.table_state.selected() {
+            let new_index = selected_index as isize - jump as isize;
+            let wrapped_index = if new_index < 0 {
+                (self.rows.len() as isize + new_index % self.rows.len() as isize) as usize
+            } else {
+                new_index as usize
+            };
+            self.table_state.select(Some(wrapped_index));
+        } else {
+            self.table_state.select(Some(0));
         }
     }
 
