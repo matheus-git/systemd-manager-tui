@@ -8,7 +8,9 @@ use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::style::{Style, Color, Modifier};
 use ratatui::layout::Rect;
 use std::error::Error;
+use std::sync::mpsc::Sender;
 
+use crate::terminal::app::{Actions, AppEvent};
 use crate::domain::service::Service;
 
 fn generate_rows(services: &[Service]) -> Vec<Row<'static>> {
@@ -41,11 +43,12 @@ pub struct TableServices<'a> {
     pub rows: Vec<Row<'static>>,
     pub services: Vec<Service>,
     old_filter_text: String,
-    ignore_key_events: bool
+    ignore_key_events: bool,
+    sender: Sender<AppEvent>
 }
 
 impl TableServices<'_> {
-    pub fn new() -> Self {
+    pub fn new(sender: Sender<AppEvent>) -> Self {
         let (services, rows) = match ServicesManager::list_services() {
             Ok(svcs) => {
                 let rows = generate_rows(&svcs);
@@ -86,6 +89,7 @@ impl TableServices<'_> {
             table_state,
             rows,
             services,
+            sender,
             old_filter_text: String::new(),
             ignore_key_events: false,
         }
@@ -138,6 +142,7 @@ impl TableServices<'_> {
             KeyCode::Char('d') => self.act_on_selected_service(ServiceAction::Disable),
             KeyCode::Char('u') => self.act_on_selected_service(ServiceAction::RefreshAll),
             KeyCode::Char('x') => self.act_on_selected_service(ServiceAction::Stop),
+            KeyCode::Char('v') => self.sender.send(AppEvent::Action(Actions::GoLog)).unwrap(),
             _ => {}
         }
     }

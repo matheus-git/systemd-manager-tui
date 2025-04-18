@@ -1,5 +1,6 @@
 use super::service_state::ServiceState;
 
+#[derive(Clone)]
 pub struct Service {
    name: String,
    description: String,

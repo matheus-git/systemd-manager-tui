@@ -13,9 +13,10 @@ use std::time::Duration;
 use std::rc::Rc;
 use std::cell::RefCell;
 
+use crate::usecases::services_manager::ServicesManager;
 use super::components::list::TableServices;
-use super::components::filter::Filter;
-use super::components::log::ServiceLog;
+use super::components::filter::{Filter, InputMode};
+use super::components::details::ServiceDetails;
 
 #[derive(PartialEq)]
 enum Status {
@@ -53,7 +54,7 @@ pub struct App<'a> {
     status: Status,
     table_service: Rc<RefCell<TableServices<'a>>>,
     filter: Rc<RefCell<Filter<'a>>>,
-    service_log: Rc<RefCell<ServiceLog<'a>>>,
+    details: Rc<RefCell<ServiceDetails<'a>>>,
     event_rx: Receiver<AppEvent>,
     event_tx: Sender<AppEvent>,
 }
@@ -66,7 +67,7 @@ impl App<'_> {
             status: Status::List,
             table_service: Rc::new(RefCell::new(TableServices::new(event_tx.clone()))),
             filter: Rc::new(RefCell::new(Filter::new())),
-            service_log: Rc::new(RefCell::new(ServiceLog::new(event_tx.clone()))),
+            details: Rc::new(RefCell::new(ServiceDetails::new(event_tx.clone()))),
             event_rx,
             event_tx
         }
@@ -82,7 +83,7 @@ impl App<'_> {
 
         let table_service = Rc::clone(&self.table_service);
         let filter = Rc::clone(&self.filter);
-        let service_details = Rc::clone(&self.service_log);
+        let service_details = Rc::clone(&self.details);
 
 
         while self.running {
@@ -95,7 +96,7 @@ impl App<'_> {
                 AppEvent::Key(key) => match self.status {
                     Status::Details => {
                         self.on_key_event(key);
-                        self.service_log.borrow_mut().on_key_event(key)
+                        self.details.borrow_mut().on_key_event(key)
                     },
                     Status::List => {
                         self.on_key_event(key);
@@ -104,28 +105,27 @@ impl App<'_> {
                     }
                 },
                 AppEvent::Action(Actions::Updatelog(log)) => {
-                    self.service_log.borrow_mut().update(log.0, log.1);
-                },
-                AppEvent::Action(Actions::RefreshLog) => {
-                    if self.status == Status::Details {
-                        if let Some(service) = self.table_service.borrow_mut().get_selected_service() {
-                            self.service_log.borrow_mut().fetch_log_and_dispatch(service.clone());
-                        }
-                    }
+                    self.details.borrow_mut().update(log.0, log.1);
                 },
                 AppEvent::Action(Actions::GoLog) => {
                     self.status = Status::Details;
-                    self.event_tx.send(AppEvent::Action(Actions::RefreshLog)).unwrap();
-                    self.service_log.borrow_mut().start_auto_refresh();
+                    self.details.borrow_mut().start_auto_refresh();
                 },
                 AppEvent::Action(Actions::GoList) => self.status = Status::List,
+                AppEvent::Action(Actions::RefreshLog) => {
+                    if self.status == Status::Details {
+                        if let Some(service) = self.table_service.borrow_mut().get_selected_service() {
+                            self.details.borrow_mut().fetch_log_and_dispatch(service.clone());
+                        }
+                    }
+                },
             }
         }
 
         Ok(())
     }
 
-    fn draw_details_status(&mut self,  terminal: &mut DefaultTerminal, service_details: &Rc<RefCell<ServiceLog>>)-> Result<()> {
+    fn draw_details_status(&mut self,  terminal: &mut DefaultTerminal, service_details: &Rc<RefCell<ServiceDetails>>)-> Result<()> {
         terminal.draw(|frame| {
             let area = frame.area();
 
@@ -183,11 +183,17 @@ impl App<'_> {
         frame.render_widget(help_block, help_area);
     }
 
-    fn on_key_event(&mut self, key: KeyEvent) {
-         if let (KeyModifiers::CONTROL, KeyCode::Char('c') | KeyCode::Char('C')) = (key.modifiers, key.code) { 
-            self.quit() 
-        }   
+    fn log(&mut self){
+
     }
+
+    fn on_key_event(&mut self, key: KeyEvent) {
+        match (key.modifiers, key.code) {
+            (KeyModifiers::CONTROL, KeyCode::Char('c') | KeyCode::Char('C')) => self.quit(),
+            _ => {}
+        }
+    }
+
 
     fn quit(&mut self) {
         self.running = false;
