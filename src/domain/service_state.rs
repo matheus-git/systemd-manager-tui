@@ -1,3 +1,4 @@
+#[derive(Clone)]
 pub struct ServiceState {
     load: String,
     active: String,

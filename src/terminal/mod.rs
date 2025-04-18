@@ -1,4 +1,2 @@
-pub mod terminal;
-mod list;
-mod filter;
-mod details;
+pub mod components;
+pub mod app;

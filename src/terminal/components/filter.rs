@@ -9,7 +9,7 @@ use ratatui::{
 use std::rc::Rc;
 use std::cell::RefCell;
 
-use super::super::list::list::TableServices;
+use crate::terminal::components::list::TableServices;
 
 pub struct Filter<'a> {
     pub input: String,

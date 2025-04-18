@@ -8,10 +8,12 @@ use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::style::{Style, Color, Modifier};
 use ratatui::layout::Rect;
 use std::error::Error;
+use std::sync::mpsc::Sender;
 
-use crate::domain::service::service::Service;
+use crate::terminal::app::{Actions, AppEvent};
+use crate::domain::service::Service;
 
-fn generate_rows(services: &Vec<Service>) -> Vec<Row<'static>> {
+fn generate_rows(services: &[Service]) -> Vec<Row<'static>> {
     services 
         .iter()
         .map(|service| {
@@ -41,11 +43,12 @@ pub struct TableServices<'a> {
     pub rows: Vec<Row<'static>>,
     pub services: Vec<Service>,
     old_filter_text: String,
-    ignore_key_events: bool
+    ignore_key_events: bool,
+    sender: Sender<AppEvent>
 }
 
-impl<'a> TableServices<'a> {
-    pub fn new() -> Self {
+impl TableServices<'_> {
+    pub fn new(sender: Sender<AppEvent>) -> Self {
         let (services, rows) = match ServicesManager::list_services() {
             Ok(svcs) => {
                 let rows = generate_rows(&svcs);
@@ -86,6 +89,7 @@ impl<'a> TableServices<'a> {
             table_state,
             rows,
             services,
+            sender,
             old_filter_text: String::new(),
             ignore_key_events: false,
         }
@@ -102,10 +106,10 @@ impl<'a> TableServices<'a> {
     pub fn get_selected_service(&self) -> Option<&Service>{
         if let Some(selected_index) = self.table_state.selected() {
             if let Some(service) = self.services.get(selected_index) {
-                return Some(&service);
+                return Some(service);
             }
         }
-        return None
+        None
     }
 
     pub fn refresh(&mut self, filter_text: String) {
@@ -132,13 +136,46 @@ impl<'a> TableServices<'a> {
         match key.code {
             KeyCode::Down => self.select_next(),
             KeyCode::Up => self.select_previous(),
+            KeyCode::PageDown => self.select_page_down(),
+            KeyCode::PageUp => self.select_page_up(),
             KeyCode::Char('r') => self.act_on_selected_service(ServiceAction::Restart),
             KeyCode::Char('s') => self.act_on_selected_service(ServiceAction::Start),
             KeyCode::Char('e') => self.act_on_selected_service(ServiceAction::Enable),
             KeyCode::Char('d') => self.act_on_selected_service(ServiceAction::Disable),
             KeyCode::Char('u') => self.act_on_selected_service(ServiceAction::RefreshAll),
             KeyCode::Char('x') => self.act_on_selected_service(ServiceAction::Stop),
+            KeyCode::Char('v') => self.sender.send(AppEvent::Action(Actions::GoLog)).unwrap(),
             _ => {}
+        }
+    }
+
+    fn select_page_down(&mut self) {
+        let jump = 10;
+        if let Some(selected_index) = self.table_state.selected() {
+            let new_index = selected_index + jump;
+            let wrapped_index = if new_index >= self.rows.len() {
+                (new_index) % self.rows.len()
+            } else {
+                new_index
+            };
+            self.table_state.select(Some(wrapped_index));
+        } else {
+            self.table_state.select(Some(0));
+        }
+    }
+
+    fn select_page_up(&mut self) {
+        let jump = 10;
+        if let Some(selected_index) = self.table_state.selected() {
+            let new_index = selected_index as isize - jump as isize;
+            let wrapped_index = if new_index < 0 {
+                (self.rows.len() as isize + new_index % self.rows.len() as isize) as usize
+            } else {
+                new_index as usize
+            };
+            self.table_state.select(Some(wrapped_index));
+        } else {
+            self.table_state.select(Some(0));
         }
     }
 
@@ -171,11 +208,11 @@ impl<'a> TableServices<'a> {
     fn act_on_selected_service(&mut self, action: ServiceAction) {
         if let Some(service) = self.get_selected_service() {
             match action {
-                ServiceAction::Start => self.handle_result(ServicesManager::start_service(&service)),
-                ServiceAction::Stop => self.handle_result(ServicesManager::stop_service(&service)),
-                ServiceAction::Restart => self.handle_result(ServicesManager::restart_service(&service)),
-                ServiceAction::Enable => self.handle_result(ServicesManager::enable_service(&service)),
-                ServiceAction::Disable => self.handle_result(ServicesManager::disable_service(&service)),
+                ServiceAction::Start => self.handle_result(ServicesManager::start_service(service)),
+                ServiceAction::Stop => self.handle_result(ServicesManager::stop_service(service)),
+                ServiceAction::Restart => self.handle_result(ServicesManager::restart_service(service)),
+                ServiceAction::Enable => self.handle_result(ServicesManager::enable_service(service)),
+                ServiceAction::Disable => self.handle_result(ServicesManager::disable_service(service)),
                 ServiceAction::RefreshAll => self.refresh(self.old_filter_text.clone()),
             }
         }
