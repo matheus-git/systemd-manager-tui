@@ -96,7 +96,7 @@ impl TableServices<'_> {
     }
 
     pub fn render(&mut self, frame: &mut Frame, area: Rect){
-        frame.render_stateful_widget(self.table.clone(), area, &mut self.table_state);
+        frame.render_stateful_widget(&self.table, area, &mut self.table_state);
     }
 
     pub fn toogle_ignore_key_events(&mut self, has_ignore_key_events: bool){
@@ -145,6 +145,7 @@ impl TableServices<'_> {
             KeyCode::Char('u') => self.act_on_selected_service(ServiceAction::RefreshAll),
             KeyCode::Char('x') => self.act_on_selected_service(ServiceAction::Stop),
             KeyCode::Char('v') => self.sender.send(AppEvent::Action(Actions::GoLog)).unwrap(),
+            KeyCode::Char('p') => self.sender.send(AppEvent::Action(Actions::GoDetails)).unwrap(),
             _ => {}
         }
     }

@@ -16,19 +16,23 @@ use std::cell::RefCell;
 use super::components::list::TableServices;
 use super::components::filter::Filter;
 use super::components::log::ServiceLog;
+use super::components::details::ServiceDetails;
 
 #[derive(PartialEq)]
 enum Status {
     List,
+    Log,
     Details
 }
 
-#[derive(PartialEq)]
 pub enum Actions {
     RefreshLog,
+    RefreshDetails,
     GoList,
     GoLog,
-    Updatelog((String, String))
+    GoDetails,
+    Updatelog((String, String)),
+    UpdateDetails
 }
 
 pub enum AppEvent {
@@ -54,6 +58,7 @@ pub struct App<'a> {
     table_service: Rc<RefCell<TableServices<'a>>>,
     filter: Rc<RefCell<Filter<'a>>>,
     service_log: Rc<RefCell<ServiceLog<'a>>>,
+    details: Rc<RefCell<ServiceDetails>>,
     event_rx: Receiver<AppEvent>,
     event_tx: Sender<AppEvent>,
 }
@@ -67,6 +72,7 @@ impl App<'_> {
             table_service: Rc::new(RefCell::new(TableServices::new(event_tx.clone()))),
             filter: Rc::new(RefCell::new(Filter::new())),
             service_log: Rc::new(RefCell::new(ServiceLog::new(event_tx.clone()))),
+            details: Rc::new(RefCell::new(ServiceDetails::new(event_tx.clone()))),
             event_rx,
             event_tx
         }
@@ -82,18 +88,20 @@ impl App<'_> {
 
         let table_service = Rc::clone(&self.table_service);
         let filter = Rc::clone(&self.filter);
-        let service_details = Rc::clone(&self.service_log);
+        let log = Rc::clone(&self.service_log);
+        let details = Rc::clone(&self.details);
 
 
         while self.running {
             match self.status {
-                Status::Details => self.draw_details_status(&mut terminal, &service_details)?,
-                Status::List => self.draw_list_status(&mut terminal, &filter, &table_service)?
+                Status::Log => self.draw_log_status(&mut terminal, &log)?,
+                Status::List => self.draw_list_status(&mut terminal, &filter, &table_service)?,
+                Status::Details => self.draw_details_status(&mut terminal, &details)?
             } 
 
             match self.event_rx.recv()? {
                 AppEvent::Key(key) => match self.status {
-                    Status::Details => {
+                    Status::Log => {
                         self.on_key_event(key);
                         self.service_log.borrow_mut().on_key_event(key)
                     },
@@ -101,31 +109,50 @@ impl App<'_> {
                         self.on_key_event(key);
                         self.table_service.borrow_mut().on_key_event(key);
                         self.filter.borrow_mut().on_key_event(key);
+                    },
+                    Status::Details => {
+                        self.on_key_event(key);
+                        self.details.borrow_mut().on_key_event(key);
                     }
                 },
                 AppEvent::Action(Actions::Updatelog(log)) => {
                     self.service_log.borrow_mut().update(log.0, log.1);
                 },
                 AppEvent::Action(Actions::RefreshLog) => {
-                    if self.status == Status::Details {
+                    if self.status == Status::Log {
                         if let Some(service) = self.table_service.borrow_mut().get_selected_service() {
                             self.service_log.borrow_mut().fetch_log_and_dispatch(service.clone());
                         }
                     }
                 },
                 AppEvent::Action(Actions::GoLog) => {
-                    self.status = Status::Details;
+                    self.status = Status::Log;
                     self.event_tx.send(AppEvent::Action(Actions::RefreshLog)).unwrap();
                     self.service_log.borrow_mut().start_auto_refresh();
                 },
                 AppEvent::Action(Actions::GoList) => self.status = Status::List,
+                AppEvent::Action(Actions::UpdateDetails) => {
+                },
+                AppEvent::Action(Actions::RefreshDetails) => {
+                    if self.status == Status::Details {
+                        self.details.borrow_mut().fetch_log_and_dispatch();
+                    }
+                },
+                AppEvent::Action(Actions::GoDetails) => {
+                    if let Some(service) = self.table_service.borrow_mut().get_selected_service() {
+                        self.details.borrow_mut().update(service.clone());
+                    }
+                    self.event_tx.send(AppEvent::Action(Actions::RefreshDetails)).unwrap();
+                    self.status = Status::Details;
+                    self.details.borrow_mut().start_auto_refresh();
+                }
             }
         }
 
         Ok(())
     }
 
-    fn draw_details_status(&mut self,  terminal: &mut DefaultTerminal, service_details: &Rc<RefCell<ServiceLog>>)-> Result<()> {
+    fn draw_details_status(&mut self,  terminal: &mut DefaultTerminal, service_details: &Rc<RefCell<ServiceDetails>>)-> Result<()> {
         terminal.draw(|frame| {
             let area = frame.area();
 
@@ -137,6 +164,23 @@ impl App<'_> {
 
             service_details.borrow_mut().render(frame, list_box);
             service_details.borrow_mut().draw_shortcuts(frame, help_area_box);                
+        })?;
+
+        Ok(())
+    }
+
+    fn draw_log_status(&mut self,  terminal: &mut DefaultTerminal, service_log: &Rc<RefCell<ServiceLog>>)-> Result<()> {
+        terminal.draw(|frame| {
+            let area = frame.area();
+
+            let [list_box, help_area_box] = Layout::vertical([
+                Constraint::Min(0),     
+                Constraint::Length(6),  
+            ])
+                .areas(area);
+
+            service_log.borrow_mut().render(frame, list_box);
+            service_log.borrow_mut().draw_shortcuts(frame, help_area_box);                
         })?;
 
         Ok(())
@@ -167,7 +211,7 @@ impl App<'_> {
             Line::from(vec![
                 Span::styled("Actions on the selected service", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
             ]),
-            Line::from("Navigate: ↑/↓ | Start: s | Stop: x | Restart: r | Enable: e | Disable: d | Refresh all: u | View logs: v"),
+            Line::from("Navigate: ↑/↓ | Start: s | Stop: x | Restart: r | Enable: e | Disable: d | Refresh all: u | View logs: v | Properties: p"),
             Line::from(""),
             Line::from(""),
             Line::from(vec![
@@ -184,7 +228,7 @@ impl App<'_> {
     }
 
     fn on_key_event(&mut self, key: KeyEvent) {
-         if let (KeyModifiers::CONTROL, KeyCode::Char('c') | KeyCode::Char('C')) = (key.modifiers, key.code) { 
+        if let (KeyModifiers::CONTROL, KeyCode::Char('c') | KeyCode::Char('C')) = (key.modifiers, key.code) { 
             self.quit() 
         }   
     }
