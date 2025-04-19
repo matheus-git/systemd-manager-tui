@@ -32,6 +32,7 @@ impl BorderColor {
 
 pub struct ServiceLog<'a> {
     log_paragraph: Option<Paragraph<'a>>,
+    log_block: Option<Block<'a>>,
     border_color: BorderColor,
     service_name: String,
     scroll: u16,
@@ -43,6 +44,7 @@ impl ServiceLog<'_> {
     pub fn new(sender: Sender<AppEvent>) -> Self {
         Self {
             log_paragraph: None,
+            log_block: None,
             border_color: BorderColor::White,
             service_name: String::new(),
             scroll: 0,
@@ -83,20 +85,16 @@ impl ServiceLog<'_> {
     }
 
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
-        if self.log_paragraph.is_none() {
+        if self.log_paragraph.is_none() || self.log_block.is_none(){
             self.render_loading(frame, area);
             return;
         }
 
+        let log_block = self.log_block.clone().unwrap();
         let paragraph = self.log_paragraph.clone().unwrap()
             .scroll((self.scroll, 0))
-            .block(
-                Block::default()
-                    .title(format!(" {} logs (newest at the top) ", self.service_name))
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(self.border_color.to_color()))
-                    .title_alignment(Alignment::Center),
-            );
+            .block(log_block);
+        
         frame.render_widget(paragraph, area);
     }
 
@@ -118,6 +116,13 @@ impl ServiceLog<'_> {
         } else {
             BorderColor::White
         };
+
+        self.log_block = Some(Block::default()
+            .title(format!(" {} logs (newest at the top) ", self.service_name))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(self.border_color.to_color()))
+            .title_alignment(Alignment::Center)
+        );
 
         if let Ok(mut auto) = self.auto_refresh.lock() {
             *auto = value;
@@ -219,6 +224,13 @@ impl ServiceLog<'_> {
         self.service_name = service_name;
         self.log_paragraph = Some(Paragraph::new(self.reversed_log(log))  
             .wrap(Wrap { trim: false}));
+        self.log_block = Some(Block::default()
+            .title(format!(" {} logs (newest at the top) ", self.service_name))
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(self.border_color.to_color()))
+            .title_alignment(Alignment::Center)
+        );
+
     }
 
     pub fn reversed_log(&self, log: String) -> String {

@@ -18,7 +18,7 @@ impl ServicesManager {
     pub fn stop_service(service: &Service) -> Result<(), Box<dyn Error>> {
         SystemdServiceAdapter.stop_service(service.name())?;
         thread::sleep(Duration::from_millis(SLEEP_DURATION));
-        Ok(())
+        Ok(()) 
     }
 
     pub fn restart_service(service: &Service) -> Result<(), Box<dyn Error>> {
@@ -46,6 +46,12 @@ impl ServicesManager {
         services.sort_by_key(|a| a.name().to_lowercase());
         Ok(services)
     }   
+
+    pub fn update_properties(service: &mut Service) -> Result<(), Box<dyn Error>> {
+        let service_property = SystemdServiceAdapter.get_service_property(service.name())?;
+        let _ = &service.update_properties(service_property);
+        Ok(())
+    }
 
     pub fn get_log(service: &Service) -> Result<String, Box<dyn Error>> {
         let log = SystemdServiceAdapter.get_service_log(service.name())?;
