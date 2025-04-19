@@ -157,7 +157,7 @@ impl ServiceDetails {
                     let paragraph = Paragraph::new(Text::from(lines))
                         .block(
                             Block::default().borders(Borders::ALL)
-                                .title(format!("{} properties", service.name()))
+                                .title(format!(" {} properties ", service.name()))
                                 .title_alignment(Alignment::Center)
                         )
                         .scroll((self.scroll, 0));
@@ -190,6 +190,14 @@ impl ServiceDetails {
 
     pub fn on_key_event(&mut self, key: KeyEvent) {
         match key.code {
+            KeyCode::Right => {
+                self.reset();
+                self.sender.send(AppEvent::Action(Actions::GoLog)).unwrap();
+            }
+            KeyCode::Left => {
+                self.reset();
+                self.sender.send(AppEvent::Action(Actions::GoLog)).unwrap();
+            }
             KeyCode::Up => {
                 self.scroll = self.scroll.saturating_sub(1);
             }
@@ -216,7 +224,7 @@ impl ServiceDetails {
             Line::from(vec![
                 Span::styled("Actions", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
             ]),
-            Line::from("Go back: q"),
+            Line::from("Switch tabs: ←/→ | Go back: q"),
             Line::from(""),
             Line::from(vec![
                 Span::styled("Exit", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),

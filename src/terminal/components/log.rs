@@ -131,6 +131,14 @@ impl ServiceLog<'_> {
 
     pub fn on_key_event(&mut self, key: KeyEvent) {
         match key.code {
+            KeyCode::Right => {
+                self.reset();
+                self.sender.send(AppEvent::Action(Actions::GoDetails)).unwrap();
+            }
+            KeyCode::Left => {
+                self.reset();
+                self.sender.send(AppEvent::Action(Actions::GoDetails)).unwrap();
+            }
             KeyCode::Up => {
                 self.scroll = self.scroll.saturating_sub(1);
             }
@@ -163,7 +171,7 @@ impl ServiceLog<'_> {
             Line::from(vec![
                 Span::styled("Actions", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
             ]),
-            Line::from(format!("Scroll: ↑/↓ | {}: a | Go back: q", auto_refresh_label)),
+            Line::from(format!("Scroll: ↑/↓ | Switch tabs: ←/→ | {}: a | Go back: q", auto_refresh_label)),
             Line::from(""),
             Line::from(vec![
                 Span::styled("Exit", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
