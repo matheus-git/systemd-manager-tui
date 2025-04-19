@@ -40,7 +40,6 @@ Must be run as sudo (or root).
 ## Future Improvements
 
 - Monitor CPU and memory usage per service
-- View detailed information for each service
 - Display user-specific systemd services
 - Remotely manage services
 
