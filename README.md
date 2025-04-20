@@ -8,7 +8,7 @@ The available operations include viewing logs, listing, starting, stopping, rest
 
 ## Screenshots
 ![screenshot1](assets/screeshot1.png)
-![screenshot2](assets/screeshot2.png)
+View more [screenshots](docs/screenshots.md)
 
 ## Usage
 
