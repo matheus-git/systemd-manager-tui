@@ -38,7 +38,7 @@ See the architecture [here](docs/architecture.md).
 
 ## New features and properties
 
-To suggest a new service detail or feature, open an issue and choose the appropriate template. You can check all available methods and properties on D-Bus [here](https://www.freedesktop.org/software/systemd/man/latest/org.freedesktop.systemd1.html).
+To suggest a new service info or feature, open an issue and choose the appropriate template. You can check all available methods and properties on D-Bus [here](https://www.freedesktop.org/software/systemd/man/latest/org.freedesktop.systemd1.html).
 
 ## Main libraries
 
