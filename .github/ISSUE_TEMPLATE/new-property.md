@@ -1,5 +1,5 @@
 ---
-name: New property template
+name: New property
 about: Request for adding a service property
 title: ''
 labels: enhancement
