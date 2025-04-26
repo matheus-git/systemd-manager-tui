@@ -6,6 +6,7 @@ use ratatui::{
 use crate::usecases::services_manager::ServicesManager;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::style::{Style, Color, Modifier};
+use ratatui::text::{Line, Span};
 use ratatui::layout::Rect;
 use std::error::Error;
 use std::sync::mpsc::Sender;
@@ -43,7 +44,7 @@ pub struct TableServices<'a> {
     pub rows: Vec<Row<'static>>,
     pub services: Vec<Service>,
     old_filter_text: String,
-    ignore_key_events: bool,
+    pub ignore_key_events: bool,
     sender: Sender<AppEvent>
 }
 
@@ -99,7 +100,22 @@ impl TableServices<'_> {
         frame.render_stateful_widget(&self.table, area, &mut self.table_state);
     }
 
-    pub fn toogle_ignore_key_events(&mut self, has_ignore_key_events: bool){
+    pub fn set_ignore_key_events(&mut self, has_ignore_key_events: bool){
+        if has_ignore_key_events {
+             self.table = self.table.clone().row_highlight_style(
+                Style::default()
+                    .bg(Color::LightBlue)
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            );
+        }else {
+            self.table = self.table.clone().row_highlight_style(
+                Style::default()
+                    .bg(Color::Blue)
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            );
+        }
         self.ignore_key_events = has_ignore_key_events
     }
 
@@ -116,6 +132,10 @@ impl TableServices<'_> {
         self.old_filter_text = filter_text.clone();
         self.services = self.filter_services(&filter_text);
         self.rows = generate_rows(&self.services);
+
+        if self.table_state.selected().is_none() && !self.rows.is_empty() {
+            self.table_state.select(Some(0));
+        }
         self.table = self.table.clone().rows(self.rows.clone());
     }
 
@@ -225,6 +245,24 @@ impl TableServices<'_> {
             Ok(_) => {},
             Err(e) => {panic!("{e}")}
         }
+    }
+
+    pub fn shortcuts(&mut self) -> Vec<Line<'_>> {
+        let mut help_text: Vec<Line<'_>> = Vec::new(); 
+        if !self.ignore_key_events {
+            help_text.push(Line::from(Span::styled(
+                "Actions on the selected service",
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            )));
+
+            help_text.push(Line::from(
+                "Navigate: ↑/↓ | Start: s | Stop: x | Restart: r | Enable: e | Disable: d | Refresh all: u | View logs: v | Properties: p"
+            ));
+            help_text.push(Line::from(""));
+            help_text.push(Line::from(""));
+        }
+
+        help_text 
     }
 }
 

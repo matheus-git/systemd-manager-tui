@@ -1,21 +1,20 @@
 use ratatui::{
     crossterm::event::{KeyEvent, KeyCode, KeyEventKind},
-    layout::{Constraint, Layout, Rect},
+    layout::{Constraint, Layout, Rect, Position},
     style::{Color, Style, Stylize},
     text::{Line, Text},
     widgets::{Block, Paragraph},
     Frame,
 };
-use std::rc::Rc;
-use std::cell::RefCell;
+use std::sync::mpsc::Sender;
 
-use crate::terminal::components::list::TableServices;
+use crate::terminal::app::{Actions, AppEvent};
 
-pub struct Filter<'a> {
+pub struct Filter {
     pub input: String,
     character_index: usize,
     pub input_mode: InputMode,
-    table_service: Option<Rc<RefCell<TableServices<'a>>>>,
+    sender: Sender<AppEvent>,
 }
 
 #[derive(PartialEq)]
@@ -24,19 +23,16 @@ pub enum InputMode {
     Editing,
 }
 
-impl<'a> Filter<'a> {
-    pub const fn new() -> Self {
+impl Filter {
+    pub const fn new(sender: Sender<AppEvent>) -> Self {
         Self {
+            sender,
             input: String::new(),
             input_mode: InputMode::Normal,
             character_index: 0,
-            table_service: None
         }
     }
 
-    pub fn set_table_service(&mut self, ts: Rc<RefCell<TableServices<'a>>>) {
-        self.table_service = Some(ts);
-    }
     fn move_cursor_left(&mut self) {
         let cursor_moved_left = self.character_index.saturating_sub(1);
         self.character_index = self.clamp_cursor(cursor_moved_left);
@@ -82,48 +78,38 @@ impl<'a> Filter<'a> {
     }
 
     fn submit_message(&mut self) {
-        if let Some(ref ts) = self.table_service {
-            let mut ts_mut = ts.borrow_mut();
-            ts_mut.toogle_ignore_key_events(false);
-            ts_mut.refresh(self.input.clone());
+        self.sender.send(AppEvent::Action(Actions::Filter(self.input.clone()))).unwrap();
+        self.sender.send(AppEvent::Action(Actions::UpdateIgnoreListKeys(false))).unwrap();
         self.input_mode = InputMode::Normal
-        }
     }
 
     pub fn on_key_event(&mut self, key: KeyEvent) {
         match self.input_mode {
             InputMode::Normal => match key.code {
                 KeyCode::Char('i') => {
-                    if let Some(ref ts) = self.table_service {
-                        let mut ts_mut = ts.borrow_mut();
-                        ts_mut.toogle_ignore_key_events(true);
-                    }
+                    self.sender.send(AppEvent::Action(Actions::UpdateIgnoreListKeys(true))).unwrap();
                     self.input_mode = InputMode::Editing;
                 }
                 KeyCode::Esc => {
                     self.input = String::new();
-                    if let Some(ref ts) = self.table_service {
-                        let mut ts_mut = ts.borrow_mut();
-                        ts_mut.toogle_ignore_key_events(false);
-                        ts_mut.refresh(self.input.clone());
-                    }
+                    self.sender.send(AppEvent::Action(Actions::Filter(self.input.clone()))).unwrap();
+                    self.sender.send(AppEvent::Action(Actions::UpdateIgnoreListKeys(false))).unwrap();
                 },
                 _ => {}
             },
-            InputMode::Editing if key.kind == KeyEventKind::Press => match key.code {
-                KeyCode::Enter => self.submit_message(),
-                KeyCode::Char(to_insert) => self.enter_char(to_insert),
-                KeyCode::Backspace => self.delete_char(),
-                KeyCode::Left => self.move_cursor_left(),
-                KeyCode::Right => self.move_cursor_right(),
-                KeyCode::Esc => self.input_mode = {
-                    if let Some(ref ts) = self.table_service {
-                        let mut ts_mut = ts.borrow_mut();
-                        ts_mut.toogle_ignore_key_events(false);
-                    }
-                    InputMode::Normal
-                },
-                _ => {}
+            InputMode::Editing if key.kind == KeyEventKind::Press => {
+                match key.code {
+                    KeyCode::Enter => self.submit_message(),
+                    KeyCode::Char(to_insert) => self.enter_char(to_insert),
+                    KeyCode::Backspace => self.delete_char(),
+                    KeyCode::Left => self.move_cursor_left(),
+                    KeyCode::Right => self.move_cursor_right(),
+                    KeyCode::Esc => {
+                        self.sender.send(AppEvent::Action(Actions::UpdateIgnoreListKeys(false))).unwrap();
+                        self.input_mode = InputMode::Normal;
+                    },
+                    _ => {}
+                }
             },
             InputMode::Editing => {}
         }
@@ -167,5 +153,13 @@ impl<'a> Filter<'a> {
             })
             .block(Block::bordered().title("Input"));
         frame.render_widget(input, input_area);
+         match self.input_mode {
+            InputMode::Normal => {}
+            #[allow(clippy::cast_possible_truncation)]
+            InputMode::Editing => frame.set_cursor_position(Position::new(
+                input_area.x + self.character_index as u16 + 1,
+                input_area.y + 1,
+            )),
+        }
     }
 }

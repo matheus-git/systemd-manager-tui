@@ -160,31 +160,24 @@ impl ServiceLog<'_> {
         }
     }
 
-    pub fn draw_shortcuts(&mut self, frame: &mut Frame, help_area: Rect){
-        let is_refreshing = self.auto_refresh.lock().map(|r| *r).unwrap_or(false);
-        let mut auto_refresh_label = "Enable auto-refresh";
-        if is_refreshing {
-            auto_refresh_label = "Disable auto-refresh";
-        }
-
-        let help_text = vec![
-            Line::from(vec![
-                Span::styled("Actions", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-            ]),
-            Line::from(format!("Scroll: ↑/↓ | Switch tabs: ←/→ | {}: a | Go back: q", auto_refresh_label)),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("Exit", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-                Span::raw(": Ctrl + c"),
-            ]),
-        ];
-
-        let help_block = Paragraph::new(help_text)
-            .block(Block::default().title("Shortcuts").borders(Borders::ALL))
-            .wrap(ratatui::widgets::Wrap { trim: true });
-
-        frame.render_widget(help_block, help_area);
+pub fn shortcuts(&mut self) -> Vec<Line<'_>> {
+    let is_refreshing = self.auto_refresh.lock().map(|r| *r).unwrap_or(false);
+    let mut auto_refresh_label = "Enable auto-refresh";
+    if is_refreshing {
+        auto_refresh_label = "Disable auto-refresh";
     }
+
+    let help_text = vec![
+        Line::from(vec![
+            Span::styled("Actions", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from(format!("Scroll: ↑/↓ | Switch tabs: ←/→ | {}: a | Go back: q", auto_refresh_label)),
+        Line::from(""),
+        Line::from(""),
+    ];
+
+    help_text
+}
 
     pub fn start_auto_refresh(&mut self) {
         self.set_auto_refresh(true);

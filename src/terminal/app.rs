@@ -32,7 +32,9 @@ pub enum Actions {
     GoLog,
     GoDetails,
     Updatelog((String, String)),
-    UpdateDetails
+    UpdateDetails,
+    Filter(String),
+    UpdateIgnoreListKeys(bool)
 }
 
 pub enum AppEvent {
@@ -56,7 +58,7 @@ pub struct App<'a> {
     running: bool,
     status: Status,
     table_service: Rc<RefCell<TableServices<'a>>>,
-    filter: Rc<RefCell<Filter<'a>>>,
+    filter: Rc<RefCell<Filter>>,
     service_log: Rc<RefCell<ServiceLog<'a>>>,
     details: Rc<RefCell<ServiceDetails>>,
     event_rx: Receiver<AppEvent>,
@@ -70,7 +72,7 @@ impl App<'_> {
             running: true,
             status: Status::List,
             table_service: Rc::new(RefCell::new(TableServices::new(event_tx.clone()))),
-            filter: Rc::new(RefCell::new(Filter::new())),
+            filter: Rc::new(RefCell::new(Filter::new(event_tx.clone()))),
             service_log: Rc::new(RefCell::new(ServiceLog::new(event_tx.clone()))),
             details: Rc::new(RefCell::new(ServiceDetails::new(event_tx.clone()))),
             event_rx,
@@ -79,7 +81,6 @@ impl App<'_> {
     }
 
     pub fn init(&mut self) {
-        self.filter.borrow_mut().set_table_service(Rc::clone(&self.table_service));
         spawn_key_event_listener(self.event_tx.clone());
     }
 
@@ -114,6 +115,12 @@ impl App<'_> {
                         self.on_key_event(key);
                         self.details.borrow_mut().on_key_event(key);
                     }
+                },
+                AppEvent::Action(Actions::UpdateIgnoreListKeys(bool)) => {
+                    self.table_service.borrow_mut().set_ignore_key_events(bool);
+                }
+                AppEvent::Action(Actions::Filter(input)) => {
+                    self.table_service.borrow_mut().refresh(input); 
                 },
                 AppEvent::Action(Actions::Updatelog(log)) => {
                     self.service_log.borrow_mut().update(log.0, log.1);
@@ -153,40 +160,44 @@ impl App<'_> {
     }
 
     fn draw_details_status(&mut self,  terminal: &mut DefaultTerminal, service_details: &Rc<RefCell<ServiceDetails>>)-> Result<()> {
+        let mut service_details = service_details.borrow_mut();
         terminal.draw(|frame| {
             let area = frame.area();
 
             let [list_box, help_area_box] = Layout::vertical([
                 Constraint::Min(0),     
-                Constraint::Length(6),  
+                Constraint::Length(7),  
             ])
                 .areas(area);
 
-            service_details.borrow_mut().render(frame, list_box);
-            service_details.borrow_mut().draw_shortcuts(frame, help_area_box);                
+            service_details.render(frame, list_box);
+            self.draw_shortcuts(frame, help_area_box, service_details.shortcuts());                
         })?;
 
         Ok(())
     }
 
     fn draw_log_status(&mut self,  terminal: &mut DefaultTerminal, service_log: &Rc<RefCell<ServiceLog>>)-> Result<()> {
+        let mut service_log = service_log.borrow_mut();
         terminal.draw(|frame| {
             let area = frame.area();
 
             let [list_box, help_area_box] = Layout::vertical([
                 Constraint::Min(0),     
-                Constraint::Length(6),  
+                Constraint::Length(7),  
             ])
                 .areas(area);
 
-            service_log.borrow_mut().render(frame, list_box);
-            service_log.borrow_mut().draw_shortcuts(frame, help_area_box);                
+            service_log.render(frame, list_box);
+            self.draw_shortcuts(frame, help_area_box, service_log.shortcuts());                
         })?;
 
         Ok(())
     }
 
     fn draw_list_status(&mut self, terminal: &mut DefaultTerminal, filter: &Rc<RefCell<Filter>>, table_service: &Rc<RefCell<TableServices>>)-> Result<()>{
+        let filter = filter.borrow_mut();
+        let mut table = table_service.borrow_mut();
         terminal.draw(|frame| {
             let area = frame.area();
 
@@ -197,28 +208,25 @@ impl App<'_> {
             ])
                 .areas(area);
 
-            filter.borrow_mut().draw(frame, filter_box);
-            table_service.borrow_mut().render(frame, list_box);
-            self.draw_shortcuts(frame, help_area_box);                
+            filter.draw(frame, filter_box);
+            table.render(frame, list_box);
+            self.draw_shortcuts(frame, help_area_box, table.shortcuts());                
         })?;
 
         Ok(())
     }
 
+    fn draw_shortcuts(&mut self, frame: &mut Frame, help_area: Rect, shortcuts: Vec<Line<'_>>) {
+        let mut help_text: Vec<Line<'_>> = Vec::new(); 
 
-    fn draw_shortcuts(&mut self, frame: &mut Frame, help_area: Rect){
-        let help_text = vec![
-            Line::from(vec![
-                Span::styled("Actions on the selected service", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-            ]),
-            Line::from("Navigate: ↑/↓ | Start: s | Stop: x | Restart: r | Enable: e | Disable: d | Refresh all: u | View logs: v | Properties: p"),
-            Line::from(""),
-            Line::from(""),
+        help_text.extend(shortcuts); 
+
+        help_text.push(
             Line::from(vec![
                 Span::styled("Exit", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
                 Span::raw(": Ctrl + c"),
-            ]),
-        ];
+            ])
+        );
 
         let help_block = Paragraph::new(help_text)
             .block(Block::default().title("Shortcuts").borders(Borders::ALL))
