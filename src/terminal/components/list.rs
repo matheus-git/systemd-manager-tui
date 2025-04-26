@@ -103,7 +103,7 @@ impl TableServices<'_> {
         if has_ignore_key_events {
              self.table = self.table.clone().row_highlight_style(
                 Style::default()
-                    .bg(Color::DarkGray)
+                    .bg(Color::LightBlue)
                     .fg(Color::White)
                     .add_modifier(Modifier::BOLD),
             );
