@@ -1,5 +1,5 @@
 # Screenshots
 
-![screenshot1](../assets/screeshot1.png)
-![screenshot2](../assets/screeshot2.png)
-![screenshot3](../assets/screenshot_properties.png)
+![screenshot_list](../assets/screenshot_list.png)
+![screenshot_log](../assets/screenshot_log.png)
+![screenshot_properties](../assets/screenshot_properties.png)
