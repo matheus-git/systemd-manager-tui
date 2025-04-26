@@ -2,3 +2,4 @@
 
 ![screenshot1](../assets/screeshot1.png)
 ![screenshot2](../assets/screeshot2.png)
+![screenshot3](../assets/screenshot_properties.png)
