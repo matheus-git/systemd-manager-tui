@@ -18,6 +18,10 @@ impl Service {
         &self.name
     }
 
+    pub fn formatted_name(&self) -> &str {
+        self.name.strip_suffix(".service").unwrap_or(&self.name)
+    }
+
     pub fn description(&self) -> &str {
         &self.description
     }

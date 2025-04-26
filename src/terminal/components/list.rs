@@ -1,7 +1,7 @@
 use ratatui::{
     Frame,
     layout::Constraint,
-    widgets::{Block, Borders, Row, Table, TableState},
+    widgets::{Cell, Block, Borders, Row, Table, TableState},
 };
 use crate::usecases::services_manager::ServicesManager;
 use crossterm::event::{KeyCode, KeyEvent};
@@ -16,15 +16,25 @@ use crate::terminal::app::{Actions, AppEvent};
 use crate::domain::service::Service;
 
 fn generate_rows(services: &[Service]) -> Vec<Row<'static>> {
-    services 
+    services
         .iter()
         .map(|service| {
+            let highlight_style = Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD);
+            let normal_style = Style::default().fg(Color::Gray);
+
+            let state_style = match service.state().active() {
+                "active" => Style::default().fg(Color::Green),    
+                "activating" => Style::default().fg(Color::Yellow), 
+                _ => Style::default().fg(Color::Red),     
+            };
+
             Row::new(vec![
-                service.name().to_string(),
-                format!("{} ({})",service.state().active(), service.state().sub() ),
-                service.state().file().to_string(),
-                service.state().load().to_string(),
-                service.description().to_string(),
+                Cell::from(service.formatted_name().to_string()).style(highlight_style),
+                Cell::from(format!("{} ({})", service.state().active(), service.state().sub()))
+                    .style(state_style),
+                Cell::from(service.state().file().to_string()).style(normal_style),
+                Cell::from(service.state().load().to_string()).style(normal_style),
+                Cell::from(service.description().to_string()).style(normal_style),
             ])
         })
         .collect()
@@ -157,7 +167,7 @@ impl TableServices<'_> {
 
     fn filter(&self, filter_text: String, services: Vec<Service>) -> Vec<Service> {
         let lower_filter = filter_text.to_lowercase();
-        services.into_iter().filter(|service| service.name().to_lowercase().contains(&lower_filter)).collect()
+        services.into_iter().filter(|service| service.formatted_name().to_lowercase().contains(&lower_filter)).collect()
     }
 
     pub fn on_key_event(&mut self, key: KeyEvent) {
@@ -264,7 +274,7 @@ impl TableServices<'_> {
         if !self.ignore_key_events {
             help_text.push(Line::from(Span::styled(
                 "Actions on the selected service",
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                Style::default().fg(Color::LightMagenta).add_modifier(Modifier::BOLD),
             )));
 
             help_text.push(Line::from(
