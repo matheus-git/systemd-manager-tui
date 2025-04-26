@@ -3,7 +3,7 @@ use ratatui::{
     layout::Constraint,
     widgets::{Block, Borders, Row, Table, TableState},
 };
-use crate::{domain::service, usecases::services_manager::ServicesManager};
+use crate::usecases::services_manager::ServicesManager;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::style::{Style, Color, Modifier};
 use ratatui::text::{Line, Span};

@@ -6,7 +6,6 @@ use ratatui::widgets::{Paragraph, Block, Borders};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::Frame;
-use core::panic;
 use std::sync::mpsc::{self, Sender, Receiver};
 use std::thread;
 use std::time::Duration;
@@ -167,7 +166,7 @@ impl App<'_> {
 
             let [list_box, help_area_box] = Layout::vertical([
                 Constraint::Min(0),     
-                Constraint::Length(7),  
+                Constraint::Max(7),  
             ])
                 .areas(area);
 
@@ -185,7 +184,7 @@ impl App<'_> {
 
             let [list_box, help_area_box] = Layout::vertical([
                 Constraint::Min(0),     
-                Constraint::Length(7),  
+                Constraint::Max(7),  
             ])
                 .areas(area);
 
