@@ -222,7 +222,7 @@ impl ServiceDetails {
     pub fn shortcuts(&mut self) -> Vec<Line<'_>> {
     let help_text = vec![
         Line::from(vec![
-            Span::styled("Actions", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled("Actions", Style::default().fg(Color::LightMagenta).add_modifier(Modifier::BOLD)),
         ]),
         Line::from("Switch tabs: ←/→ | Go back: q"),
     ];

@@ -169,7 +169,7 @@ pub fn shortcuts(&mut self) -> Vec<Line<'_>> {
 
     let help_text = vec![
         Line::from(vec![
-            Span::styled("Actions", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+            Span::styled("Actions", Style::default().fg(Color::LightMagenta).add_modifier(Modifier::BOLD)),
         ]),
         Line::from(format!("Scroll: ↑/↓ | Switch tabs: ←/→ | {}: a | Go back: q", auto_refresh_label)),
     ];
