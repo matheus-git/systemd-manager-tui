@@ -6,6 +6,7 @@ use ratatui::widgets::{Paragraph, Block, Borders};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::text::{Line, Span};
 use ratatui::Frame;
+use core::panic;
 use std::sync::mpsc::{self, Sender, Receiver};
 use std::thread;
 use std::time::Duration;
@@ -204,7 +205,7 @@ impl App<'_> {
             let [filter_box, list_box, help_area_box] = Layout::vertical([
                 Constraint::Length(4),    
                 Constraint::Min(10),     
-                Constraint::Length(7),  
+                Constraint::Max(7),  
             ])
                 .areas(area);
 
@@ -218,8 +219,16 @@ impl App<'_> {
 
     fn draw_shortcuts(&mut self, frame: &mut Frame, help_area: Rect, shortcuts: Vec<Line<'_>>) {
         let mut help_text: Vec<Line<'_>> = Vec::new(); 
+        let shortcuts_lens = shortcuts.len();
 
         help_text.extend(shortcuts); 
+
+        if shortcuts_lens > 0 {
+            help_text.push(Line::raw(""));
+            if help_area.width > 125 {
+                help_text.push(Line::raw(""));
+            }
+        }
 
         help_text.push(
             Line::from(vec![

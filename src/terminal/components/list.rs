@@ -258,8 +258,6 @@ impl TableServices<'_> {
             help_text.push(Line::from(
                 "Navigate: ↑/↓ | Start: s | Stop: x | Restart: r | Enable: e | Disable: d | Refresh all: u | View logs: v | Properties: p"
             ));
-            help_text.push(Line::from(""));
-            help_text.push(Line::from(""));
         }
 
         help_text 

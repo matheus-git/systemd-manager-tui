@@ -225,8 +225,6 @@ impl ServiceDetails {
             Span::styled("Actions", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
         ]),
         Line::from("Switch tabs: ←/→ | Go back: q"),
-        Line::from(""),
-        Line::from(""),
     ];
 
     help_text
