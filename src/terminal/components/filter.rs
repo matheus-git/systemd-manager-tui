@@ -110,6 +110,7 @@ impl Filter {
                     },
                     _ => {}
                 }
+                self.sender.send(AppEvent::Action(Actions::Filter(self.input.clone()))).unwrap();
             },
             InputMode::Editing => {}
         }
