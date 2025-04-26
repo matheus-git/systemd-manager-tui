@@ -6,6 +6,7 @@ use ratatui::{
 use crate::usecases::services_manager::ServicesManager;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::style::{Style, Color, Modifier};
+use ratatui::text::{Line, Span};
 use ratatui::layout::Rect;
 use std::error::Error;
 use std::sync::mpsc::Sender;
@@ -43,7 +44,7 @@ pub struct TableServices<'a> {
     pub rows: Vec<Row<'static>>,
     pub services: Vec<Service>,
     old_filter_text: String,
-    ignore_key_events: bool,
+    pub ignore_key_events: bool,
     sender: Sender<AppEvent>
 }
 
@@ -240,6 +241,24 @@ impl TableServices<'_> {
             Ok(_) => {},
             Err(e) => {panic!("{e}")}
         }
+    }
+
+    pub fn shortcuts(&mut self) -> Vec<Line<'_>> {
+        let mut help_text: Vec<Line<'_>> = Vec::new(); 
+        if !self.ignore_key_events {
+            help_text.push(Line::from(Span::styled(
+                "Actions on the selected service",
+                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+            )));
+
+            help_text.push(Line::from(
+                "Navigate: ↑/↓ | Start: s | Stop: x | Restart: r | Enable: e | Disable: d | Refresh all: u | View logs: v | Properties: p"
+            ));
+            help_text.push(Line::from(""));
+            help_text.push(Line::from(""));
+        }
+
+        help_text 
     }
 }
 

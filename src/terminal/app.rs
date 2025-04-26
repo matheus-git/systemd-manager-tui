@@ -14,7 +14,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 
 use super::components::list::TableServices;
-use super::components::filter::{InputMode, Filter};
+use super::components::filter::Filter;
 use super::components::log::ServiceLog;
 use super::components::details::ServiceDetails;
 
@@ -160,34 +160,36 @@ impl App<'_> {
     }
 
     fn draw_details_status(&mut self,  terminal: &mut DefaultTerminal, service_details: &Rc<RefCell<ServiceDetails>>)-> Result<()> {
+        let mut service_details = service_details.borrow_mut();
         terminal.draw(|frame| {
             let area = frame.area();
 
             let [list_box, help_area_box] = Layout::vertical([
                 Constraint::Min(0),     
-                Constraint::Length(6),  
+                Constraint::Length(7),  
             ])
                 .areas(area);
 
-            service_details.borrow_mut().render(frame, list_box);
-            service_details.borrow_mut().draw_shortcuts(frame, help_area_box);                
+            service_details.render(frame, list_box);
+            self.draw_shortcuts(frame, help_area_box, service_details.shortcuts());                
         })?;
 
         Ok(())
     }
 
     fn draw_log_status(&mut self,  terminal: &mut DefaultTerminal, service_log: &Rc<RefCell<ServiceLog>>)-> Result<()> {
+        let mut service_log = service_log.borrow_mut();
         terminal.draw(|frame| {
             let area = frame.area();
 
             let [list_box, help_area_box] = Layout::vertical([
                 Constraint::Min(0),     
-                Constraint::Length(6),  
+                Constraint::Length(7),  
             ])
                 .areas(area);
 
-            service_log.borrow_mut().render(frame, list_box);
-            service_log.borrow_mut().draw_shortcuts(frame, help_area_box);                
+            service_log.render(frame, list_box);
+            self.draw_shortcuts(frame, help_area_box, service_log.shortcuts());                
         })?;
 
         Ok(())
@@ -208,26 +210,23 @@ impl App<'_> {
 
             filter.draw(frame, filter_box);
             table.render(frame, list_box);
-            self.draw_shortcuts(frame, help_area_box);                
+            self.draw_shortcuts(frame, help_area_box, table.shortcuts());                
         })?;
 
         Ok(())
     }
 
+    fn draw_shortcuts(&mut self, frame: &mut Frame, help_area: Rect, shortcuts: Vec<Line<'_>>) {
+        let mut help_text: Vec<Line<'_>> = Vec::new(); 
 
-    fn draw_shortcuts(&mut self, frame: &mut Frame, help_area: Rect){
-        let help_text = vec![
-            Line::from(vec![
-                Span::styled("Actions on the selected service", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-            ]),
-            Line::from("Navigate: ↑/↓ | Start: s | Stop: x | Restart: r | Enable: e | Disable: d | Refresh all: u | View logs: v | Properties: p"),
-            Line::from(""),
-            Line::from(""),
+        help_text.extend(shortcuts); 
+
+        help_text.push(
             Line::from(vec![
                 Span::styled("Exit", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
                 Span::raw(": Ctrl + c"),
-            ]),
-        ];
+            ])
+        );
 
         let help_block = Paragraph::new(help_text)
             .block(Block::default().title("Shortcuts").borders(Borders::ALL))

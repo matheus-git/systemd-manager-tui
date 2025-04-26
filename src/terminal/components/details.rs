@@ -219,25 +219,18 @@ impl ServiceDetails {
         }
     }
 
-    pub fn draw_shortcuts(&mut self, frame: &mut Frame, help_area: Rect){
-        let help_text = vec![
-            Line::from(vec![
-                Span::styled("Actions", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
-            ]),
-            Line::from("Switch tabs: ←/→ | Go back: q"),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("Exit", Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)),
-                Span::raw(": Ctrl + c"),
-            ]),
-        ];
+    pub fn shortcuts(&mut self) -> Vec<Line<'_>> {
+    let help_text = vec![
+        Line::from(vec![
+            Span::styled("Actions", Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+        ]),
+        Line::from("Switch tabs: ←/→ | Go back: q"),
+        Line::from(""),
+        Line::from(""),
+    ];
 
-        let help_block = Paragraph::new(help_text)
-            .block(Block::default().title("Shortcuts").borders(Borders::ALL))
-            .wrap(ratatui::widgets::Wrap { trim: true });
-
-        frame.render_widget(help_block, help_area);
-    }
+    help_text
+}
 
     pub fn start_auto_refresh(&mut self) {
         self.set_auto_refresh(true);
