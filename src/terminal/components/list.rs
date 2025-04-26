@@ -99,7 +99,7 @@ impl TableServices<'_> {
         frame.render_stateful_widget(&self.table, area, &mut self.table_state);
     }
 
-    pub fn toogle_ignore_key_events(&mut self, has_ignore_key_events: bool){
+    pub fn set_ignore_key_events(&mut self, has_ignore_key_events: bool){
         self.ignore_key_events = has_ignore_key_events
     }
 

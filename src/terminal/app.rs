@@ -14,7 +14,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 
 use super::components::list::TableServices;
-use super::components::filter::Filter;
+use super::components::filter::{InputMode, Filter};
 use super::components::log::ServiceLog;
 use super::components::details::ServiceDetails;
 
@@ -32,7 +32,9 @@ pub enum Actions {
     GoLog,
     GoDetails,
     Updatelog((String, String)),
-    UpdateDetails
+    UpdateDetails,
+    Filter(String),
+    UpdateIgnoreListKeys(bool)
 }
 
 pub enum AppEvent {
@@ -56,7 +58,7 @@ pub struct App<'a> {
     running: bool,
     status: Status,
     table_service: Rc<RefCell<TableServices<'a>>>,
-    filter: Rc<RefCell<Filter<'a>>>,
+    filter: Rc<RefCell<Filter>>,
     service_log: Rc<RefCell<ServiceLog<'a>>>,
     details: Rc<RefCell<ServiceDetails>>,
     event_rx: Receiver<AppEvent>,
@@ -70,7 +72,7 @@ impl App<'_> {
             running: true,
             status: Status::List,
             table_service: Rc::new(RefCell::new(TableServices::new(event_tx.clone()))),
-            filter: Rc::new(RefCell::new(Filter::new())),
+            filter: Rc::new(RefCell::new(Filter::new(event_tx.clone()))),
             service_log: Rc::new(RefCell::new(ServiceLog::new(event_tx.clone()))),
             details: Rc::new(RefCell::new(ServiceDetails::new(event_tx.clone()))),
             event_rx,
@@ -79,7 +81,6 @@ impl App<'_> {
     }
 
     pub fn init(&mut self) {
-        self.filter.borrow_mut().set_table_service(Rc::clone(&self.table_service));
         spawn_key_event_listener(self.event_tx.clone());
     }
 
@@ -114,6 +115,12 @@ impl App<'_> {
                         self.on_key_event(key);
                         self.details.borrow_mut().on_key_event(key);
                     }
+                },
+                AppEvent::Action(Actions::UpdateIgnoreListKeys(bool)) => {
+                    self.table_service.borrow_mut().set_ignore_key_events(bool);
+                }
+                AppEvent::Action(Actions::Filter(input)) => {
+                    self.table_service.borrow_mut().refresh(input); 
                 },
                 AppEvent::Action(Actions::Updatelog(log)) => {
                     self.service_log.borrow_mut().update(log.0, log.1);
@@ -187,6 +194,8 @@ impl App<'_> {
     }
 
     fn draw_list_status(&mut self, terminal: &mut DefaultTerminal, filter: &Rc<RefCell<Filter>>, table_service: &Rc<RefCell<TableServices>>)-> Result<()>{
+        let filter = filter.borrow_mut();
+        let mut table = table_service.borrow_mut();
         terminal.draw(|frame| {
             let area = frame.area();
 
@@ -197,8 +206,8 @@ impl App<'_> {
             ])
                 .areas(area);
 
-            filter.borrow_mut().draw(frame, filter_box);
-            table_service.borrow_mut().render(frame, list_box);
+            filter.draw(frame, filter_box);
+            table.render(frame, list_box);
             self.draw_shortcuts(frame, help_area_box);                
         })?;
 
