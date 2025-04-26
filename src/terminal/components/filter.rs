@@ -1,6 +1,6 @@
 use ratatui::{
     crossterm::event::{KeyEvent, KeyCode, KeyEventKind},
-    layout::{Constraint, Layout, Rect},
+    layout::{Constraint, Layout, Rect, Position},
     style::{Color, Style, Stylize},
     text::{Line, Text},
     widgets::{Block, Paragraph},
@@ -153,5 +153,13 @@ impl Filter {
             })
             .block(Block::bordered().title("Input"));
         frame.render_widget(input, input_area);
+         match self.input_mode {
+            InputMode::Normal => {}
+            #[allow(clippy::cast_possible_truncation)]
+            InputMode::Editing => frame.set_cursor_position(Position::new(
+                input_area.x + self.character_index as u16 + 1,
+                input_area.y + 1,
+            )),
+        }
     }
 }
