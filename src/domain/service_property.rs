@@ -38,6 +38,7 @@ pub struct ServiceProperty {
 }
 
 impl ServiceProperty {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         exec_start: Vec<SASBTTUII>,
         exec_start_pre: Vec<SASBTTUII>,

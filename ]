@@ -8,7 +8,6 @@ use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::style::{Style, Color, Modifier};
 use ratatui::text::{Line, Span};
 use ratatui::layout::Rect;
-use core::panic;
 use std::error::Error;
 use std::sync::mpsc::Sender;
 
@@ -44,7 +43,6 @@ pub struct TableServices<'a> {
     pub table_state: TableState,
     pub rows: Vec<Row<'static>>,
     pub services: Vec<Service>,
-    filtered_services: Vec<Service>,
     old_filter_text: String,
     pub ignore_key_events: bool,
     sender: Sender<AppEvent>
@@ -91,7 +89,6 @@ impl TableServices<'_> {
             table,
             table_state,
             rows,
-            filtered_services: services.clone(),
             services,
             sender,
             old_filter_text: String::new(),
@@ -107,7 +104,7 @@ impl TableServices<'_> {
         if has_ignore_key_events {
              self.table = self.table.clone().row_highlight_style(
                 Style::default()
-                    .bg(Color::DarkGray)
+                    .bg(Color::LightBlue)
                     .fg(Color::White)
                     .add_modifier(Modifier::BOLD),
             );
@@ -124,7 +121,7 @@ impl TableServices<'_> {
 
     pub fn get_selected_service(&self) -> Option<&Service>{
         if let Some(selected_index) = self.table_state.selected() {
-            if let Some(service) = self.filtered_services.get(selected_index) {
+            if let Some(service) = self.services.get(selected_index) {
                 return Some(service);
             }
         }
@@ -132,9 +129,8 @@ impl TableServices<'_> {
     }
 
     pub fn refresh(&mut self, filter_text: String) {
-        self.old_filter_text = filter_text.clone();
-        self.filtered_services = self.filter(filter_text, self.services.clone());
-        self.rows = generate_rows(&self.filtered_services);
+        self.services = self.filter_services(&filter_text);
+        self.rows = generate_rows(&self.services);
 
         if self.table_state.selected().is_none() && !self.rows.is_empty() {
             self.table_state.select(Some(0));
@@ -142,21 +138,19 @@ impl TableServices<'_> {
         self.table = self.table.clone().rows(self.rows.clone());
     }
 
-    fn fetch_services(&mut self) {
+    fn fetch_services(&self) -> Vec<Service> {
         if let Ok(services) = ServicesManager::list_services() {
-            self.services = services
+            services
         } else {
-            self.services = vec![]
+            vec![]
         }
     }
 
-    fn fetch_and_refresh(&mut self, filter_text: String) {
-        self.fetch_services();
-        self.refresh(filter_text);
-    }
+ //   pub fn filter(&mut self, filter_text: String){
+ //       
+ //   }
 
-    fn filter(&self, filter_text: String, services: Vec<Service>) -> Vec<Service> {
-        let lower_filter = filter_text.to_lowercase();
+    fn filter(&self, service: Vec<Service>) -> Vec<Service> {
         services.into_iter().filter(|service| service.name().to_lowercase().contains(&lower_filter)).collect()
     }
 
@@ -246,10 +240,10 @@ impl TableServices<'_> {
                 ServiceAction::Restart => self.handle_result(ServicesManager::restart_service(service)),
                 ServiceAction::Enable => self.handle_result(ServicesManager::enable_service(service)),
                 ServiceAction::Disable => self.handle_result(ServicesManager::disable_service(service)),
-                ServiceAction::RefreshAll => self.fetch_services(),
+                ServiceAction::RefreshAll => self.refresh(self.old_filter_text.clone()),
             }
         }
-        self.fetch_and_refresh(self.old_filter_text.clone());
+        self.refresh(self.old_filter_text.clone());
     }
 
     fn handle_result(&mut self, result: Result<(), Box<dyn Error>>) {
