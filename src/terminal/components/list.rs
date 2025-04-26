@@ -100,6 +100,21 @@ impl TableServices<'_> {
     }
 
     pub fn set_ignore_key_events(&mut self, has_ignore_key_events: bool){
+        if has_ignore_key_events {
+             self.table = self.table.clone().row_highlight_style(
+                Style::default()
+                    .bg(Color::DarkGray)
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            );
+        }else {
+            self.table = self.table.clone().row_highlight_style(
+                Style::default()
+                    .bg(Color::Blue)
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            );
+        }
         self.ignore_key_events = has_ignore_key_events
     }
 

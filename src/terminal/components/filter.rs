@@ -97,17 +97,19 @@ impl Filter {
                 },
                 _ => {}
             },
-            InputMode::Editing if key.kind == KeyEventKind::Press => match key.code {
-                KeyCode::Enter => self.submit_message(),
-                KeyCode::Char(to_insert) => self.enter_char(to_insert),
-                KeyCode::Backspace => self.delete_char(),
-                KeyCode::Left => self.move_cursor_left(),
-                KeyCode::Right => self.move_cursor_right(),
-                KeyCode::Esc => {
-                    self.sender.send(AppEvent::Action(Actions::UpdateIgnoreListKeys(false))).unwrap();
-                    self.input_mode = InputMode::Normal;
-                },
-                _ => {}
+            InputMode::Editing if key.kind == KeyEventKind::Press => {
+                match key.code {
+                    KeyCode::Enter => self.submit_message(),
+                    KeyCode::Char(to_insert) => self.enter_char(to_insert),
+                    KeyCode::Backspace => self.delete_char(),
+                    KeyCode::Left => self.move_cursor_left(),
+                    KeyCode::Right => self.move_cursor_right(),
+                    KeyCode::Esc => {
+                        self.sender.send(AppEvent::Action(Actions::UpdateIgnoreListKeys(false))).unwrap();
+                        self.input_mode = InputMode::Normal;
+                    },
+                    _ => {}
+                }
             },
             InputMode::Editing => {}
         }
