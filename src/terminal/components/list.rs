@@ -132,6 +132,10 @@ impl TableServices<'_> {
         self.old_filter_text = filter_text.clone();
         self.services = self.filter_services(&filter_text);
         self.rows = generate_rows(&self.services);
+
+        if self.table_state.selected().is_none() && !self.rows.is_empty() {
+            self.table_state.select(Some(0));
+        }
         self.table = self.table.clone().rows(self.rows.clone());
     }
 
