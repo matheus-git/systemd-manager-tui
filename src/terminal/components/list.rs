@@ -78,7 +78,7 @@ impl TableServices<'_> {
         let table = Table::new(
             rows.clone(),
             [
-                Constraint::Percentage(20),
+                Constraint::Percentage(15),
                 Constraint::Length(20),
                 Constraint::Length(10),
                 Constraint::Length(10),
