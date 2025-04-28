@@ -2,7 +2,7 @@ use zbus::blocking::{Connection, Proxy};
 use zbus::zvariant::OwnedObjectPath;
 
 use crate::domain::service::Service;
-use crate::domain::service_property::{SASBTTUII, ServiceProperty};
+use crate::domain::service_property::{ServiceProperty, SASBTTUII};
 use crate::domain::service_repository::ServiceRepository;
 use crate::domain::service_state::ServiceState;
 
@@ -36,7 +36,12 @@ pub struct SystemdServiceAdapter;
 
 impl SystemdServiceAdapter {
     fn manager_proxy(&self) -> Result<(Connection, Proxy<'static>), Box<dyn std::error::Error>> {
-        let connection = Connection::system()?;
+        let connection: Connection;
+        if unsafe { libc::geteuid() } != 0 {
+            connection = Connection::session()?;
+        } else {
+            connection = Connection::system()?;
+        }
         let proxy = Proxy::new(
             &connection,
             "org.freedesktop.systemd1",
@@ -131,43 +136,6 @@ impl SystemdServiceAdapter {
     }
 }
 impl ServiceRepository for SystemdServiceAdapter {
-    fn start_service(&self, name: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let (conn, proxy) = self.manager_proxy()?;
-        let _job: OwnedObjectPath = proxy.call("StartUnit", &(name, "replace"))?;
-        conn.close()?;
-        Ok(())
-    }
-
-    fn stop_service(&self, name: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let (conn, proxy) = self.manager_proxy()?;
-        let _job: OwnedObjectPath = proxy.call("StopUnit", &(name, "replace"))?;
-        conn.close()?;
-        Ok(())
-    }
-
-    fn restart_service(&self, name: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let (conn, proxy) = self.manager_proxy()?;
-        let _job: OwnedObjectPath = proxy.call("RestartUnit", &(name, "replace"))?;
-        conn.close()?;
-        Ok(())
-    }
-
-    fn enable_service(&self, name: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let (conn, proxy) = self.manager_proxy()?;
-        let (_carries_install_info, _changes): (bool, Vec<(String, String, String)>) =
-            proxy.call("EnableUnitFiles", &(vec![name], false, true))?;
-        conn.close()?;
-        Ok(())
-    }
-
-    fn disable_service(&self, name: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let (conn, proxy) = self.manager_proxy()?;
-        let _changes: Vec<(String, String, String)> =
-            proxy.call("DisableUnitFiles", &(vec![name], false))?;
-        conn.close()?;
-        Ok(())
-    }
-
     fn list_services(&self) -> Result<Vec<Service>, Box<dyn std::error::Error>> {
         let (conn, proxy) = self.manager_proxy()?;
 
@@ -220,5 +188,42 @@ impl ServiceRepository for SystemdServiceAdapter {
         };
 
         Ok(log)
+    }
+
+    fn start_service(&self, name: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let (conn, proxy) = self.manager_proxy()?;
+        let _job: OwnedObjectPath = proxy.call("StartUnit", &(name, "replace"))?;
+        conn.close()?;
+        Ok(())
+    }
+
+    fn stop_service(&self, name: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let (conn, proxy) = self.manager_proxy()?;
+        let _job: OwnedObjectPath = proxy.call("StopUnit", &(name, "replace"))?;
+        conn.close()?;
+        Ok(())
+    }
+
+    fn restart_service(&self, name: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let (conn, proxy) = self.manager_proxy()?;
+        let _job: OwnedObjectPath = proxy.call("RestartUnit", &(name, "replace"))?;
+        conn.close()?;
+        Ok(())
+    }
+
+    fn enable_service(&self, name: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let (conn, proxy) = self.manager_proxy()?;
+        let (_carries_install_info, _changes): (bool, Vec<(String, String, String)>) =
+            proxy.call("EnableUnitFiles", &(vec![name], false, true))?;
+        conn.close()?;
+        Ok(())
+    }
+
+    fn disable_service(&self, name: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let (conn, proxy) = self.manager_proxy()?;
+        let _changes: Vec<(String, String, String)> =
+            proxy.call("DisableUnitFiles", &(vec![name], false))?;
+        conn.close()?;
+        Ok(())
     }
 }

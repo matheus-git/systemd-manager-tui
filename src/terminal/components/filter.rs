@@ -1,6 +1,6 @@
 use ratatui::{
-    crossterm::event::{KeyEvent, KeyCode, KeyEventKind},
-    layout::{Constraint, Layout, Rect, Position},
+    crossterm::event::{KeyCode, KeyEvent, KeyEventKind},
+    layout::{Constraint, Layout, Position, Rect},
     style::{Color, Style, Stylize},
     text::{Line, Text},
     widgets::{Block, Paragraph},
@@ -60,7 +60,6 @@ impl Filter {
     fn delete_char(&mut self) {
         let is_not_cursor_leftmost = self.character_index != 0;
         if is_not_cursor_leftmost {
-
             let current_index = self.character_index;
             let from_left_to_current_index = current_index - 1;
 
@@ -70,7 +69,6 @@ impl Filter {
             self.input = before_char_to_delete.chain(after_char_to_delete).collect();
             self.move_cursor_left();
         }
-
     }
 
     fn clamp_cursor(&self, new_cursor_pos: usize) -> usize {
@@ -78,8 +76,12 @@ impl Filter {
     }
 
     fn submit_message(&mut self) {
-        self.sender.send(AppEvent::Action(Actions::Filter(self.input.clone()))).unwrap();
-        self.sender.send(AppEvent::Action(Actions::UpdateIgnoreListKeys(false))).unwrap();
+        self.sender
+            .send(AppEvent::Action(Actions::Filter(self.input.clone())))
+            .unwrap();
+        self.sender
+            .send(AppEvent::Action(Actions::UpdateIgnoreListKeys(false)))
+            .unwrap();
         self.input_mode = InputMode::Normal
     }
 
@@ -87,14 +89,20 @@ impl Filter {
         match self.input_mode {
             InputMode::Normal => match key.code {
                 KeyCode::Char('i') => {
-                    self.sender.send(AppEvent::Action(Actions::UpdateIgnoreListKeys(true))).unwrap();
+                    self.sender
+                        .send(AppEvent::Action(Actions::UpdateIgnoreListKeys(true)))
+                        .unwrap();
                     self.input_mode = InputMode::Editing;
                 }
                 KeyCode::Esc => {
                     self.input = String::new();
-                    self.sender.send(AppEvent::Action(Actions::Filter(self.input.clone()))).unwrap();
-                    self.sender.send(AppEvent::Action(Actions::UpdateIgnoreListKeys(false))).unwrap();
-                },
+                    self.sender
+                        .send(AppEvent::Action(Actions::Filter(self.input.clone())))
+                        .unwrap();
+                    self.sender
+                        .send(AppEvent::Action(Actions::UpdateIgnoreListKeys(false)))
+                        .unwrap();
+                }
                 _ => {}
             },
             InputMode::Editing if key.kind == KeyEventKind::Press => {
@@ -105,32 +113,29 @@ impl Filter {
                     KeyCode::Left => self.move_cursor_left(),
                     KeyCode::Right => self.move_cursor_right(),
                     KeyCode::Esc => {
-                        self.sender.send(AppEvent::Action(Actions::UpdateIgnoreListKeys(false))).unwrap();
+                        self.sender
+                            .send(AppEvent::Action(Actions::UpdateIgnoreListKeys(false)))
+                            .unwrap();
                         self.input_mode = InputMode::Normal;
-                    },
+                    }
                     _ => {}
                 }
-                self.sender.send(AppEvent::Action(Actions::Filter(self.input.clone()))).unwrap();
-            },
+                self.sender
+                    .send(AppEvent::Action(Actions::Filter(self.input.clone())))
+                    .unwrap();
+            }
             InputMode::Editing => {}
         }
     }
 
     pub fn draw(&self, frame: &mut Frame, area: Rect) {
-        let vertical = Layout::vertical([
-            Constraint::Length(1),
-            Constraint::Length(3),
-        ]);
+        let vertical = Layout::vertical([Constraint::Length(1), Constraint::Length(3)]);
         let [help_area, input_area] = vertical.areas(area);
 
         let (msg, style) = match self.input_mode {
             InputMode::Normal => (
-                vec![
-                    "Press ".into(),
-                    "i".bold(),
-                    " to start filtering.".into(),
-                ],
-                Style::default()
+                vec!["Press ".into(), "i".bold(), " to start filtering.".into()],
+                Style::default(),
             ),
             InputMode::Editing => (
                 vec![
@@ -154,7 +159,7 @@ impl Filter {
             })
             .block(Block::bordered().title("Input"));
         frame.render_widget(input, input_area);
-         match self.input_mode {
+        match self.input_mode {
             InputMode::Normal => {}
             #[allow(clippy::cast_possible_truncation)]
             InputMode::Editing => frame.set_cursor_position(Position::new(

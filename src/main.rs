@@ -5,10 +5,10 @@ mod usecases;
 use terminal::app::App;
 
 fn main() -> color_eyre::Result<()> {
-    if unsafe { libc::geteuid() } != 0 {
-        eprintln!("❌ This application must be run with sudo (as root).");
-        std::process::exit(1);
-    }
+    // if unsafe { libc::geteuid() } != 0 {
+    //     eprintln!("❌ This application must be run with sudo (as root).");
+    //     std::process::exit(1);
+    // }
     color_eyre::install()?;
     let terminal = ratatui::init();
     let mut app = App::new();
