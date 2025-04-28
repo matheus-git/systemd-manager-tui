@@ -120,6 +120,7 @@ impl App<'_> {
                     self.table_service.borrow_mut().set_ignore_key_events(bool);
                 }
                 AppEvent::Action(Actions::Filter(input)) => {
+                    self.table_service.borrow_mut().set_selected_index(0);
                     self.table_service.borrow_mut().refresh(input); 
                 },
                 AppEvent::Action(Actions::Updatelog(log)) => {

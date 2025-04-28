@@ -141,14 +141,14 @@ impl TableServices<'_> {
         None
     }
 
+    pub fn set_selected_index(&mut self, index: usize){
+        self.table_state.select(Some(index));
+    }
+
     pub fn refresh(&mut self, filter_text: String) {
         self.old_filter_text = filter_text.clone();
         self.filtered_services = self.filter(filter_text, self.services.clone());
-        self.rows = generate_rows(&self.filtered_services);
-
-        if self.table_state.selected().is_none() && !self.rows.is_empty() {
-            self.table_state.select(Some(0));
-        }
+        self.rows = generate_rows(&self.filtered_services.clone());
         self.table = self.table.clone().rows(self.rows.clone());
     }
 
@@ -167,7 +167,12 @@ impl TableServices<'_> {
 
     fn filter(&self, filter_text: String, services: Vec<Service>) -> Vec<Service> {
         let lower_filter = filter_text.to_lowercase();
-        services.into_iter().filter(|service| service.formatted_name().to_lowercase().contains(&lower_filter)).collect()
+        services.into_iter()
+            .filter(|service| {
+                let name = service.formatted_name();
+                name.to_lowercase().contains(&lower_filter)
+            })
+            .collect()
     }
 
     pub fn on_key_event(&mut self, key: KeyEvent) {
