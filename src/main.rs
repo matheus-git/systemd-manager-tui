@@ -1,7 +1,7 @@
-mod infrastructure;
 mod domain;
-mod usecases;
+mod infrastructure;
 mod terminal;
+mod usecases;
 use terminal::app::App;
 
 fn main() -> color_eyre::Result<()> {
