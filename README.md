@@ -12,25 +12,12 @@ View more [screenshots](docs/screenshots.md)
 
 ## Usage
 
-Must be run as sudo (or root).
-
-**It's recommended to build a binary since it's simpler to run with sudo than to configure sudo to run "sudo cargo run".**
-
-### Run in development mode
-  ```
-   sudo cargo run
-  ```
-
 ### Build binary
-
-1. Build the binary
-    ```
-      cargo build --release
-    ```
-3. Run it ( opcional )
-    ```
-      sudo target/release/systemd-manager-tui
-    ```
+    cargo build --release
+### Manage *system* services
+    sudo ./target/release/systemd-manager-tui
+### Manage *session* services
+    ./target/release/systemd-manager-tui
 
 ## Architecture
 
@@ -47,9 +34,8 @@ There are many possible actions and pieces of information that can be retrieved,
 
 ## Future Improvements
 
-- Monitor CPU and memory usage per service
-- Display user-specific systemd services
-- Remotely manage services
+- Tab navigation: all, system services, sessions services and custom.
+- Remotely manage services.
 
 ## Weekly Updates
 
@@ -58,6 +44,14 @@ This project is actively maintained and updated every weekend.
 ## Contributing
 
 Contributions are welcome! Please open an issue or submit a pull request for any improvements or bug fixes.
+
+## Contributors
+
+<a href="https://github.com/matheus-git/systemd-manager-tui/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=matheus-git/systemd-manager-tui" />
+</a>
+
+Made with [contrib.rocks](https://contrib.rocks).
 
 ## 📝 License
 
