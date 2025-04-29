@@ -294,7 +294,7 @@ impl TableServices<'_> {
         match result {
             Ok(_) => {}
             Err(e) => {
-                panic!("{e}")
+                self.sender.send(AppEvent::Error(e.to_string())).unwrap();
             }
         }
     }

@@ -1,11 +1,11 @@
 use color_eyre::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use ratatui::layout::{Constraint, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Paragraph};
 use ratatui::DefaultTerminal;
 use ratatui::Frame;
+use ratatui::layout::{Alignment, Constraint, Layout, Rect};
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::Duration;
@@ -40,16 +40,35 @@ pub enum Actions {
 pub enum AppEvent {
     Key(KeyEvent),
     Action(Actions),
+    Error(String),
 }
 
+fn get_user_friendly_error(error: &str) -> &str {
+    if error.contains("org.freedesktop.DBus.Error.InteractiveAuthorizationRequired") {
+        "You do not have the permission to do that. Try running the program with sudo."
+    } else if error.contains("org.freedesktop.DBus.Error.ServiceUnknown") {
+        "The requested service is not available or not running."
+    } else if error.contains("org.freedesktop.DBus.Error.NoReply") {
+        "The service did not respond in time. It might be busy or not functioning properly."
+    } else if error.contains("org.freedesktop.DBus.Error.AccessDenied") {
+        "Access denied. You don't have sufficient permissions for this operation."
+    } else if error.contains("org.freedesktop.systemd1.NoSuchUnit") {
+        "The requested service unit doesn't exist."
+    } else {
+        // Default fallback for unknown errors
+        error
+    }
+}
 fn spawn_key_event_listener(event_tx: Sender<AppEvent>) {
-    thread::spawn(move || loop {
-        if event::poll(Duration::from_millis(100)).unwrap_or(false) {
-            if let Ok(Event::Key(key_event)) = event::read() {
-                if key_event.kind == KeyEventKind::Press
-                    && event_tx.send(AppEvent::Key(key_event)).is_err()
-                {
-                    break;
+    thread::spawn(move || {
+        loop {
+            if event::poll(Duration::from_millis(100)).unwrap_or(false) {
+                if let Ok(Event::Key(key_event)) = event::read() {
+                    if key_event.kind == KeyEventKind::Press
+                        && event_tx.send(AppEvent::Key(key_event)).is_err()
+                    {
+                        break;
+                    }
                 }
             }
         }
@@ -158,12 +177,69 @@ impl App<'_> {
                     self.status = Status::Details;
                     self.details.borrow_mut().start_auto_refresh();
                 }
+                AppEvent::Error(error_msg) => {
+                    // Get a user-friendly message based on the error
+                    let user_friendly_message = get_user_friendly_error(&error_msg);
+
+                    // Draw an error popup immediately
+                    terminal.draw(|frame| {
+                        let area = frame.area();
+
+                        // Calculate popup dimensions and position
+                        let popup_width = std::cmp::min(70, area.width.saturating_sub(4));
+                        let popup_height = std::cmp::min(12, area.height.saturating_sub(4));
+
+                        let popup_x = (area.width.saturating_sub(popup_width)) / 2;
+                        let popup_y = (area.height.saturating_sub(popup_height)) / 2;
+
+                        let popup_area = Rect::new(
+                            area.x + popup_x,
+                            area.y + popup_y,
+                            popup_width,
+                            popup_height,
+                        );
+
+                        // Draw a clear background for the popup
+                        frame.render_widget(Clear, popup_area);
+
+                        // Create the error message paragraph
+                        let text = vec![
+                            Line::from(vec![Span::styled(
+                                "ERROR",
+                                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                            )]),
+                            Line::from(""),
+                            Line::from(user_friendly_message),
+                            Line::from(""),
+                            Line::from(vec![Span::styled(
+                                "Press any key to dismiss",
+                                Style::default().fg(Color::Gray),
+                            )]),
+                        ];
+
+                        let error_block = Paragraph::new(text)
+                            .block(
+                                Block::default()
+                                    .borders(Borders::ALL)
+                                    .border_style(Style::default().fg(Color::Red))
+                                    .title("Error"),
+                            )
+                            .alignment(Alignment::Center)
+                            .wrap(ratatui::widgets::Wrap { trim: true });
+
+                        frame.render_widget(error_block, popup_area);
+                    })?;
+
+                    // Wait for any key press to dismiss
+                    if let Ok(Event::Key(_)) = event::read() {
+                        // Continue after key press
+                    }
+                }
             }
         }
 
         Ok(())
     }
-
     fn draw_details_status(
         &mut self,
         terminal: &mut DefaultTerminal,
