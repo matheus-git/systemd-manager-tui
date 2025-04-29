@@ -1,8 +1,11 @@
-use crate::{domain::service_repository::ServiceRepository, infrastructure::systemd_service_adapter::SystemdServiceAdapter};
 use crate::domain::service::Service;
-use std::time::Duration;
-use std::thread;
+use crate::{
+    domain::service_repository::ServiceRepository,
+    infrastructure::systemd_service_adapter::SystemdServiceAdapter,
+};
 use std::error::Error;
+use std::thread;
+use std::time::Duration;
 
 const SLEEP_DURATION: u64 = 200;
 
@@ -18,7 +21,7 @@ impl ServicesManager {
     pub fn stop_service(service: &Service) -> Result<(), Box<dyn Error>> {
         SystemdServiceAdapter.stop_service(service.name())?;
         thread::sleep(Duration::from_millis(SLEEP_DURATION));
-        Ok(()) 
+        Ok(())
     }
 
     pub fn restart_service(service: &Service) -> Result<(), Box<dyn Error>> {
@@ -45,7 +48,7 @@ impl ServicesManager {
         let mut services = SystemdServiceAdapter.list_services()?;
         services.sort_by_key(|a| a.name().to_lowercase());
         Ok(services)
-    }   
+    }
 
     pub fn update_properties(service: &mut Service) -> Result<(), Box<dyn Error>> {
         let service_property = SystemdServiceAdapter.get_service_property(service.name())?;

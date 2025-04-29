@@ -1,5 +1,5 @@
-use std::error::Error;
 use super::service::Service;
+use std::error::Error;
 
 pub trait ServiceRepository {
     fn list_services(&self) -> Result<Vec<Service>, Box<dyn Error>>;

@@ -1,29 +1,29 @@
-use std::sync::mpsc::Sender;
-use std::sync::{Arc, Mutex};
 use ratatui::style::Stylize;
-use std::thread;
-use std::time::Duration;
+use ratatui::text::Text;
+use ratatui::widgets::{Scrollbar, ScrollbarOrientation, ScrollbarState};
 use ratatui::{
-    layout::{Rect, Alignment},
+    layout::{Alignment, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph},
     Frame,
 };
-use ratatui::widgets::{Scrollbar, ScrollbarOrientation, ScrollbarState};
-use ratatui::text::Text;
+use std::sync::mpsc::Sender;
+use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::Duration;
 
 use crossterm::event::{KeyCode, KeyEvent};
 
-use crate::usecases::services_manager::ServicesManager;
-use crate::terminal::app::{Actions, AppEvent};
 use crate::domain::service::Service;
+use crate::terminal::app::{Actions, AppEvent};
+use crate::usecases::services_manager::ServicesManager;
 
 pub struct ServiceDetails {
     service: Option<Arc<Mutex<Service>>>,
     sender: Sender<AppEvent>,
     scroll: u16,
-    auto_refresh: Arc<Mutex<bool>>
+    auto_refresh: Arc<Mutex<bool>>,
 }
 
 impl ServiceDetails {
@@ -40,7 +40,6 @@ impl ServiceDetails {
         if let Some(service_arc) = &self.service {
             if let Ok(service) = service_arc.lock() {
                 if let Some(properties) = service.properties() {
-
                     let mut lines: Vec<Line> = vec![];
 
                     let exec_start = properties.formatted_exec_start();
@@ -63,11 +62,17 @@ impl ServiceDetails {
                     let exec_main_pid = properties.exec_main_pid().to_string();
                     lines.push(self.generate_line("ExecMainPID", &exec_main_pid));
 
-                    let exec_main_start_timestamp = properties.format_timestamp(properties.exec_main_start_timestamp());
-                    lines.push(self.generate_line("ExecMainStartTimestamp", &exec_main_start_timestamp));
+                    let exec_main_start_timestamp =
+                        properties.format_timestamp(properties.exec_main_start_timestamp());
+                    lines.push(
+                        self.generate_line("ExecMainStartTimestamp", &exec_main_start_timestamp),
+                    );
 
-                    let exec_main_exit_timestamp = properties.format_timestamp(properties.exec_main_exit_timestamp());
-                    lines.push(self.generate_line("ExecMainExitTimestamp", &exec_main_exit_timestamp));
+                    let exec_main_exit_timestamp =
+                        properties.format_timestamp(properties.exec_main_exit_timestamp());
+                    lines.push(
+                        self.generate_line("ExecMainExitTimestamp", &exec_main_exit_timestamp),
+                    );
 
                     let exec_main_code = properties.exec_main_code().to_string();
                     lines.push(self.generate_line("ExecMainCode", &exec_main_code));
@@ -87,7 +92,7 @@ impl ServiceDetails {
 
                     lines.push(self.generate_line("Restart", properties.restart()));
 
-                    let restart_usec = format!("{}s", (properties.restart_usec() as f64 /1000.0));
+                    let restart_usec = format!("{}s", (properties.restart_usec() as f64 / 1000.0));
                     lines.push(self.generate_line("RestartUSec", &restart_usec));
 
                     lines.push(Line::from(""));
@@ -153,19 +158,20 @@ impl ServiceDetails {
                     let cpu_shares = format_units(properties.cpu_shares());
                     lines.push(self.generate_line("CPU Shares", &cpu_shares));
 
-                    let mut scroll_state = ScrollbarState::new(lines.len()).position(self.scroll as usize);
+                    let mut scroll_state =
+                        ScrollbarState::new(lines.len()).position(self.scroll as usize);
                     let paragraph = Paragraph::new(Text::from(lines))
                         .block(
-                            Block::default().borders(Borders::ALL)
+                            Block::default()
+                                .borders(Borders::ALL)
                                 .title(format!(" {} properties ", service.name()))
-                                .title_alignment(Alignment::Center)
+                                .title_alignment(Alignment::Center),
                         )
                         .scroll((self.scroll, 0));
 
                     frame.render_widget(paragraph, area);
                     frame.render_stateful_widget(
-                        Scrollbar::default()
-                            .orientation(ScrollbarOrientation::VerticalRight),
+                        Scrollbar::default().orientation(ScrollbarOrientation::VerticalRight),
                         area,
                         &mut scroll_state,
                     );
@@ -179,7 +185,7 @@ impl ServiceDetails {
             Span::styled(key, Style::new().bold()),
             Span::raw("="),
             Span::styled(value, Style::new()),
-        ]) 
+        ])
     }
 
     fn set_auto_refresh(&mut self, value: bool) {
@@ -220,15 +226,18 @@ impl ServiceDetails {
     }
 
     pub fn shortcuts(&mut self) -> Vec<Line<'_>> {
-    let help_text = vec![
-        Line::from(vec![
-            Span::styled("Actions", Style::default().fg(Color::LightMagenta).add_modifier(Modifier::BOLD)),
-        ]),
-        Line::from("Switch tabs: ←/→ | Go back: q"),
-    ];
+        let help_text = vec![
+            Line::from(vec![Span::styled(
+                "Actions",
+                Style::default()
+                    .fg(Color::LightMagenta)
+                    .add_modifier(Modifier::BOLD),
+            )]),
+            Line::from("Switch tabs: ←/→ | Go back: q"),
+        ];
 
-    help_text
-}
+        help_text
+    }
 
     pub fn start_auto_refresh(&mut self) {
         self.set_auto_refresh(true);
@@ -241,20 +250,22 @@ impl ServiceDetails {
         self.scroll = 0;
     }
 
-    fn exit(&self){
+    fn exit(&self) {
         self.sender.send(AppEvent::Action(Actions::GoList)).unwrap();
     }
 
     pub fn auto_refresh_thread(&mut self) {
         let auto_refresh = Arc::clone(&self.auto_refresh);
-        let sender = self.sender.clone(); 
+        let sender = self.sender.clone();
         thread::spawn(move || {
             loop {
                 thread::sleep(Duration::from_millis(1000));
                 if let Ok(is_active) = auto_refresh.lock() {
                     if *is_active {
-                        sender.send(AppEvent::Action(Actions::RefreshDetails)).unwrap();
-                    }else {
+                        sender
+                            .send(AppEvent::Action(Actions::RefreshDetails))
+                            .unwrap();
+                    } else {
                         break;
                     }
                 }
@@ -270,15 +281,15 @@ impl ServiceDetails {
             thread::spawn(move || {
                 let mut service_guard = service.lock().expect("Failed to lock service");
 
-                if ServicesManager::update_properties(&mut service_guard).is_ok(){
-                    event_tx.send(AppEvent::Action(Actions::UpdateDetails))
+                if ServicesManager::update_properties(&mut service_guard).is_ok() {
+                    event_tx
+                        .send(AppEvent::Action(Actions::UpdateDetails))
                         .expect("Failed to send UpdateDetails event");
                 }
             });
         }
     }
-    pub fn update(&mut self, service: Service){
+    pub fn update(&mut self, service: Service) {
         self.service = Some(Arc::new(Mutex::new(service)));
     }
 }
-

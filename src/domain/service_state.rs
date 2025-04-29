@@ -8,7 +8,12 @@ pub struct ServiceState {
 
 impl ServiceState {
     pub fn new(load: String, active: String, sub: String, file: String) -> Self {
-        ServiceState { load, active, sub, file }
+        ServiceState {
+            load,
+            active,
+            sub,
+            file,
+        }
     }
 
     pub fn load(&self) -> &str {

@@ -1,37 +1,42 @@
-use ratatui::{
-    Frame,
-    layout::Constraint,
-    widgets::{Cell, Block, Borders, Row, Table, TableState},
-};
 use crate::usecases::services_manager::ServicesManager;
 use crossterm::event::{KeyCode, KeyEvent};
-use ratatui::style::{Style, Color, Modifier};
-use ratatui::text::{Line, Span};
 use ratatui::layout::Rect;
-use core::panic;
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::{Line, Span};
+use ratatui::{
+    layout::Constraint,
+    widgets::{Block, Borders, Cell, Row, Table, TableState},
+    Frame,
+};
 use std::error::Error;
 use std::sync::mpsc::Sender;
 
-use crate::terminal::app::{Actions, AppEvent};
 use crate::domain::service::Service;
+use crate::terminal::app::{Actions, AppEvent};
 
 fn generate_rows(services: &[Service]) -> Vec<Row<'static>> {
     services
         .iter()
         .map(|service| {
-            let highlight_style = Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD);
+            let highlight_style = Style::default()
+                .fg(Color::Cyan)
+                .add_modifier(Modifier::BOLD);
             let normal_style = Style::default().fg(Color::Gray);
 
             let state_style = match service.state().active() {
-                "active" => Style::default().fg(Color::Green),    
-                "activating" => Style::default().fg(Color::Yellow), 
-                _ => Style::default().fg(Color::Red),     
+                "active" => Style::default().fg(Color::Green),
+                "activating" => Style::default().fg(Color::Yellow),
+                _ => Style::default().fg(Color::Red),
             };
 
             Row::new(vec![
                 Cell::from(service.formatted_name().to_string()).style(highlight_style),
-                Cell::from(format!("{} ({})", service.state().active(), service.state().sub()))
-                    .style(state_style),
+                Cell::from(format!(
+                    "{} ({})",
+                    service.state().active(),
+                    service.state().sub()
+                ))
+                .style(state_style),
                 Cell::from(service.state().file().to_string()).style(normal_style),
                 Cell::from(service.state().load().to_string()).style(normal_style),
                 Cell::from(service.description().to_string()).style(normal_style),
@@ -57,7 +62,7 @@ pub struct TableServices<'a> {
     filtered_services: Vec<Service>,
     old_filter_text: String,
     pub ignore_key_events: bool,
-    sender: Sender<AppEvent>
+    sender: Sender<AppEvent>,
 }
 
 impl TableServices<'_> {
@@ -66,7 +71,7 @@ impl TableServices<'_> {
             Ok(svcs) => {
                 let rows = generate_rows(&svcs);
                 (svcs, rows)
-            },
+            }
             Err(_) => {
                 let error_row = Row::new(vec!["Error loading services", "", "", "", ""]);
                 (vec![], vec![error_row])
@@ -85,18 +90,25 @@ impl TableServices<'_> {
                 Constraint::Percentage(30),
             ],
         )
-            .header(
-                Row::new(["Name", "Active", "State", "Load", "Description"])
-                    .style(Style::default().fg(Color::White).add_modifier(Modifier::BOLD))
-            )
-            .block(Block::default().title("Systemd Services").borders(Borders::ALL))
-            .row_highlight_style(
+        .header(
+            Row::new(["Name", "Active", "State", "Load", "Description"]).style(
                 Style::default()
-                    .bg(Color::Blue)
                     .fg(Color::White)
                     .add_modifier(Modifier::BOLD),
-            )
-            .highlight_symbol(">> ");
+            ),
+        )
+        .block(
+            Block::default()
+                .title("Systemd Services")
+                .borders(Borders::ALL),
+        )
+        .row_highlight_style(
+            Style::default()
+                .bg(Color::Blue)
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol(">> ");
         Self {
             table,
             table_state,
@@ -109,19 +121,19 @@ impl TableServices<'_> {
         }
     }
 
-    pub fn render(&mut self, frame: &mut Frame, area: Rect){
+    pub fn render(&mut self, frame: &mut Frame, area: Rect) {
         frame.render_stateful_widget(&self.table, area, &mut self.table_state);
     }
 
-    pub fn set_ignore_key_events(&mut self, has_ignore_key_events: bool){
+    pub fn set_ignore_key_events(&mut self, has_ignore_key_events: bool) {
         if has_ignore_key_events {
-             self.table = self.table.clone().row_highlight_style(
+            self.table = self.table.clone().row_highlight_style(
                 Style::default()
                     .bg(Color::DarkGray)
                     .fg(Color::White)
                     .add_modifier(Modifier::BOLD),
             );
-        }else {
+        } else {
             self.table = self.table.clone().row_highlight_style(
                 Style::default()
                     .bg(Color::Blue)
@@ -132,7 +144,7 @@ impl TableServices<'_> {
         self.ignore_key_events = has_ignore_key_events
     }
 
-    pub fn get_selected_service(&self) -> Option<&Service>{
+    pub fn get_selected_service(&self) -> Option<&Service> {
         if let Some(selected_index) = self.table_state.selected() {
             if let Some(service) = self.filtered_services.get(selected_index) {
                 return Some(service);
@@ -141,7 +153,7 @@ impl TableServices<'_> {
         None
     }
 
-    pub fn set_selected_index(&mut self, index: usize){
+    pub fn set_selected_index(&mut self, index: usize) {
         self.table_state.select(Some(index));
     }
 
@@ -167,7 +179,8 @@ impl TableServices<'_> {
 
     fn filter(&self, filter_text: String, services: Vec<Service>) -> Vec<Service> {
         let lower_filter = filter_text.to_lowercase();
-        services.into_iter()
+        services
+            .into_iter()
             .filter(|service| {
                 let name = service.formatted_name();
                 name.to_lowercase().contains(&lower_filter)
@@ -192,7 +205,10 @@ impl TableServices<'_> {
             KeyCode::Char('u') => self.act_on_selected_service(ServiceAction::RefreshAll),
             KeyCode::Char('x') => self.act_on_selected_service(ServiceAction::Stop),
             KeyCode::Char('v') => self.sender.send(AppEvent::Action(Actions::GoLog)).unwrap(),
-            KeyCode::Char('p') => self.sender.send(AppEvent::Action(Actions::GoDetails)).unwrap(),
+            KeyCode::Char('p') => self
+                .sender
+                .send(AppEvent::Action(Actions::GoDetails))
+                .unwrap(),
             _ => {}
         }
     }
@@ -258,9 +274,15 @@ impl TableServices<'_> {
             match action {
                 ServiceAction::Start => self.handle_result(ServicesManager::start_service(service)),
                 ServiceAction::Stop => self.handle_result(ServicesManager::stop_service(service)),
-                ServiceAction::Restart => self.handle_result(ServicesManager::restart_service(service)),
-                ServiceAction::Enable => self.handle_result(ServicesManager::enable_service(service)),
-                ServiceAction::Disable => self.handle_result(ServicesManager::disable_service(service)),
+                ServiceAction::Restart => {
+                    self.handle_result(ServicesManager::restart_service(service))
+                }
+                ServiceAction::Enable => {
+                    self.handle_result(ServicesManager::enable_service(service))
+                }
+                ServiceAction::Disable => {
+                    self.handle_result(ServicesManager::disable_service(service))
+                }
                 ServiceAction::RefreshAll => self.fetch_services(),
             }
         }
@@ -269,17 +291,21 @@ impl TableServices<'_> {
 
     fn handle_result(&mut self, result: Result<(), Box<dyn Error>>) {
         match result {
-            Ok(_) => {},
-            Err(e) => {panic!("{e}")}
+            Ok(_) => {}
+            Err(e) => {
+                self.sender.send(AppEvent::Error(e.to_string())).unwrap();
+            }
         }
     }
 
     pub fn shortcuts(&mut self) -> Vec<Line<'_>> {
-        let mut help_text: Vec<Line<'_>> = Vec::new(); 
+        let mut help_text: Vec<Line<'_>> = Vec::new();
         if !self.ignore_key_events {
             help_text.push(Line::from(Span::styled(
                 "Actions on the selected service",
-                Style::default().fg(Color::LightMagenta).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::LightMagenta)
+                    .add_modifier(Modifier::BOLD),
             )));
 
             help_text.push(Line::from(
@@ -287,8 +313,6 @@ impl TableServices<'_> {
             ));
         }
 
-        help_text 
+        help_text
     }
 }
-
-
