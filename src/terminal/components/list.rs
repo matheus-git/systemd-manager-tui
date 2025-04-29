@@ -1,5 +1,4 @@
 use crate::usecases::services_manager::ServicesManager;
-use core::panic;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};

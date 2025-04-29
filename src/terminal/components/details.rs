@@ -257,15 +257,17 @@ impl ServiceDetails {
     pub fn auto_refresh_thread(&mut self) {
         let auto_refresh = Arc::clone(&self.auto_refresh);
         let sender = self.sender.clone();
-        thread::spawn(move || loop {
-            thread::sleep(Duration::from_millis(1000));
-            if let Ok(is_active) = auto_refresh.lock() {
-                if *is_active {
-                    sender
-                        .send(AppEvent::Action(Actions::RefreshDetails))
-                        .unwrap();
-                } else {
-                    break;
+        thread::spawn(move || {
+            loop {
+                thread::sleep(Duration::from_millis(1000));
+                if let Ok(is_active) = auto_refresh.lock() {
+                    if *is_active {
+                        sender
+                            .send(AppEvent::Action(Actions::RefreshDetails))
+                            .unwrap();
+                    } else {
+                        break;
+                    }
                 }
             }
         });
