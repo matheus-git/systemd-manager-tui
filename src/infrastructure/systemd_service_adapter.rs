@@ -36,7 +36,12 @@ pub struct SystemdServiceAdapter;
 
 impl SystemdServiceAdapter {
     fn manager_proxy(&self) -> Result<(Connection, Proxy<'static>), Box<dyn std::error::Error>> {
-        let connection: Connection = Connection::system()?;
+        let connection: Connection;
+        if unsafe { libc::geteuid() } != 0 {
+            connection = Connection::session()?;
+        } else {
+            connection = Connection::system()?;
+        }
         let proxy = Proxy::new(
             &connection,
             "org.freedesktop.systemd1",
