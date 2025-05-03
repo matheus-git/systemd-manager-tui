@@ -1,6 +1,6 @@
 # Architecture
 
-In this section, I’ll explain how the project is structured. The architectural styles used include DDD (Domain-Driven Design), Hexagonal Architecture, [component architeture](https://ratatui.rs/concepts/application-patterns/component-architecture/) and [Elm Architecture](https://ratatui.rs/concepts/application-patterns/the-elm-architecture/) (see [here](https://github.com/veeso/tui-realm?tab=readme-ov-file#apps-using-tui-realm-))
+In this section, I’ll explain how the project is structured. The architectural styles used include DDD (Domain-Driven Design), Hexagonal Architecture, [component architeture](https://ratatui.rs/concepts/application-patterns/component-architecture/) and [Elm Architecture](https://ratatui.rs/concepts/application-patterns/the-elm-architecture/).
 
     src
     ├── infrastructure            # Files responsible for fetching data from external sources
