@@ -86,7 +86,7 @@ pub struct App<'a> {
     usecase: Rc<ServicesManager>,
 }
 
-impl<'a> App<'a> {
+impl App<'_> {
     pub fn new(usecase: ServicesManager) -> Self {
         let (event_tx, event_rx) = mpsc::channel::<AppEvent>();
         Self {

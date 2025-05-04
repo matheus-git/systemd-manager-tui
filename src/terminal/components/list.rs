@@ -67,7 +67,7 @@ pub struct TableServices<'a> {
     usecase: Rc<ServicesManager>,
 }
 
-impl<'a> TableServices<'a> {
+impl TableServices<'_> {
     pub fn new(sender: Sender<AppEvent>,  usecase: Rc<ServicesManager>) -> Self {
         let (services, rows) = match usecase.list_services() {
             Ok(svcs) => {
@@ -272,20 +272,20 @@ impl<'a> TableServices<'a> {
         }
     }
 
-fn act_on_selected_service(&mut self, action: ServiceAction) {
-    if let Some(service) = self.get_selected_service() {
-        let usecase = self.usecase.clone();
-        match action {
-            ServiceAction::Start => self.handle_result(usecase.start_service(service)),
-            ServiceAction::Stop => self.handle_result(usecase.stop_service(service)),
-            ServiceAction::Restart => self.handle_result(usecase.restart_service(service)),
-            ServiceAction::Enable => self.handle_result(usecase.enable_service(service)),
-            ServiceAction::Disable => self.handle_result(usecase.disable_service(service)),
-            ServiceAction::RefreshAll => self.fetch_services(),
+    fn act_on_selected_service(&mut self, action: ServiceAction) {
+        if let Some(service) = self.get_selected_service() {
+            let usecase = self.usecase.clone();
+            match action {
+                ServiceAction::Start => self.handle_result(usecase.start_service(service)),
+                ServiceAction::Stop => self.handle_result(usecase.stop_service(service)),
+                ServiceAction::Restart => self.handle_result(usecase.restart_service(service)),
+                ServiceAction::Enable => self.handle_result(usecase.enable_service(service)),
+                ServiceAction::Disable => self.handle_result(usecase.disable_service(service)),
+                ServiceAction::RefreshAll => self.fetch_services(),
+            }
         }
+        self.fetch_and_refresh(self.old_filter_text.clone());
     }
-    self.fetch_and_refresh(self.old_filter_text.clone());
-}
 
     fn handle_result(&mut self, result: Result<(), Box<dyn Error>>) {
         match result {
