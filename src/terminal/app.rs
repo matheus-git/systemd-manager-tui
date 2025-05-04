@@ -118,7 +118,6 @@ impl App<'_> {
     pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         self.running = true;
 
-        // Clonando as instâncias de Option para garantir que não são None.
         let table_service = Rc::clone(self.table_service.as_ref().unwrap());
         let filter = Rc::clone(self.filter.as_ref().unwrap());
         let log = Rc::clone(self.service_log.as_ref().unwrap());
