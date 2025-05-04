@@ -10,6 +10,7 @@ use ratatui::{
 };
 use std::error::Error;
 use std::sync::mpsc::Sender;
+use std::rc::Rc;
 
 use crate::domain::service::Service;
 use crate::terminal::app::{Actions, AppEvent};
@@ -63,11 +64,12 @@ pub struct TableServices<'a> {
     old_filter_text: String,
     pub ignore_key_events: bool,
     sender: Sender<AppEvent>,
+    usecase: Rc<ServicesManager>,
 }
 
 impl TableServices<'_> {
-    pub fn new(sender: Sender<AppEvent>) -> Self {
-        let (services, rows) = match ServicesManager::list_services() {
+    pub fn new(sender: Sender<AppEvent>,  usecase: Rc<ServicesManager>) -> Self {
+        let (services, rows) = match usecase.list_services() {
             Ok(svcs) => {
                 let rows = generate_rows(&svcs);
                 (svcs, rows)
@@ -118,6 +120,7 @@ impl TableServices<'_> {
             sender,
             old_filter_text: String::new(),
             ignore_key_events: false,
+            usecase
         }
     }
 
@@ -165,7 +168,7 @@ impl TableServices<'_> {
     }
 
     fn fetch_services(&mut self) {
-        if let Ok(services) = ServicesManager::list_services() {
+        if let Ok(services) = self.usecase.list_services() {
             self.services = services
         } else {
             self.services = vec![]
@@ -271,18 +274,13 @@ impl TableServices<'_> {
 
     fn act_on_selected_service(&mut self, action: ServiceAction) {
         if let Some(service) = self.get_selected_service() {
+            let usecase = self.usecase.clone();
             match action {
-                ServiceAction::Start => self.handle_result(ServicesManager::start_service(service)),
-                ServiceAction::Stop => self.handle_result(ServicesManager::stop_service(service)),
-                ServiceAction::Restart => {
-                    self.handle_result(ServicesManager::restart_service(service))
-                }
-                ServiceAction::Enable => {
-                    self.handle_result(ServicesManager::enable_service(service))
-                }
-                ServiceAction::Disable => {
-                    self.handle_result(ServicesManager::disable_service(service))
-                }
+                ServiceAction::Start => self.handle_result(usecase.start_service(service)),
+                ServiceAction::Stop => self.handle_result(usecase.stop_service(service)),
+                ServiceAction::Restart => self.handle_result(usecase.restart_service(service)),
+                ServiceAction::Enable => self.handle_result(usecase.enable_service(service)),
+                ServiceAction::Disable => self.handle_result(usecase.disable_service(service)),
                 ServiceAction::RefreshAll => self.fetch_services(),
             }
         }

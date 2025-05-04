@@ -32,16 +32,16 @@ type SystemdUnit = (
     OwnedObjectPath,
 );
 
+#[derive(Default)]
 pub struct SystemdServiceAdapter;
 
 impl SystemdServiceAdapter {
     fn manager_proxy(&self) -> Result<(Connection, Proxy<'static>), Box<dyn std::error::Error>> {
-        let connection: Connection;
-        if unsafe { libc::geteuid() } != 0 {
-            connection = Connection::session()?;
+        let connection: Connection = if unsafe { libc::geteuid() } != 0 {
+            Connection::session()?
         } else {
-            connection = Connection::system()?;
-        }
+            Connection::system()?
+        };
         let proxy = Proxy::new(
             &connection,
             "org.freedesktop.systemd1",
@@ -51,89 +51,7 @@ impl SystemdServiceAdapter {
         Ok((connection, proxy))
     }
 
-    pub fn reload_daemon(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let (conn, proxy) = self.manager_proxy()?;
-        proxy.call::<&str, (), ()>("Reload", &())?;
-        conn.close()?;
-        Ok(())
-    }
-
-    pub fn get_service_property(
-        &self,
-        name: &str,
-    ) -> Result<ServiceProperty, Box<dyn std::error::Error>> {
-        let (conn, manager) = self.manager_proxy()?;
-
-        let unit_path: OwnedObjectPath = manager.call("GetUnit", &(name))?;
-
-        let service_proxy = Proxy::new(
-            &conn,
-            "org.freedesktop.systemd1",
-            unit_path.as_str(),
-            "org.freedesktop.systemd1.Service",
-        )?;
-
-        let exec_start: Vec<SASBTTUII> = service_proxy.get_property("ExecStart")?;
-        let exec_start_pre: Vec<SASBTTUII> = service_proxy.get_property("ExecStartPre")?;
-        let exec_start_post: Vec<SASBTTUII> = service_proxy.get_property("ExecStartPost")?;
-        let exec_stop: Vec<SASBTTUII> = service_proxy.get_property("ExecStop")?;
-        let exec_stop_post: Vec<SASBTTUII> = service_proxy.get_property("ExecStopPost")?;
-
-        let exec_main_pid: u32 = service_proxy.get_property("ExecMainPID")?;
-        let exec_main_start_timestamp: u64 =
-            service_proxy.get_property("ExecMainStartTimestamp")?;
-        let exec_main_exit_timestamp: u64 = service_proxy.get_property("ExecMainExitTimestamp")?;
-        let exec_main_code: i32 = service_proxy.get_property("ExecMainCode")?;
-        let exec_main_status: i32 = service_proxy.get_property("ExecMainStatus")?;
-
-        let main_pid: u32 = service_proxy.get_property("MainPID")?;
-        let control_pid: u32 = service_proxy.get_property("ControlPID")?;
-
-        let restart: String = service_proxy.get_property("Restart")?;
-        let restart_usec: u64 = service_proxy.get_property("RestartUSec")?;
-
-        let status_text: String = service_proxy.get_property("StatusText")?;
-        let result: String = service_proxy.get_property("Result")?;
-
-        let user: String = service_proxy.get_property("User")?;
-        let group: String = service_proxy.get_property("Group")?;
-
-        let limit_cpu: u64 = service_proxy.get_property("LimitCPU")?;
-        let limit_nofile: u64 = service_proxy.get_property("LimitNOFILE")?;
-        let limit_nproc: u64 = service_proxy.get_property("LimitNPROC")?;
-        let limit_memlock: u64 = service_proxy.get_property("LimitMEMLOCK")?;
-        let memory_limit: u64 = service_proxy.get_property("MemoryLimit")?;
-        let cpu_shares: u64 = service_proxy.get_property("CPUShares")?;
-
-        conn.close()?;
-
-        Ok(ServiceProperty::new(
-            exec_start,
-            exec_start_pre,
-            exec_start_post,
-            exec_stop,
-            exec_stop_post,
-            exec_main_pid,
-            exec_main_start_timestamp,
-            exec_main_exit_timestamp,
-            exec_main_code,
-            exec_main_status,
-            main_pid,
-            control_pid,
-            restart,
-            restart_usec,
-            status_text,
-            result,
-            user,
-            group,
-            limit_cpu,
-            limit_nofile,
-            limit_nproc,
-            limit_memlock,
-            memory_limit,
-            cpu_shares,
-        ))
-    }
+    
 }
 impl ServiceRepository for SystemdServiceAdapter {
     fn list_services(&self) -> Result<Vec<Service>, Box<dyn std::error::Error>> {
@@ -225,5 +143,89 @@ impl ServiceRepository for SystemdServiceAdapter {
             proxy.call("DisableUnitFiles", &(vec![name], false))?;
         conn.close()?;
         Ok(())
+    }
+
+    fn reload_daemon(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let (conn, proxy) = self.manager_proxy()?;
+        proxy.call::<&str, (), ()>("Reload", &())?;
+        conn.close()?;
+        Ok(())
+    }
+
+    fn get_service_property(
+        &self,
+        name: &str,
+    ) -> Result<ServiceProperty, Box<dyn std::error::Error>> {
+        let (conn, manager) = self.manager_proxy()?;
+
+        let unit_path: OwnedObjectPath = manager.call("GetUnit", &(name))?;
+
+        let service_proxy = Proxy::new(
+            &conn,
+            "org.freedesktop.systemd1",
+            unit_path.as_str(),
+            "org.freedesktop.systemd1.Service",
+        )?;
+
+        let exec_start: Vec<SASBTTUII> = service_proxy.get_property("ExecStart")?;
+        let exec_start_pre: Vec<SASBTTUII> = service_proxy.get_property("ExecStartPre")?;
+        let exec_start_post: Vec<SASBTTUII> = service_proxy.get_property("ExecStartPost")?;
+        let exec_stop: Vec<SASBTTUII> = service_proxy.get_property("ExecStop")?;
+        let exec_stop_post: Vec<SASBTTUII> = service_proxy.get_property("ExecStopPost")?;
+
+        let exec_main_pid: u32 = service_proxy.get_property("ExecMainPID")?;
+        let exec_main_start_timestamp: u64 =
+        service_proxy.get_property("ExecMainStartTimestamp")?;
+        let exec_main_exit_timestamp: u64 = service_proxy.get_property("ExecMainExitTimestamp")?;
+        let exec_main_code: i32 = service_proxy.get_property("ExecMainCode")?;
+        let exec_main_status: i32 = service_proxy.get_property("ExecMainStatus")?;
+
+        let main_pid: u32 = service_proxy.get_property("MainPID")?;
+        let control_pid: u32 = service_proxy.get_property("ControlPID")?;
+
+        let restart: String = service_proxy.get_property("Restart")?;
+        let restart_usec: u64 = service_proxy.get_property("RestartUSec")?;
+
+        let status_text: String = service_proxy.get_property("StatusText")?;
+        let result: String = service_proxy.get_property("Result")?;
+
+        let user: String = service_proxy.get_property("User")?;
+        let group: String = service_proxy.get_property("Group")?;
+
+        let limit_cpu: u64 = service_proxy.get_property("LimitCPU")?;
+        let limit_nofile: u64 = service_proxy.get_property("LimitNOFILE")?;
+        let limit_nproc: u64 = service_proxy.get_property("LimitNPROC")?;
+        let limit_memlock: u64 = service_proxy.get_property("LimitMEMLOCK")?;
+        let memory_limit: u64 = service_proxy.get_property("MemoryLimit")?;
+        let cpu_shares: u64 = service_proxy.get_property("CPUShares")?;
+
+        conn.close()?;
+
+        Ok(ServiceProperty::new(
+            exec_start,
+            exec_start_pre,
+            exec_start_post,
+            exec_stop,
+            exec_stop_post,
+            exec_main_pid,
+            exec_main_start_timestamp,
+            exec_main_exit_timestamp,
+            exec_main_code,
+            exec_main_status,
+            main_pid,
+            control_pid,
+            restart,
+            restart_usec,
+            status_text,
+            result,
+            user,
+            group,
+            limit_cpu,
+            limit_nofile,
+            limit_nproc,
+            limit_memlock,
+            memory_limit,
+            cpu_shares,
+        ))
     }
 }

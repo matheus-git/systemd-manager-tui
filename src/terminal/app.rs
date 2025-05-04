@@ -17,6 +17,7 @@ use super::components::details::ServiceDetails;
 use super::components::filter::Filter;
 use super::components::list::TableServices;
 use super::components::log::ServiceLog;
+use crate::usecases::services_manager::ServicesManager;
 
 #[derive(PartialEq)]
 enum Status {
@@ -55,7 +56,6 @@ fn get_user_friendly_error(error: &str) -> &str {
     } else if error.contains("org.freedesktop.systemd1.NoSuchUnit") {
         "The requested service unit doesn't exist."
     } else {
-        // Default fallback for unknown errors
         error
     }
 }
@@ -77,40 +77,51 @@ fn spawn_key_event_listener(event_tx: Sender<AppEvent>) {
 pub struct App<'a> {
     running: bool,
     status: Status,
-    table_service: Rc<RefCell<TableServices<'a>>>,
-    filter: Rc<RefCell<Filter>>,
-    service_log: Rc<RefCell<ServiceLog<'a>>>,
-    details: Rc<RefCell<ServiceDetails>>,
+    table_service: Option<Rc<RefCell<TableServices<'a>>>>,
+    filter: Option<Rc<RefCell<Filter>>>,
+    service_log: Option<Rc<RefCell<ServiceLog<'a>>>>,
+    details: Option<Rc<RefCell<ServiceDetails>>>,
     event_rx: Receiver<AppEvent>,
     event_tx: Sender<AppEvent>,
+    usecase: Rc<ServicesManager>,
 }
 
 impl App<'_> {
-    pub fn new() -> Self {
+    pub fn new(usecase: ServicesManager) -> Self {
         let (event_tx, event_rx) = mpsc::channel::<AppEvent>();
         Self {
             running: true,
             status: Status::List,
-            table_service: Rc::new(RefCell::new(TableServices::new(event_tx.clone()))),
-            filter: Rc::new(RefCell::new(Filter::new(event_tx.clone()))),
-            service_log: Rc::new(RefCell::new(ServiceLog::new(event_tx.clone()))),
-            details: Rc::new(RefCell::new(ServiceDetails::new(event_tx.clone()))),
+            table_service: None,
+            filter: None,
+            service_log: None,
+            details: None,
             event_rx,
             event_tx,
+            usecase: Rc::new(usecase),
         }
     }
 
     pub fn init(&mut self) {
         spawn_key_event_listener(self.event_tx.clone());
+
+        self.table_service = Some(Rc::new(RefCell::new(TableServices::new(
+            self.event_tx.clone(),
+            Rc::clone(&self.usecase),
+        ))));
+
+        self.filter = Some(Rc::new(RefCell::new(Filter::new(self.event_tx.clone()))));
+        self.service_log = Some(Rc::new(RefCell::new(ServiceLog::new(self.event_tx.clone(), Rc::clone(&self.usecase)))));
+        self.details = Some(Rc::new(RefCell::new(ServiceDetails::new(self.event_tx.clone(), Rc::clone(&self.usecase)))));
     }
 
     pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         self.running = true;
 
-        let table_service = Rc::clone(&self.table_service);
-        let filter = Rc::clone(&self.filter);
-        let log = Rc::clone(&self.service_log);
-        let details = Rc::clone(&self.details);
+        let table_service = Rc::clone(self.table_service.as_ref().unwrap());
+        let filter = Rc::clone(self.filter.as_ref().unwrap());
+        let log = Rc::clone(self.service_log.as_ref().unwrap());
+        let details = Rc::clone(self.details.as_ref().unwrap());
 
         while self.running {
             match self.status {
@@ -123,34 +134,34 @@ impl App<'_> {
                 AppEvent::Key(key) => match self.status {
                     Status::Log => {
                         self.on_key_event(key);
-                        self.service_log.borrow_mut().on_key_event(key)
+                        log.borrow_mut().on_key_event(key)
                     }
                     Status::List => {
                         self.on_key_event(key);
-                        self.table_service.borrow_mut().on_key_event(key);
-                        self.filter.borrow_mut().on_key_event(key);
+                        table_service.borrow_mut().on_key_event(key);
+                        filter.borrow_mut().on_key_event(key);
                     }
                     Status::Details => {
                         self.on_key_event(key);
-                        self.details.borrow_mut().on_key_event(key);
+                        details.borrow_mut().on_key_event(key);
                     }
                 },
                 AppEvent::Action(Actions::UpdateIgnoreListKeys(bool)) => {
-                    self.table_service.borrow_mut().set_ignore_key_events(bool);
+                    table_service.borrow_mut().set_ignore_key_events(bool);
                 }
                 AppEvent::Action(Actions::Filter(input)) => {
-                    self.table_service.borrow_mut().set_selected_index(0);
-                    self.table_service.borrow_mut().refresh(input);
+                    table_service.borrow_mut().set_selected_index(0);
+                    table_service.borrow_mut().refresh(input);
                 }
-                AppEvent::Action(Actions::Updatelog(log)) => {
-                    self.service_log.borrow_mut().update(log.0, log.1);
+                AppEvent::Action(Actions::Updatelog(data)) => {
+                    log.borrow_mut().update(data.0, data.1);
                 }
                 AppEvent::Action(Actions::RefreshLog) => {
                     if self.status == Status::Log {
                         if let Some(service) =
-                            self.table_service.borrow_mut().get_selected_service()
+                            table_service.borrow_mut().get_selected_service()
                         {
-                            self.service_log
+                            log
                                 .borrow_mut()
                                 .fetch_log_and_dispatch(service.clone());
                         }
@@ -159,23 +170,23 @@ impl App<'_> {
                 AppEvent::Action(Actions::GoLog) => {
                     self.status = Status::Log;
                     self.event_tx.send(AppEvent::Action(Actions::RefreshLog))?;
-                    self.service_log.borrow_mut().start_auto_refresh();
+                    log.borrow_mut().start_auto_refresh();
                 }
                 AppEvent::Action(Actions::GoList) => self.status = Status::List,
                 AppEvent::Action(Actions::UpdateDetails) => {}
                 AppEvent::Action(Actions::RefreshDetails) => {
                     if self.status == Status::Details {
-                        self.details.borrow_mut().fetch_log_and_dispatch();
+                        details.borrow_mut().fetch_log_and_dispatch();
                     }
                 }
                 AppEvent::Action(Actions::GoDetails) => {
-                    if let Some(service) = self.table_service.borrow_mut().get_selected_service() {
-                        self.details.borrow_mut().update(service.clone());
+                    if let Some(service) = table_service.borrow_mut().get_selected_service() {
+                        details.borrow_mut().update(service.clone());
                     }
                     self.event_tx
                         .send(AppEvent::Action(Actions::RefreshDetails))?;
                     self.status = Status::Details;
-                    self.details.borrow_mut().start_auto_refresh();
+                    details.borrow_mut().start_auto_refresh();
                 }
                 AppEvent::Error(error_msg) => {
                     // Get a user-friendly message based on the error
@@ -240,7 +251,7 @@ impl App<'_> {
 
         Ok(())
     }
-    fn draw_details_status(
+       fn draw_details_status(
         &mut self,
         terminal: &mut DefaultTerminal,
         service_details: &Rc<RefCell<ServiceDetails>>,
