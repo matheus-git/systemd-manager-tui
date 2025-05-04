@@ -12,6 +12,7 @@ use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
+use std::rc::Rc;
 
 use crossterm::event::{KeyCode, KeyEvent};
 
@@ -24,15 +25,17 @@ pub struct ServiceDetails {
     sender: Sender<AppEvent>,
     scroll: u16,
     auto_refresh: Arc<Mutex<bool>>,
+    usecase: Rc<ServicesManager>,
 }
 
 impl ServiceDetails {
-    pub fn new(sender: Sender<AppEvent>) -> Self {
+    pub fn new(sender: Sender<AppEvent>,  usecase: Rc<ServicesManager>) -> Self {
         Self {
             service: None,
             sender,
             scroll: 0,
             auto_refresh: Arc::new(Mutex::new(false)),
+            usecase
         }
     }
 
@@ -276,17 +279,12 @@ impl ServiceDetails {
     pub fn fetch_log_and_dispatch(&self) {
         if let Some(service_arc) = &self.service {
             let event_tx = self.sender.clone();
-            let service = Arc::clone(service_arc);
-
-            thread::spawn(move || {
-                let mut service_guard = service.lock().expect("Failed to lock service");
-
-                if ServicesManager::update_properties(&mut service_guard).is_ok() {
-                    event_tx
-                        .send(AppEvent::Action(Actions::UpdateDetails))
-                        .expect("Failed to send UpdateDetails event");
-                }
-            });
+            let mut service = service_arc.lock().unwrap();
+            if self.usecase.update_properties(&mut service).is_ok() {
+                event_tx
+                    .send(AppEvent::Action(Actions::UpdateDetails))
+                    .expect("Failed to send UpdateDetails event");
+            }
         }
     }
     pub fn update(&mut self, service: Service) {

@@ -1,4 +1,4 @@
-use super::service::Service;
+use super::{service::Service, service_property::ServiceProperty};
 use std::error::Error;
 
 pub trait ServiceRepository {
@@ -9,4 +9,6 @@ pub trait ServiceRepository {
     fn restart_service(&self, name: &str) -> Result<(), Box<dyn Error>>;
     fn enable_service(&self, name: &str) -> Result<(), Box<dyn Error>>;
     fn disable_service(&self, name: &str) -> Result<(), Box<dyn Error>>;
+    fn reload_daemon(&self) -> Result<(), Box<dyn std::error::Error>>;
+    fn get_service_property(&self, name: &str) -> Result<ServiceProperty, Box<dyn std::error::Error>>;
 }
