@@ -74,54 +74,49 @@ fn spawn_key_event_listener(event_tx: Sender<AppEvent>) {
         }
     });
 }
-pub struct App<'a> {
+pub struct App {
     running: bool,
     status: Status,
-    table_service: Option<Rc<RefCell<TableServices<'a>>>>,
-    filter: Option<Rc<RefCell<Filter>>>,
-    service_log: Option<Rc<RefCell<ServiceLog<'a>>>>,
-    details: Option<Rc<RefCell<ServiceDetails>>>,
+    table_service: Rc<RefCell<TableServices>>,
+    filter: Rc<RefCell<Filter>>,
+    service_log: Rc<RefCell<ServiceLog>>,
+    details: Rc<RefCell<ServiceDetails>>,
     event_rx: Receiver<AppEvent>,
     event_tx: Sender<AppEvent>,
-    usecase: Rc<ServicesManager>,
 }
 
-impl App<'_> {
-    pub fn new(usecase: ServicesManager) -> Self {
-        let (event_tx, event_rx) = mpsc::channel::<AppEvent>();
+impl App {
+    pub fn new(
+        event_tx: Sender<AppEvent>, 
+        event_rx: Receiver<AppEvent>, 
+        table_service: Rc<RefCell<TableServices>>,
+        filter: Rc<RefCell<Filter>>,
+        service_log: Rc<RefCell<ServiceLog>>,
+        details: Rc<RefCell<ServiceDetails>>
+    ) -> Self {
         Self {
             running: true,
             status: Status::List,
-            table_service: None,
-            filter: None,
-            service_log: None,
-            details: None,
+            table_service,
+            filter,
+            service_log,
+            details,
             event_rx,
             event_tx,
-            usecase: Rc::new(usecase),
         }
     }
 
     pub fn init(&mut self) {
         spawn_key_event_listener(self.event_tx.clone());
-
-        self.table_service = Some(Rc::new(RefCell::new(TableServices::new(
-            self.event_tx.clone(),
-            Rc::clone(&self.usecase),
-        ))));
-
-        self.filter = Some(Rc::new(RefCell::new(Filter::new(self.event_tx.clone()))));
-        self.service_log = Some(Rc::new(RefCell::new(ServiceLog::new(self.event_tx.clone(), Rc::clone(&self.usecase)))));
-        self.details = Some(Rc::new(RefCell::new(ServiceDetails::new(self.event_tx.clone(), Rc::clone(&self.usecase)))));
     }
 
     pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         self.running = true;
 
-        let table_service = Rc::clone(self.table_service.as_ref().unwrap());
-        let filter = Rc::clone(self.filter.as_ref().unwrap());
-        let log = Rc::clone(self.service_log.as_ref().unwrap());
-        let details = Rc::clone(self.details.as_ref().unwrap());
+        let table_service = self.table_service.clone();
+        let filter = self.filter.clone();
+        let log = self.service_log.clone();
+        let details = self.details.clone();
 
         while self.running {
             match self.status {

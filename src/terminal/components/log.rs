@@ -31,9 +31,9 @@ impl BorderColor {
     }
 }
 
-pub struct ServiceLog<'a> {
-    log_paragraph: Option<Paragraph<'a>>,
-    log_block: Option<Block<'a>>,
+pub struct ServiceLog {
+    log_paragraph: Option<Paragraph<'static>>,
+    log_block: Option<Block<'static>>,
     border_color: BorderColor,
     service_name: String,
     scroll: u16,
@@ -42,7 +42,7 @@ pub struct ServiceLog<'a> {
     usecase: Rc<ServicesManager>,
 }
 
-impl ServiceLog<'_> {
+impl ServiceLog {
     pub fn new(sender: Sender<AppEvent>,  usecase: Rc<ServicesManager>) -> Self {
         Self {
             log_paragraph: None,
