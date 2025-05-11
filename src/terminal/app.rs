@@ -6,7 +6,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use ratatui::DefaultTerminal;
 use ratatui::Frame;
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
 use std::time::Duration;
 
@@ -17,7 +17,6 @@ use super::components::details::ServiceDetails;
 use super::components::filter::Filter;
 use super::components::list::TableServices;
 use super::components::log::ServiceLog;
-use crate::usecases::services_manager::ServicesManager;
 
 #[derive(PartialEq)]
 enum Status {
@@ -74,95 +73,93 @@ fn spawn_key_event_listener(event_tx: Sender<AppEvent>) {
         }
     });
 }
-pub struct App<'a> {
+pub struct App {
     running: bool,
     status: Status,
-    table_service: Option<Rc<RefCell<TableServices<'a>>>>,
-    filter: Option<Rc<RefCell<Filter>>>,
-    service_log: Option<Rc<RefCell<ServiceLog<'a>>>>,
-    details: Option<Rc<RefCell<ServiceDetails>>>,
+    table_service: Rc<RefCell<TableServices>>,
+    filter: Rc<RefCell<Filter>>,
+    service_log: Rc<RefCell<ServiceLog>>,
+    details: Rc<RefCell<ServiceDetails>>,
     event_rx: Receiver<AppEvent>,
     event_tx: Sender<AppEvent>,
-    usecase: Rc<ServicesManager>,
 }
 
-impl App<'_> {
-    pub fn new(usecase: ServicesManager) -> Self {
-        let (event_tx, event_rx) = mpsc::channel::<AppEvent>();
+impl App {
+    pub fn new(
+        event_tx: Sender<AppEvent>, 
+        event_rx: Receiver<AppEvent>, 
+        table_service: Rc<RefCell<TableServices>>,
+        filter: Rc<RefCell<Filter>>,
+        service_log: Rc<RefCell<ServiceLog>>,
+        details: Rc<RefCell<ServiceDetails>>
+    ) -> Self {
         Self {
             running: true,
             status: Status::List,
-            table_service: None,
-            filter: None,
-            service_log: None,
-            details: None,
+            table_service,
+            filter,
+            service_log,
+            details,
             event_rx,
             event_tx,
-            usecase: Rc::new(usecase),
         }
     }
 
     pub fn init(&mut self) {
         spawn_key_event_listener(self.event_tx.clone());
-
-        self.table_service = Some(Rc::new(RefCell::new(TableServices::new(
-            self.event_tx.clone(),
-            Rc::clone(&self.usecase),
-        ))));
-
-        self.filter = Some(Rc::new(RefCell::new(Filter::new(self.event_tx.clone()))));
-        self.service_log = Some(Rc::new(RefCell::new(ServiceLog::new(self.event_tx.clone(), Rc::clone(&self.usecase)))));
-        self.details = Some(Rc::new(RefCell::new(ServiceDetails::new(self.event_tx.clone(), Rc::clone(&self.usecase)))));
     }
 
     pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         self.running = true;
 
-        let table_service = Rc::clone(self.table_service.as_ref().unwrap());
-        let filter = Rc::clone(self.filter.as_ref().unwrap());
-        let log = Rc::clone(self.service_log.as_ref().unwrap());
-        let details = Rc::clone(self.details.as_ref().unwrap());
+        let binding_table_service = self.table_service.clone();
+        let mut table_service = binding_table_service.borrow_mut();
+        let binding_filter = self.filter.clone();
+        let mut filter = binding_filter.borrow_mut();
+        let binding_log = self.service_log.clone();
+        let mut log = binding_log.borrow_mut();
+        let bindind_details = self.details.clone();
+        let mut details = bindind_details.borrow_mut();
 
         while self.running {
             match self.status {
-                Status::Log => self.draw_log_status(&mut terminal, &log)?,
-                Status::List => self.draw_list_status(&mut terminal, &filter, &table_service)?,
-                Status::Details => self.draw_details_status(&mut terminal, &details)?,
+                Status::Log => self.draw_log_status(&mut terminal, &mut log)?,
+                Status::List => self.draw_list_status(&mut terminal, &mut filter, &mut table_service)?,
+                Status::Details => self.draw_details_status(&mut terminal, &mut details)?,
             }
 
             match self.event_rx.recv()? {
                 AppEvent::Key(key) => match self.status {
                     Status::Log => {
                         self.on_key_event(key);
-                        log.borrow_mut().on_key_event(key)
+                        log.on_key_event(key)
                     }
                     Status::List => {
                         self.on_key_event(key);
-                        table_service.borrow_mut().on_key_event(key);
-                        filter.borrow_mut().on_key_event(key);
+                        table_service.on_key_event(key);
+                        filter.on_key_event(key);
                     }
                     Status::Details => {
                         self.on_key_event(key);
-                        details.borrow_mut().on_key_event(key);
+                        details.on_key_event(key);
                     }
                 },
                 AppEvent::Action(Actions::UpdateIgnoreListKeys(bool)) => {
-                    table_service.borrow_mut().set_ignore_key_events(bool);
+                    table_service.set_ignore_key_events(bool);
                 }
                 AppEvent::Action(Actions::Filter(input)) => {
-                    table_service.borrow_mut().set_selected_index(0);
-                    table_service.borrow_mut().refresh(input);
+                    table_service.set_selected_index(0);
+                    table_service.refresh(input);
                 }
                 AppEvent::Action(Actions::Updatelog(data)) => {
-                    log.borrow_mut().update(data.0, data.1);
+                    log.update(data.0, data.1);
                 }
                 AppEvent::Action(Actions::RefreshLog) => {
                     if self.status == Status::Log {
                         if let Some(service) =
-                            table_service.borrow_mut().get_selected_service()
+                            table_service.get_selected_service()
                         {
                             log
-                                .borrow_mut()
                                 .fetch_log_and_dispatch(service.clone());
                         }
                     }
@@ -170,93 +167,92 @@ impl App<'_> {
                 AppEvent::Action(Actions::GoLog) => {
                     self.status = Status::Log;
                     self.event_tx.send(AppEvent::Action(Actions::RefreshLog))?;
-                    log.borrow_mut().start_auto_refresh();
+                    log.start_auto_refresh();
                 }
                 AppEvent::Action(Actions::GoList) => self.status = Status::List,
                 AppEvent::Action(Actions::UpdateDetails) => {}
                 AppEvent::Action(Actions::RefreshDetails) => {
                     if self.status == Status::Details {
-                        details.borrow_mut().fetch_log_and_dispatch();
+                        details.fetch_log_and_dispatch();
                     }
                 }
                 AppEvent::Action(Actions::GoDetails) => {
-                    if let Some(service) = table_service.borrow_mut().get_selected_service() {
-                        details.borrow_mut().update(service.clone());
+                    if let Some(service) = table_service.get_selected_service() {
+                        details.update(service.clone());
                     }
                     self.event_tx
                         .send(AppEvent::Action(Actions::RefreshDetails))?;
                     self.status = Status::Details;
-                    details.borrow_mut().start_auto_refresh();
+                    details.start_auto_refresh();
                 }
                 AppEvent::Error(error_msg) => {
-                    // Get a user-friendly message based on the error
-                    let user_friendly_message = get_user_friendly_error(&error_msg);
-
-                    // Draw an error popup immediately
-                    terminal.draw(|frame| {
-                        let area = frame.area();
-
-                        // Calculate popup dimensions and position
-                        let popup_width = std::cmp::min(70, area.width.saturating_sub(4));
-                        let popup_height = std::cmp::min(12, area.height.saturating_sub(4));
-
-                        let popup_x = (area.width.saturating_sub(popup_width)) / 2;
-                        let popup_y = (area.height.saturating_sub(popup_height)) / 2;
-
-                        let popup_area = Rect::new(
-                            area.x + popup_x,
-                            area.y + popup_y,
-                            popup_width,
-                            popup_height,
-                        );
-
-                        // Draw a clear background for the popup
-                        frame.render_widget(Clear, popup_area);
-
-                        // Create the error message paragraph
-                        let text = vec![
-                            Line::from(vec![Span::styled(
-                                "ERROR",
-                                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-                            )]),
-                            Line::from(""),
-                            Line::from(user_friendly_message),
-                            Line::from(""),
-                            Line::from(vec![Span::styled(
-                                "Press any key to dismiss",
-                                Style::default().fg(Color::Gray),
-                            )]),
-                        ];
-
-                        let error_block = Paragraph::new(text)
-                            .block(
-                                Block::default()
-                                    .borders(Borders::ALL)
-                                    .border_style(Style::default().fg(Color::Red))
-                                    .title("Error"),
-                            )
-                            .alignment(Alignment::Center)
-                            .wrap(ratatui::widgets::Wrap { trim: true });
-
-                        frame.render_widget(error_block, popup_area);
-                    })?;
-
-                    // Wait for any key press to dismiss
-                    if let Ok(Event::Key(_)) = event::read() {
-                        // Continue after key press
-                    }
+                    self.error_popup(&mut terminal, error_msg)?;    
                 }
             }
         }
 
         Ok(())
     }
-       fn draw_details_status(
+
+    fn error_popup(&self, terminal: &mut DefaultTerminal, error_msg: String) -> Result<()> {
+        let user_friendly_message = get_user_friendly_error(&error_msg);
+
+        terminal.draw(|frame| {
+            let area = frame.area();
+
+            let popup_width = std::cmp::min(70, area.width.saturating_sub(4));
+            let popup_height = std::cmp::min(12, area.height.saturating_sub(4));
+
+            let popup_x = (area.width.saturating_sub(popup_width)) / 2;
+            let popup_y = (area.height.saturating_sub(popup_height)) / 2;
+
+            let popup_area = Rect::new(
+                area.x + popup_x,
+                area.y + popup_y,
+                popup_width,
+                popup_height,
+            );
+
+            frame.render_widget(Clear, popup_area);
+
+            let text = vec![
+                Line::from(vec![Span::styled(
+                    "ERROR",
+                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+                )]),
+                Line::from(""),
+                Line::from(user_friendly_message),
+                Line::from(""),
+                Line::from(vec![Span::styled(
+                    "Press any key to dismiss",
+                    Style::default().fg(Color::Gray),
+                )]),
+            ];
+
+            let error_block = Paragraph::new(text)
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(Color::Red))
+                        .title("Error"),
+                )
+                .alignment(Alignment::Center)
+                .wrap(ratatui::widgets::Wrap { trim: true });
+
+            frame.render_widget(error_block, popup_area);
+        })?;
+
+        if let Ok(Event::Key(_)) = event::read() {
+            // Continue after key press
+        };
+        Ok(())
+    }
+
+    fn draw_details_status(
         &mut self,
         terminal: &mut DefaultTerminal,
-        service_details: &Rc<RefCell<ServiceDetails>>,
+        service_details: &mut ServiceDetails,
     ) -> Result<()> {
-        let mut service_details = service_details.borrow_mut();
         terminal.draw(|frame| {
             let area = frame.area();
 
@@ -273,9 +269,8 @@ impl App<'_> {
     fn draw_log_status(
         &mut self,
         terminal: &mut DefaultTerminal,
-        service_log: &Rc<RefCell<ServiceLog>>,
+        service_log: &mut ServiceLog,
     ) -> Result<()> {
-        let mut service_log = service_log.borrow_mut();
         terminal.draw(|frame| {
             let area = frame.area();
 
@@ -292,11 +287,9 @@ impl App<'_> {
     fn draw_list_status(
         &mut self,
         terminal: &mut DefaultTerminal,
-        filter: &Rc<RefCell<Filter>>,
-        table_service: &Rc<RefCell<TableServices>>,
+        filter: &mut Filter,
+        table: &mut TableServices,
     ) -> Result<()> {
-        let filter = filter.borrow_mut();
-        let mut table = table_service.borrow_mut();
         terminal.draw(|frame| {
             let area = frame.area();
 

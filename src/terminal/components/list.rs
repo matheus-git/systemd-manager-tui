@@ -54,9 +54,9 @@ pub enum ServiceAction {
     Disable,
     RefreshAll,
 }
-
-pub struct TableServices<'a> {
-    table: Table<'a>,
+ 
+pub struct TableServices {
+    table: Table<'static>,
     pub table_state: TableState,
     pub rows: Vec<Row<'static>>,
     pub services: Vec<Service>,
@@ -67,7 +67,7 @@ pub struct TableServices<'a> {
     usecase: Rc<ServicesManager>,
 }
 
-impl TableServices<'_> {
+impl TableServices {
     pub fn new(sender: Sender<AppEvent>,  usecase: Rc<ServicesManager>) -> Self {
         let (services, rows) = match usecase.list_services() {
             Ok(svcs) => {
