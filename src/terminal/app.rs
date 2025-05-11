@@ -6,7 +6,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, Borders, Clear, Paragraph};
 use ratatui::DefaultTerminal;
 use ratatui::Frame;
-use std::sync::mpsc::{self, Receiver, Sender};
+use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
 use std::time::Duration;
 
@@ -17,7 +17,6 @@ use super::components::details::ServiceDetails;
 use super::components::filter::Filter;
 use super::components::list::TableServices;
 use super::components::log::ServiceLog;
-use crate::usecases::services_manager::ServicesManager;
 
 #[derive(PartialEq)]
 enum Status {
@@ -113,51 +112,54 @@ impl App {
     pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         self.running = true;
 
-        let table_service = self.table_service.clone();
-        let filter = self.filter.clone();
-        let log = self.service_log.clone();
-        let details = self.details.clone();
+        let binding_table_service = self.table_service.clone();
+        let mut table_service = binding_table_service.borrow_mut();
+        let binding_filter = self.filter.clone();
+        let mut filter = binding_filter.borrow_mut();
+        let binding_log = self.service_log.clone();
+        let mut log = binding_log.borrow_mut();
+        let bindind_details = self.details.clone();
+        let mut details = bindind_details.borrow_mut();
 
         while self.running {
             match self.status {
-                Status::Log => self.draw_log_status(&mut terminal, &log)?,
-                Status::List => self.draw_list_status(&mut terminal, &filter, &table_service)?,
-                Status::Details => self.draw_details_status(&mut terminal, &details)?,
+                Status::Log => self.draw_log_status(&mut terminal, &mut log)?,
+                Status::List => self.draw_list_status(&mut terminal, &mut filter, &mut table_service)?,
+                Status::Details => self.draw_details_status(&mut terminal, &mut details)?,
             }
 
             match self.event_rx.recv()? {
                 AppEvent::Key(key) => match self.status {
                     Status::Log => {
                         self.on_key_event(key);
-                        log.borrow_mut().on_key_event(key)
+                        log.on_key_event(key)
                     }
                     Status::List => {
                         self.on_key_event(key);
-                        table_service.borrow_mut().on_key_event(key);
-                        filter.borrow_mut().on_key_event(key);
+                        table_service.on_key_event(key);
+                        filter.on_key_event(key);
                     }
                     Status::Details => {
                         self.on_key_event(key);
-                        details.borrow_mut().on_key_event(key);
+                        details.on_key_event(key);
                     }
                 },
                 AppEvent::Action(Actions::UpdateIgnoreListKeys(bool)) => {
-                    table_service.borrow_mut().set_ignore_key_events(bool);
+                    table_service.set_ignore_key_events(bool);
                 }
                 AppEvent::Action(Actions::Filter(input)) => {
-                    table_service.borrow_mut().set_selected_index(0);
-                    table_service.borrow_mut().refresh(input);
+                    table_service.set_selected_index(0);
+                    table_service.refresh(input);
                 }
                 AppEvent::Action(Actions::Updatelog(data)) => {
-                    log.borrow_mut().update(data.0, data.1);
+                    log.update(data.0, data.1);
                 }
                 AppEvent::Action(Actions::RefreshLog) => {
                     if self.status == Status::Log {
                         if let Some(service) =
-                            table_service.borrow_mut().get_selected_service()
+                            table_service.get_selected_service()
                         {
                             log
-                                .borrow_mut()
                                 .fetch_log_and_dispatch(service.clone());
                         }
                     }
@@ -165,23 +167,23 @@ impl App {
                 AppEvent::Action(Actions::GoLog) => {
                     self.status = Status::Log;
                     self.event_tx.send(AppEvent::Action(Actions::RefreshLog))?;
-                    log.borrow_mut().start_auto_refresh();
+                    log.start_auto_refresh();
                 }
                 AppEvent::Action(Actions::GoList) => self.status = Status::List,
                 AppEvent::Action(Actions::UpdateDetails) => {}
                 AppEvent::Action(Actions::RefreshDetails) => {
                     if self.status == Status::Details {
-                        details.borrow_mut().fetch_log_and_dispatch();
+                        details.fetch_log_and_dispatch();
                     }
                 }
                 AppEvent::Action(Actions::GoDetails) => {
-                    if let Some(service) = table_service.borrow_mut().get_selected_service() {
-                        details.borrow_mut().update(service.clone());
+                    if let Some(service) = table_service.get_selected_service() {
+                        details.update(service.clone());
                     }
                     self.event_tx
                         .send(AppEvent::Action(Actions::RefreshDetails))?;
                     self.status = Status::Details;
-                    details.borrow_mut().start_auto_refresh();
+                    details.start_auto_refresh();
                 }
                 AppEvent::Error(error_msg) => {
                     // Get a user-friendly message based on the error
@@ -249,9 +251,8 @@ impl App {
        fn draw_details_status(
         &mut self,
         terminal: &mut DefaultTerminal,
-        service_details: &Rc<RefCell<ServiceDetails>>,
+        service_details: &mut ServiceDetails,
     ) -> Result<()> {
-        let mut service_details = service_details.borrow_mut();
         terminal.draw(|frame| {
             let area = frame.area();
 
@@ -268,9 +269,8 @@ impl App {
     fn draw_log_status(
         &mut self,
         terminal: &mut DefaultTerminal,
-        service_log: &Rc<RefCell<ServiceLog>>,
+        service_log: &mut ServiceLog,
     ) -> Result<()> {
-        let mut service_log = service_log.borrow_mut();
         terminal.draw(|frame| {
             let area = frame.area();
 
@@ -287,11 +287,9 @@ impl App {
     fn draw_list_status(
         &mut self,
         terminal: &mut DefaultTerminal,
-        filter: &Rc<RefCell<Filter>>,
-        table_service: &Rc<RefCell<TableServices>>,
+        filter: &mut Filter,
+        table: &mut TableServices,
     ) -> Result<()> {
-        let filter = filter.borrow_mut();
-        let mut table = table_service.borrow_mut();
         terminal.draw(|frame| {
             let area = frame.area();
 
