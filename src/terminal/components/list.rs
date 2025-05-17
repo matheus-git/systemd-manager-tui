@@ -325,7 +325,7 @@ impl TableServices {
             )));
 
             help_text.push(Line::from(
-                "Navigate: ↑/↓ | Start: s | Stop: x | Restart: r | Enable: e | Disable: d | Refresh all: u | View logs: v | Properties: p"
+                "Navigate: ↑/↓ | Switch tab: ←/→ | Start: s | Stop: x | Restart: r | Enable: e | Disable: d | Refresh all: u | View logs: v | Properties: p"
             ));
         }
 

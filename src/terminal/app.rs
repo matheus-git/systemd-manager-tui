@@ -338,7 +338,7 @@ impl App {
 
         if shortcuts_lens > 0 {
             help_text.push(Line::raw(""));
-            if help_area.width > 125 {
+            if help_area.width > 140 {
                 help_text.push(Line::raw(""));
             }
         }
@@ -372,46 +372,46 @@ impl App {
                 code: KeyCode::Left,
                 ..
             } => {
-                if self.selected_tab_index == 0 {
-                    self.selected_tab_index = 2 - 1;
-                } else {
-                    self.selected_tab_index -= 1;
+                if matches!(self.status, Status::List) {
+                    self.selected_tab_index = if self.selected_tab_index == 0 {
+                        1 
+                    } else {
+                        self.selected_tab_index - 1
+                    };
+
+                    self.update_connection_and_reset();
                 }
-
-                match self.selected_tab_index {
-                    0 => {
-                       self.usecases.borrow_mut().change_repository_connection(ConnectionType::System).expect("")
-                    },
-                    _ => {
-                       self.usecases.borrow_mut().change_repository_connection(ConnectionType::Session).expect("")
-                    }
-                }
-
-                self.event_tx.send(AppEvent::Action(Actions::ResetList));
-
             }
 
             KeyEvent {
                 code: KeyCode::Right,
                 ..
             } => {
-                self.selected_tab_index = (self.selected_tab_index + 1) % 2;
-                
-                match self.selected_tab_index {
-                    0 => {
-                       self.usecases.borrow_mut().change_repository_connection(ConnectionType::System).expect("")
-                    },
-                    _ => {
-                       self.usecases.borrow_mut().change_repository_connection(ConnectionType::Session).expect("")
-                    }
+                if matches!(self.status, Status::List) {
+                    self.selected_tab_index = (self.selected_tab_index + 1) % 2;
+
+                    self.update_connection_and_reset();
                 }
-
-                self.event_tx.send(AppEvent::Action(Actions::ResetList));
-
             }
 
             _ => {}
         }
+    }
+
+    fn update_connection_and_reset(&mut self) {
+        let conn_type = match self.selected_tab_index {
+            0 => ConnectionType::System,
+            _ => ConnectionType::Session,
+        };
+
+        self.usecases
+            .borrow_mut()
+            .change_repository_connection(conn_type)
+            .expect("Failed to change repository connection");
+
+        self.event_tx
+            .send(AppEvent::Action(Actions::ResetList))
+            .expect("Failed to send ResetList event");
     }
 
     fn quit(&mut self) {
