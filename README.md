@@ -36,7 +36,7 @@ There are many possible actions and pieces of information that can be retrieved,
 
 ## Future Improvements
 
-- Tab navigation: all, system services, session services and custom.
+- Show loading indicator when switching tabs
 - Remotely manage services.
 
 ## Weekly Updates
