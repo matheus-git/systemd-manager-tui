@@ -217,7 +217,7 @@ impl App {
             let area = frame.area();
 
             let popup_width = std::cmp::min(70, area.width.saturating_sub(4));
-            let popup_height = std::cmp::min(12, area.height.saturating_sub(4));
+            let popup_height = std::cmp::min(10, area.height.saturating_sub(4));
 
             let popup_x = (area.width.saturating_sub(popup_width)) / 2;
             let popup_y = (area.height.saturating_sub(popup_height)) / 2;
@@ -404,10 +404,14 @@ impl App {
             _ => ConnectionType::Session,
         };
 
-        self.usecases
+        if let Err(_err) = self.usecases
             .borrow_mut()
             .change_repository_connection(conn_type)
-            .expect("Failed to change repository connection");
+        {
+            self.event_tx.send(AppEvent::Error(format!("Failed to change connection type with D-Bus, try run without sudo"))).expect("Failed to change connection type");
+            self.selected_tab_index = 0;
+            return
+        }
 
         self.event_tx
             .send(AppEvent::Action(Actions::ResetList))
