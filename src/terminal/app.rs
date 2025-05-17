@@ -13,6 +13,8 @@ use std::time::Duration;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::usecases::services_manager::ServicesManager;
+
 use super::components::details::ServiceDetails;
 use super::components::filter::Filter;
 use super::components::list::TableServices;
@@ -80,6 +82,7 @@ pub struct App {
     filter: Rc<RefCell<Filter>>,
     service_log: Rc<RefCell<ServiceLog>>,
     details: Rc<RefCell<ServiceDetails>>,
+    usecases: Rc<ServicesManager>,
     event_rx: Receiver<AppEvent>,
     event_tx: Sender<AppEvent>,
 }
@@ -91,7 +94,8 @@ impl App {
         table_service: Rc<RefCell<TableServices>>,
         filter: Rc<RefCell<Filter>>,
         service_log: Rc<RefCell<ServiceLog>>,
-        details: Rc<RefCell<ServiceDetails>>
+        details: Rc<RefCell<ServiceDetails>>,
+        usecases: Rc<ServicesManager>
     ) -> Self {
         Self {
             running: true,
@@ -100,6 +104,7 @@ impl App {
             filter,
             service_log,
             details,
+            usecases,
             event_rx,
             event_tx,
         }

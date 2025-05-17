@@ -39,7 +39,8 @@ fn main() -> color_eyre::Result<()> {
         Rc::new(RefCell::new(table_services)),
         Rc::new(RefCell::new(filter)),
         Rc::new(RefCell::new(service_log)),
-        Rc::new(RefCell::new(details))
+        Rc::new(RefCell::new(details)),
+        usecase
     );
     app.init();
     let result = app.run(terminal);
