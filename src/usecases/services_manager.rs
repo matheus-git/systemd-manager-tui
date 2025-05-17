@@ -1,5 +1,6 @@
 use crate::domain::service::Service;
 use crate::domain::service_repository::ServiceRepository;
+use crate::infrastructure::systemd_service_adapter::ConnectionType;
 use std::error::Error;
 use std::thread;
 use std::time::Duration;
@@ -61,6 +62,11 @@ impl ServicesManager {
 
     pub fn get_log(&self, service: &Service) -> Result<String, Box<dyn Error>> {
         self.repository.get_service_log(service.name())
+    }
+
+    pub fn change_repository_connection(&mut self, connection_type: ConnectionType) -> Result<(), Box<dyn Error>> {
+        self.repository.change_connection(connection_type)?;
+        Ok(())
     }
 }
 

@@ -53,6 +53,8 @@ impl SystemdServiceAdapter {
         Ok(Self {connection})
     }
 
+
+
     fn manager_proxy(&self) -> Result<Proxy<'static>, Box<dyn std::error::Error>> {
         let proxy = Proxy::new(
             &self.connection,
@@ -65,6 +67,14 @@ impl SystemdServiceAdapter {
 }
 
 impl ServiceRepository for SystemdServiceAdapter {
+    fn change_connection(&mut self, connection_type: ConnectionType) -> Result<(), Error> {
+        self.connection = match connection_type {
+            ConnectionType::Session => Connection::session()?,
+            ConnectionType::System => Connection::system()?
+        };
+        Ok(())
+    }
+
     fn list_services(&self) -> Result<Vec<Service>, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
 

@@ -1,3 +1,4 @@
+use crate::usecases;
 use crate::usecases::services_manager::ServicesManager;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::Rect;
@@ -11,6 +12,7 @@ use ratatui::{
 use std::error::Error;
 use std::sync::mpsc::Sender;
 use std::rc::Rc;
+use std::cell::RefCell;
 
 use crate::domain::service::Service;
 use crate::terminal::app::{Actions, AppEvent};
@@ -64,12 +66,12 @@ pub struct TableServices {
     old_filter_text: String,
     pub ignore_key_events: bool,
     sender: Sender<AppEvent>,
-    usecase: Rc<ServicesManager>,
+    usecase: Rc<RefCell<ServicesManager>>,
 }
 
 impl TableServices {
-    pub fn new(sender: Sender<AppEvent>,  usecase: Rc<ServicesManager>) -> Self {
-        let (services, rows) = match usecase.list_services() {
+    pub fn new(sender: Sender<AppEvent>,  usecase: Rc<RefCell<ServicesManager>>) -> Self {
+        let (services, rows) = match usecase.borrow().list_services() {
             Ok(svcs) => {
                 let rows = generate_rows(&svcs);
                 (svcs, rows)
@@ -99,7 +101,7 @@ impl TableServices {
                     .add_modifier(Modifier::BOLD),
             ),
         )
-        .block(
+        .block( 
             Block::default()
                 .title("Systemd Services")
                 .borders(Borders::ALL),
@@ -126,6 +128,11 @@ impl TableServices {
 
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
         frame.render_stateful_widget(&self.table, area, &mut self.table_state);
+    }
+
+    pub fn set_usecase(&mut self, usecase: Rc<RefCell<ServicesManager>>) {
+        self.usecase = usecase;
+        self.fetch_and_refresh(self.old_filter_text.clone());
     }
 
     pub fn set_ignore_key_events(&mut self, has_ignore_key_events: bool) {
@@ -168,7 +175,7 @@ impl TableServices {
     }
 
     fn fetch_services(&mut self) {
-        if let Ok(services) = self.usecase.list_services() {
+        if let Ok(services) = self.usecase.borrow().list_services() {
             self.services = services
         } else {
             self.services = vec![]
@@ -274,7 +281,8 @@ impl TableServices {
 
     fn act_on_selected_service(&mut self, action: ServiceAction) {
         if let Some(service) = self.get_selected_service() {
-            let usecase = self.usecase.clone();
+            let binding_usecase = self.usecase.clone();
+            let usecase = binding_usecase.borrow();
             match action {
                 ServiceAction::Start => self.handle_result(usecase.start_service(service)),
                 ServiceAction::Stop => self.handle_result(usecase.stop_service(service)),

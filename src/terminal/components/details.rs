@@ -13,6 +13,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use std::rc::Rc;
+use std::cell::RefCell;
 
 use crossterm::event::{KeyCode, KeyEvent};
 
@@ -25,11 +26,11 @@ pub struct ServiceDetails {
     sender: Sender<AppEvent>,
     scroll: u16,
     auto_refresh: Arc<Mutex<bool>>,
-    usecase: Rc<ServicesManager>,
+    usecase: Rc<RefCell<ServicesManager>>,
 }
 
 impl ServiceDetails {
-    pub fn new(sender: Sender<AppEvent>,  usecase: Rc<ServicesManager>) -> Self {
+    pub fn new(sender: Sender<AppEvent>,  usecase: Rc<RefCell<ServicesManager>>) -> Self {
         Self {
             service: None,
             sender,
@@ -280,7 +281,7 @@ impl ServiceDetails {
         if let Some(service_arc) = &self.service {
             let event_tx = self.sender.clone();
             let mut service = service_arc.lock().unwrap();
-            if self.usecase.update_properties(&mut service).is_ok() {
+            if self.usecase.borrow().update_properties(&mut service).is_ok() {
                 event_tx
                     .send(AppEvent::Action(Actions::UpdateDetails))
                     .expect("Failed to send UpdateDetails event");

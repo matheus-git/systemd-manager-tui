@@ -12,6 +12,7 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use std::rc::Rc;
+use std::cell::RefCell;
 
 use crate::domain::service::Service;
 use crate::terminal::app::{Actions, AppEvent};
@@ -39,11 +40,11 @@ pub struct ServiceLog {
     scroll: u16,
     sender: Sender<AppEvent>,
     auto_refresh: Arc<Mutex<bool>>,
-    usecase: Rc<ServicesManager>,
+    usecase: Rc<RefCell<ServicesManager>>,
 }
 
 impl ServiceLog {
-    pub fn new(sender: Sender<AppEvent>,  usecase: Rc<ServicesManager>) -> Self {
+    pub fn new(sender: Sender<AppEvent>,  usecase: Rc<RefCell<ServicesManager>>) -> Self {
         Self {
             log_paragraph: None,
             log_block: None,
@@ -226,7 +227,7 @@ impl ServiceLog {
 
     pub fn fetch_log_and_dispatch(&mut self, service: Service) {
         let event_tx = self.sender.clone();
-        if let Ok(log) = self.usecase.get_log(&service) {
+        if let Ok(log) = self.usecase.borrow().get_log(&service) {
             event_tx
                 .send(AppEvent::Action(Actions::Updatelog((
                     service.name().to_string(),

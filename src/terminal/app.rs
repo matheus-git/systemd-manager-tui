@@ -3,7 +3,7 @@ use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifier
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Paragraph};
+use ratatui::widgets::{Block, Borders, Clear, Paragraph, Tabs};
 use ratatui::DefaultTerminal;
 use ratatui::Frame;
 use std::sync::mpsc::{Receiver, Sender};
@@ -13,6 +13,7 @@ use std::time::Duration;
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use crate::infrastructure::systemd_service_adapter::ConnectionType;
 use crate::usecases::services_manager::ServicesManager;
 
 use super::components::details::ServiceDetails;
@@ -82,9 +83,10 @@ pub struct App {
     filter: Rc<RefCell<Filter>>,
     service_log: Rc<RefCell<ServiceLog>>,
     details: Rc<RefCell<ServiceDetails>>,
-    usecases: Rc<ServicesManager>,
+    usecases: Rc<RefCell<ServicesManager>>,
     event_rx: Receiver<AppEvent>,
     event_tx: Sender<AppEvent>,
+    selected_tab_index: usize,
 }
 
 impl App {
@@ -95,7 +97,7 @@ impl App {
         filter: Rc<RefCell<Filter>>,
         service_log: Rc<RefCell<ServiceLog>>,
         details: Rc<RefCell<ServiceDetails>>,
-        usecases: Rc<ServicesManager>
+        usecases: Rc<RefCell<ServicesManager>>
     ) -> Self {
         Self {
             running: true,
@@ -107,6 +109,7 @@ impl App {
             usecases,
             event_rx,
             event_tx,
+            selected_tab_index: 0
         }
     }
 
@@ -298,13 +301,22 @@ impl App {
         terminal.draw(|frame| {
             let area = frame.area();
 
-            let [filter_box, list_box, help_area_box] = Layout::vertical([
+            let [filter_box, tabs_box, list_box, help_area_box] = Layout::vertical([
                 Constraint::Length(4),
+                Constraint::Length(1),
                 Constraint::Min(10),
                 Constraint::Max(7),
             ])
             .areas(area);
 
+            let tabs = Tabs::new(vec!["System services","Session Services"])
+                .select(self.selected_tab_index)
+                .highlight_style(Style::default().fg(Color::Yellow));
+
+
+                table.set_usecase(self.usecases.clone());
+
+            frame.render_widget(tabs, tabs_box);
             filter.draw(frame, filter_box);
             table.render(frame, list_box);
             self.draw_shortcuts(frame, help_area_box, table.shortcuts());
@@ -342,10 +354,55 @@ impl App {
     }
 
     fn on_key_event(&mut self, key: KeyEvent) {
-        if let (KeyModifiers::CONTROL, KeyCode::Char('c') | KeyCode::Char('C')) =
-            (key.modifiers, key.code)
-        {
-            self.quit()
+        match key {
+            KeyEvent {
+                modifiers: KeyModifiers::CONTROL,
+                code: KeyCode::Char('c') | KeyCode::Char('C'),
+                ..
+            } => {
+                self.quit();
+            }
+
+            KeyEvent {
+                code: KeyCode::Left,
+                ..
+            } => {
+                if self.selected_tab_index == 0 {
+                    self.selected_tab_index = 2 - 1;
+                } else {
+                    self.selected_tab_index -= 1;
+                }
+
+                match self.selected_tab_index {
+                    0 => {
+                       self.usecases.borrow_mut().change_repository_connection(ConnectionType::System).expect("")
+                    },
+                    _ => {
+                       self.usecases.borrow_mut().change_repository_connection(ConnectionType::Session).expect("")
+                    }
+                }
+
+            }
+
+            KeyEvent {
+                code: KeyCode::Right,
+                ..
+            } => {
+                self.selected_tab_index = (self.selected_tab_index + 1) % 2;
+                
+                match self.selected_tab_index {
+                    0 => {
+                       self.usecases.borrow_mut().change_repository_connection(ConnectionType::System).expect("")
+                    },
+                    _ => {
+                       self.usecases.borrow_mut().change_repository_connection(ConnectionType::Session).expect("")
+                    }
+                }
+
+
+            }
+
+            _ => {}
         }
     }
 
