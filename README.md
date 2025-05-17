@@ -4,7 +4,9 @@
 
 A program for managing systemd services through a TUI (Terminal User Interfaces).
 
-This tool allows you to manage systemd services with ease. You can view logs, list services, view properties, and control their lifecycle—start, stop, restart, enable, and disable—using the D-Bus API.
+This tool allows you to manage systemd services with ease. You can view logs, list services, view properties, and control their lifecycle—start, stop, restart, enable, and disable—using the D-Bus API. 
+
+Additionally, it is possible to navigate between system services (sudo) and session services (user).
 
 ## Screenshots
 ![screenshot_list](assets/screenshot_list.png)
