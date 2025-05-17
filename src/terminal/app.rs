@@ -180,7 +180,11 @@ impl App {
                 }
                 AppEvent::Action(Actions::GoList) => self.status = Status::List,
                 AppEvent::Action(Actions::ResetList) => {
-                    table_service.set_usecase(self.usecases.clone());
+                    let title = match self.selected_tab_index {
+                        0 => "System services",
+                        _ => "Session services"
+                    };
+                    table_service.set_usecase(self.usecases.clone(), title.to_string());
                 },
                 AppEvent::Action(Actions::UpdateDetails) => {}
                 AppEvent::Action(Actions::RefreshDetails) => {
@@ -313,7 +317,7 @@ impl App {
             ])
             .areas(area);
 
-            let tabs = Tabs::new(vec!["System services","Session Services"])
+            let tabs = Tabs::new(vec!["System services","Session services"])
                 .select(self.selected_tab_index)
                 .highlight_style(Style::default().fg(Color::Yellow));
 

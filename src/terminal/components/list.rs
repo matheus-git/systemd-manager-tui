@@ -103,7 +103,7 @@ impl TableServices {
         )
         .block( 
             Block::default()
-                .title("Systemd Services")
+                .title("System Services")
                 .borders(Borders::ALL),
         )
         .row_highlight_style(
@@ -122,7 +122,7 @@ impl TableServices {
             sender,
             old_filter_text: String::new(),
             ignore_key_events: false,
-            usecase
+            usecase,
         }
     }
 
@@ -130,8 +130,13 @@ impl TableServices {
         frame.render_stateful_widget(&self.table, area, &mut self.table_state);
     }
 
-    pub fn set_usecase(&mut self, usecase: Rc<RefCell<ServicesManager>>) {
+    pub fn set_usecase(&mut self, usecase: Rc<RefCell<ServicesManager>>, title: String) {
         self.usecase = usecase;
+        self.table = self.table.clone().block( 
+            Block::default()
+                .title(title)
+                .borders(Borders::ALL),
+        );
         self.rows.clear();
         self.table_state.select(Some(0));
         self.services.clear();
