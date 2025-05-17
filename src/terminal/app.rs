@@ -408,7 +408,7 @@ impl App {
             .borrow_mut()
             .change_repository_connection(conn_type)
         {
-            self.event_tx.send(AppEvent::Error(format!("Failed to change connection type with D-Bus, try run without sudo"))).expect("Failed to change connection type");
+            self.event_tx.send(AppEvent::Error("Failed to change connection type with D-Bus, try run without sudo".to_string())).expect("Failed to change connection type");
             self.selected_tab_index = 0;
             return
         }
