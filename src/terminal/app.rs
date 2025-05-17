@@ -32,6 +32,7 @@ pub enum Actions {
     RefreshLog,
     RefreshDetails,
     GoList,
+    ResetList,
     GoLog,
     GoDetails,
     Updatelog((String, String)),
@@ -178,6 +179,9 @@ impl App {
                     log.start_auto_refresh();
                 }
                 AppEvent::Action(Actions::GoList) => self.status = Status::List,
+                AppEvent::Action(Actions::ResetList) => {
+                    table_service.set_usecase(self.usecases.clone());
+                },
                 AppEvent::Action(Actions::UpdateDetails) => {}
                 AppEvent::Action(Actions::RefreshDetails) => {
                     if self.status == Status::Details {
@@ -313,9 +317,6 @@ impl App {
                 .select(self.selected_tab_index)
                 .highlight_style(Style::default().fg(Color::Yellow));
 
-
-                table.set_usecase(self.usecases.clone());
-
             frame.render_widget(tabs, tabs_box);
             filter.draw(frame, filter_box);
             table.render(frame, list_box);
@@ -382,6 +383,8 @@ impl App {
                     }
                 }
 
+                self.event_tx.send(AppEvent::Action(Actions::ResetList));
+
             }
 
             KeyEvent {
@@ -399,6 +402,7 @@ impl App {
                     }
                 }
 
+                self.event_tx.send(AppEvent::Action(Actions::ResetList));
 
             }
 

@@ -132,6 +132,11 @@ impl TableServices {
 
     pub fn set_usecase(&mut self, usecase: Rc<RefCell<ServicesManager>>) {
         self.usecase = usecase;
+        self.rows.clear();
+        self.table_state.select(Some(0));
+        self.services.clear();
+        self.filtered_services.clear();
+        self.fetch_services();
         self.fetch_and_refresh(self.old_filter_text.clone());
     }
 
