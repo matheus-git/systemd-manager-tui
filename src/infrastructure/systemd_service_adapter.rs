@@ -1,5 +1,6 @@
 use zbus::blocking::{Connection, Proxy};
 use zbus::zvariant::OwnedObjectPath;
+use zbus::Error;
 
 use crate::domain::service::Service;
 use crate::domain::service_property::{ServiceProperty, SASBTTUII};
@@ -32,30 +33,50 @@ type SystemdUnit = (
     OwnedObjectPath,
 );
 
-#[derive(Default)]
-pub struct SystemdServiceAdapter;
+pub enum ConnectionType {
+    Session,
+    System
+}
+
+pub struct SystemdServiceAdapter {
+    connection: Connection
+}
 
 impl SystemdServiceAdapter {
-    fn manager_proxy(&self) -> Result<(Connection, Proxy<'static>), Box<dyn std::error::Error>> {
-        let connection: Connection = if unsafe { libc::geteuid() } != 0 {
-            Connection::session()?
-        } else {
-            Connection::system()?
-        };
+    pub fn new(connection_type: ConnectionType) -> Result<Self, Error> {
+        let connection = 
+            match connection_type {
+                ConnectionType::Session => Connection::session()?,
+                ConnectionType::System => Connection::system()?
+            };
+
+        Ok(Self {connection})
+    }
+
+
+
+    fn manager_proxy(&self) -> Result<Proxy<'static>, Box<dyn std::error::Error>> {
         let proxy = Proxy::new(
-            &connection,
+            &self.connection,
             "org.freedesktop.systemd1",
             "/org/freedesktop/systemd1",
             "org.freedesktop.systemd1.Manager",
         )?;
-        Ok((connection, proxy))
+        Ok(proxy)
+    }
+}
+
+impl ServiceRepository for SystemdServiceAdapter {
+    fn change_connection(&mut self, connection_type: ConnectionType) -> Result<(), Error> {
+        self.connection = match connection_type {
+            ConnectionType::Session => Connection::session()?,
+            ConnectionType::System => Connection::system()?
+        };
+        Ok(())
     }
 
-    
-}
-impl ServiceRepository for SystemdServiceAdapter {
     fn list_services(&self) -> Result<Vec<Service>, Box<dyn std::error::Error>> {
-        let (conn, proxy) = self.manager_proxy()?;
+        let proxy = self.manager_proxy()?;
 
         let units: Vec<SystemdUnit> = proxy.call("ListUnits", &())?;
 
@@ -87,8 +108,6 @@ impl ServiceRepository for SystemdServiceAdapter {
             )
             .collect();
 
-        conn.close()?;
-
         Ok(services)
     }
 
@@ -109,46 +128,40 @@ impl ServiceRepository for SystemdServiceAdapter {
     }
 
     fn start_service(&self, name: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let (conn, proxy) = self.manager_proxy()?;
+        let proxy = self.manager_proxy()?;
         let _job: OwnedObjectPath = proxy.call("StartUnit", &(name, "replace"))?;
-        conn.close()?;
         Ok(())
     }
 
     fn stop_service(&self, name: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let (conn, proxy) = self.manager_proxy()?;
+        let proxy = self.manager_proxy()?;
         let _job: OwnedObjectPath = proxy.call("StopUnit", &(name, "replace"))?;
-        conn.close()?;
         Ok(())
     }
 
     fn restart_service(&self, name: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let (conn, proxy) = self.manager_proxy()?;
+        let proxy = self.manager_proxy()?;
         let _job: OwnedObjectPath = proxy.call("RestartUnit", &(name, "replace"))?;
-        conn.close()?;
         Ok(())
     }
 
     fn enable_service(&self, name: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let (conn, proxy) = self.manager_proxy()?;
+        let proxy = self.manager_proxy()?;
         let (_carries_install_info, _changes): (bool, Vec<(String, String, String)>) =
             proxy.call("EnableUnitFiles", &(vec![name], false, true))?;
-        conn.close()?;
         Ok(())
     }
 
     fn disable_service(&self, name: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let (conn, proxy) = self.manager_proxy()?;
+        let proxy = self.manager_proxy()?;
         let _changes: Vec<(String, String, String)> =
             proxy.call("DisableUnitFiles", &(vec![name], false))?;
-        conn.close()?;
         Ok(())
     }
 
     fn reload_daemon(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let (conn, proxy) = self.manager_proxy()?;
+        let proxy = self.manager_proxy()?;
         proxy.call::<&str, (), ()>("Reload", &())?;
-        conn.close()?;
         Ok(())
     }
 
@@ -156,12 +169,12 @@ impl ServiceRepository for SystemdServiceAdapter {
         &self,
         name: &str,
     ) -> Result<ServiceProperty, Box<dyn std::error::Error>> {
-        let (conn, manager) = self.manager_proxy()?;
+        let proxy = self.manager_proxy()?;
 
-        let unit_path: OwnedObjectPath = manager.call("GetUnit", &(name))?;
+        let unit_path: OwnedObjectPath = proxy.call("GetUnit", &(name))?;
 
         let service_proxy = Proxy::new(
-            &conn,
+            &self.connection,
             "org.freedesktop.systemd1",
             unit_path.as_str(),
             "org.freedesktop.systemd1.Service",
@@ -198,8 +211,6 @@ impl ServiceRepository for SystemdServiceAdapter {
         let limit_memlock: u64 = service_proxy.get_property("LimitMEMLOCK")?;
         let memory_limit: u64 = service_proxy.get_property("MemoryLimit")?;
         let cpu_shares: u64 = service_proxy.get_property("CPUShares")?;
-
-        conn.close()?;
 
         Ok(ServiceProperty::new(
             exec_start,

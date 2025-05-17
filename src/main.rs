@@ -3,7 +3,7 @@ mod infrastructure;
 mod terminal;
 mod usecases;
 use terminal::app::App;
-use infrastructure::systemd_service_adapter::SystemdServiceAdapter;
+use infrastructure::systemd_service_adapter::{SystemdServiceAdapter, ConnectionType};
 use usecases::services_manager::ServicesManager;
 
 use std::sync::mpsc;
@@ -23,7 +23,7 @@ fn main() -> color_eyre::Result<()> {
 
     let (event_tx, event_rx) = mpsc::channel::<AppEvent>();
 
-    let usecase = Rc::new(ServicesManager::new(Box::new(SystemdServiceAdapter)));
+    let usecase = Rc::new(RefCell::new(ServicesManager::new(Box::new(SystemdServiceAdapter::new(ConnectionType::System)?))));
     let table_services = TableServices::new(event_tx.clone(), usecase.clone());
     let filter = Filter::new(event_tx.clone());
     let service_log = ServiceLog::new(event_tx.clone(), usecase.clone());
@@ -35,7 +35,8 @@ fn main() -> color_eyre::Result<()> {
         Rc::new(RefCell::new(table_services)),
         Rc::new(RefCell::new(filter)),
         Rc::new(RefCell::new(service_log)),
-        Rc::new(RefCell::new(details))
+        Rc::new(RefCell::new(details)),
+        usecase
     );
     app.init();
     let result = app.run(terminal);
