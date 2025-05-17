@@ -9,7 +9,7 @@ This tool allows you to manage systemd services with ease. You can view logs, li
 Additionally, it is possible to navigate between system services (sudo) and session services (user).
 
 ## Screenshots
-![screenshot_list](assets/screenshot_list.png)
+![screenshot_list](assets/screenshot_list.png?v=2)
 View more [screenshots](docs/screenshots.md)
 
 ## Usage
