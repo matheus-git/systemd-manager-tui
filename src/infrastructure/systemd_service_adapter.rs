@@ -1,5 +1,6 @@
 use zbus::blocking::{Connection, Proxy};
 use zbus::zvariant::OwnedObjectPath;
+use zbus::Error;
 
 use crate::domain::service::Service;
 use crate::domain::service_property::{ServiceProperty, SASBTTUII};
@@ -32,27 +33,37 @@ type SystemdUnit = (
     OwnedObjectPath,
 );
 
-#[derive(Default)]
-pub struct SystemdServiceAdapter;
+pub enum ConnectionType {
+    Session,
+    System
+}
+
+pub struct SystemdServiceAdapter {
+    connection: Connection
+}
 
 impl SystemdServiceAdapter {
+    pub fn new(connection_type: ConnectionType) -> Result<Self, Error> {
+        let connection = 
+            match connection_type {
+                ConnectionType::Session => Connection::session()?,
+                ConnectionType::System => Connection::system()?
+            };
+
+        Ok(Self {connection})
+    }
+
     fn manager_proxy(&self) -> Result<(Connection, Proxy<'static>), Box<dyn std::error::Error>> {
-        let connection: Connection = if unsafe { libc::geteuid() } != 0 {
-            Connection::session()?
-        } else {
-            Connection::system()?
-        };
         let proxy = Proxy::new(
-            &connection,
+            &self.connection,
             "org.freedesktop.systemd1",
             "/org/freedesktop/systemd1",
             "org.freedesktop.systemd1.Manager",
         )?;
-        Ok((connection, proxy))
+        Ok((self.connection.clone(), proxy))
     }
-
-    
 }
+
 impl ServiceRepository for SystemdServiceAdapter {
     fn list_services(&self) -> Result<Vec<Service>, Box<dyn std::error::Error>> {
         let (conn, proxy) = self.manager_proxy()?;
