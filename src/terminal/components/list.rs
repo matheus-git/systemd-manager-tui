@@ -90,7 +90,7 @@ impl TableServices {
                 Constraint::Length(20),
                 Constraint::Length(10),
                 Constraint::Length(10),
-                Constraint::Percentage(30),
+                Constraint::Min(0),
             ],
         )
         .header(
