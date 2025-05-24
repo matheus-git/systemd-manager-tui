@@ -5,7 +5,7 @@ use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::{
     layout::Constraint,
-    widgets::{Block, Borders, Cell, Row, Table, TableState},
+    widgets::{Block, Borders, Cell, Row, Table, TableState, Padding},
     Frame,
 };
 use std::error::Error;
@@ -15,6 +15,8 @@ use std::cell::RefCell;
 
 use crate::domain::service::Service;
 use crate::terminal::app::{Actions, AppEvent};
+
+const PADDING: Padding = Padding::new(1, 1, 1, 1);
 
 fn generate_rows(services: &[Service]) -> Vec<Row<'static>> {
     services
@@ -102,8 +104,8 @@ impl TableServices {
         )
         .block( 
             Block::default()
-                .title("System Services")
-                .borders(Borders::ALL),
+                .borders(Borders::NONE)
+                .padding(PADDING),
         )
         .row_highlight_style(
             Style::default()
@@ -129,18 +131,17 @@ impl TableServices {
         frame.render_stateful_widget(&self.table, area, &mut self.table_state);
     }
 
-    pub fn set_usecase(&mut self, usecase: Rc<RefCell<ServicesManager>>, title: String) {
+    pub fn set_usecase(&mut self, usecase: Rc<RefCell<ServicesManager>>) {
         self.usecase = usecase;
         self.table = self.table.clone().block( 
             Block::default()
-                .title(title)
-                .borders(Borders::ALL),
+                .borders(Borders::NONE)
+                .padding(PADDING),
         );
         self.rows.clear();
         self.table_state.select(Some(0));
         self.services.clear();
         self.filtered_services.clear();
-        self.fetch_services();
         self.fetch_and_refresh(self.old_filter_text.clone());
     }
 

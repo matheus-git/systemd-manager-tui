@@ -180,11 +180,7 @@ impl App {
                 }
                 AppEvent::Action(Actions::GoList) => self.status = Status::List,
                 AppEvent::Action(Actions::ResetList) => {
-                    let title = match self.selected_tab_index {
-                        0 => "System services",
-                        _ => "Session services"
-                    };
-                    table_service.set_usecase(self.usecases.clone(), title.to_string());
+                    table_service.set_usecase(self.usecases.clone());
                 },
                 AppEvent::Action(Actions::UpdateDetails) => {}
                 AppEvent::Action(Actions::RefreshDetails) => {
