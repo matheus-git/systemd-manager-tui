@@ -68,5 +68,9 @@ impl ServicesManager {
         self.repository.change_connection(connection_type)?;
         Ok(())
     }
+
+    pub fn systemctl_cat(&self, service: &Service) -> Result<String, Box<dyn Error>> {
+        self.repository.systemctl_cat(service.name())
+    }
 }
 

@@ -1,7 +1,8 @@
 use zbus::blocking::{Connection, Proxy};
 use zbus::zvariant::OwnedObjectPath;
 use zbus::Error;
-
+use std::process::Command;
+use std::io::{self, ErrorKind};
 use crate::domain::service::Service;
 use crate::domain::service_property::{ServiceProperty, SASBTTUII};
 use crate::domain::service_repository::ServiceRepository;
@@ -125,6 +126,22 @@ impl ServiceRepository for SystemdServiceAdapter {
         };
 
         Ok(log)
+    }
+
+    
+    fn systemctl_cat(&self, name: &str) -> Result<String, Box<dyn std::error::Error>> {
+        let output = Command::new("systemctl")
+            .arg("cat")
+            .arg("--no-pager")
+            .arg(name)
+            .output()?;
+
+        if output.status.success() {
+            Ok(String::from_utf8_lossy(&output.stdout).to_string())
+        } else {
+            let err_msg = String::from_utf8_lossy(&output.stderr).to_string();
+            Err(Box::new(io::Error::new(ErrorKind::Other, err_msg)))
+        }
     }
 
     fn start_service(&self, name: &str) -> Result<(), Box<dyn std::error::Error>> {
