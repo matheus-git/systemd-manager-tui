@@ -54,6 +54,7 @@ impl ServicesManager {
         Ok(services)
     }
 
+    #[allow(dead_code)]
     pub fn update_properties(&self, service: &mut Service) -> Result<(), Box<dyn Error>> {
         let props = self.repository.get_service_property(service.name())?;
         service.update_properties(props);
@@ -67,6 +68,10 @@ impl ServicesManager {
     pub fn change_repository_connection(&mut self, connection_type: ConnectionType) -> Result<(), Box<dyn Error>> {
         self.repository.change_connection(connection_type)?;
         Ok(())
+    }
+
+    pub fn systemctl_cat(&self, service: &Service) -> Result<String, Box<dyn Error>> {
+        self.repository.systemctl_cat(service.name())
     }
 }
 

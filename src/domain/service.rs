@@ -35,6 +35,7 @@ impl Service {
         &self.state
     }
 
+    #[allow(dead_code)]
     pub fn properties(&self) -> Option<&ServiceProperty> {
         self.properties.as_ref()
     }

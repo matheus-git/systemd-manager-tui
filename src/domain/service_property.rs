@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use chrono::DateTime;
 
 /// Represents a systemd exec command specification as returned by D-Bus properties

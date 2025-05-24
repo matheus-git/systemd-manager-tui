@@ -36,6 +36,7 @@ pub enum Actions {
     GoLog,
     GoDetails,
     Updatelog((String, String)),
+    #[allow(dead_code)]
     UpdateDetails,
     Filter(String),
     UpdateIgnoreListKeys(bool),
@@ -185,7 +186,7 @@ impl App {
                 AppEvent::Action(Actions::UpdateDetails) => {}
                 AppEvent::Action(Actions::RefreshDetails) => {
                     if self.status == Status::Details {
-                        details.fetch_log_and_dispatch();
+                        details.fetch_unit_file();
                     }
                 }
                 AppEvent::Action(Actions::GoDetails) => {
@@ -195,7 +196,6 @@ impl App {
                     self.event_tx
                         .send(AppEvent::Action(Actions::RefreshDetails))?;
                     self.status = Status::Details;
-                    details.start_auto_refresh();
                 }
                 AppEvent::Error(error_msg) => {
                     self.error_popup(&mut terminal, error_msg)?;    
