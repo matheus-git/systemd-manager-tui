@@ -36,8 +36,8 @@ There are many possible actions and pieces of information that can be retrieved,
 
 ## Future Improvements
 
-- Show loading indicator when switching tabs
-- Remotely manage services.
+- Style the unit file output ( p )
+- Edit unit file
 
 ## Weekly Updates
 
