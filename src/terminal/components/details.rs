@@ -108,8 +108,8 @@ impl ServiceDetails {
 
     pub fn fetch_unit_file(&mut self) {
         if let Some(service_arc) = &self.service {
-            let mut service = service_arc.lock().unwrap();
-            match self.usecase.borrow().systemctl_cat(&mut service) {
+            let service = service_arc.lock().unwrap();
+            match self.usecase.borrow().systemctl_cat(&service) {
                 Ok(content) => {
                     self.unit_file = content;
                 },

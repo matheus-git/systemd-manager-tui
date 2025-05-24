@@ -36,6 +36,7 @@ pub enum Actions {
     GoLog,
     GoDetails,
     Updatelog((String, String)),
+    #[allow(dead_code)]
     UpdateDetails,
     Filter(String),
     UpdateIgnoreListKeys(bool),

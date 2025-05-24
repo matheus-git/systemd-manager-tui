@@ -54,6 +54,7 @@ impl ServicesManager {
         Ok(services)
     }
 
+    #[allow(dead_code)]
     pub fn update_properties(&self, service: &mut Service) -> Result<(), Box<dyn Error>> {
         let props = self.repository.get_service_property(service.name())?;
         service.update_properties(props);
