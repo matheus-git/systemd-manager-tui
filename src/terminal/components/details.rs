@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Alignment, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph},
+    widgets::{Block, Borders, Paragraph, Wrap},
     Frame,
 };
 use std::sync::mpsc::Sender;
@@ -46,7 +46,8 @@ impl ServiceDetails {
                         .title(format!(" {} properties ", service.name()))
                         .title_alignment(Alignment::Center),
                 )
-                .scroll((self.scroll, 0));
+                .scroll((self.scroll, 0))
+                .wrap(Wrap { trim: true });
 
             frame.render_widget(paragraph, area);
         }
