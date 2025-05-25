@@ -16,9 +16,7 @@ View more [screenshots](docs/screenshots.md)
 
 ### Build binary
     cargo build --release
-### Manage *system* services
-    sudo ./target/release/systemd-manager-tui
-### Manage *session* services
+### Run binary *(use **`sudo`** if you intend to perform actions on **`system`** services)*
     ./target/release/systemd-manager-tui
 
 ## Architecture
@@ -36,7 +34,6 @@ There are many possible actions and pieces of information that can be retrieved,
 
 ## Future Improvements
 
-- Style the unit file output ( p )
 - Edit unit file
 
 ## Weekly Updates
@@ -46,14 +43,6 @@ This project is actively maintained and updated every weekend.
 ## Contributing
 
 Contributions are welcome! Please open an issue or submit a pull request for any improvements or bug fixes.
-
-## Contributors
-
-<a href="https://github.com/matheus-git/systemd-manager-tui/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=matheus-git/systemd-manager-tui" />
-</a>
-
-Made with [contrib.rocks](https://contrib.rocks).
 
 ## 📝 License
 
