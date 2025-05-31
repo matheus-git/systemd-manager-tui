@@ -38,7 +38,7 @@ impl ServiceDetails {
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
         if let Some(service_arc) = &self.service {
             let service = service_arc.lock().unwrap();
-            let paragraph = self.genereate_styled_unit_file_paragraph();
+            let paragraph = self.generate_styled_unit_file_paragraph();
             let paragraph = paragraph
                 .block(
                     Block::default()
@@ -53,7 +53,7 @@ impl ServiceDetails {
         }
     }
 
-    fn genereate_styled_unit_file_paragraph(&self) -> Paragraph<'_> {
+    fn generate_styled_unit_file_paragraph(&self) -> Paragraph<'_> {
         let mut lines: Vec<Line<'_>> = vec![];
         for line in self.unit_file.lines() {
             let line = line.trim();
@@ -63,7 +63,12 @@ impl ServiceDetails {
             } else if line.starts_with('#') || line.starts_with(';') {
                 lines.push(Line::styled(line, Style::default().fg(Color::Green)));
             } else if line.starts_with('[') && line.ends_with(']') {
-                lines.push(Line::styled(line, Style::default().fg(Color::LightCyan)));
+                lines.push(Line::styled(line, Style::default().fg(Color::LightBlue)));
+            } else if let Some((key, value)) = line.split_once('=') {
+                lines.push(Line::from(vec![
+                    Span::styled(format!("{}=", key), Style::default().fg(Color::Yellow)),
+                    Span::raw(value),
+                ]));
             } else {
                 lines.push(Line::styled(line, Style::default()));
             }
