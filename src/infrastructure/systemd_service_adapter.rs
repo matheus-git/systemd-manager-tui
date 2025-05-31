@@ -76,14 +76,21 @@ impl ServiceRepository for SystemdServiceAdapter {
         Ok(())
     }
 
-    fn list_services(&self) -> Result<Vec<Service>, Box<dyn std::error::Error>> {
+    fn list_services(&self, filter: bool) -> Result<Vec<Service>, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
 
         let units: Vec<SystemdUnit> = proxy.call("ListUnits", &())?;
 
         let services = units
             .into_iter()
-            .filter(|(name, ..)| name.ends_with(".service"))
+            .filter_map(|unit_tuple| {
+                let name = &unit_tuple.0;
+                if !filter || name.ends_with(".service") {
+                    Some(unit_tuple)
+                } else {
+                    None
+                }
+            })
             .map(
                 |(
                     name,
@@ -97,25 +104,25 @@ impl ServiceRepository for SystemdServiceAdapter {
                     _job_type,
                     _job_object,
                 )| {
+                    // Chamada D-Bus para pegar estado do arquivo da unidade
                     let state: String = proxy
                         .call("GetUnitFileState", &name)
                         .unwrap_or_else(|_| "unknown".into());
 
-                    let service_state =
-                        ServiceState::new(load_state, active_state, sub_state, state);
+                    let service_state = ServiceState::new(load_state, active_state, sub_state, state);
 
                     Service::new(name, description, service_state)
                 },
             )
-            .collect();
+            .collect::<Vec<_>>();
 
         Ok(services)
     }
 
     fn get_service_log(&self, name: &str) -> Result<String, Box<dyn std::error::Error>> {
         let output = std::process::Command::new("journalctl")
-            .arg("-eu")
-            .arg(name)
+            .arg("-e")
+            .arg(format!("--unit={}", name))
             .arg("--no-pager")
             .output()?;
 
@@ -127,12 +134,12 @@ impl ServiceRepository for SystemdServiceAdapter {
 
         Ok(log)
     }
-
     
     fn systemctl_cat(&self, name: &str) -> Result<String, Box<dyn std::error::Error>> {
         let output = Command::new("systemctl")
             .arg("cat")
             .arg("--no-pager")
+            .arg("--")
             .arg(name)
             .output()?;
 

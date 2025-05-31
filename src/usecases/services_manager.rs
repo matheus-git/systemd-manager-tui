@@ -48,8 +48,8 @@ impl ServicesManager {
         Ok(())
     }
 
-    pub fn list_services(&self) -> Result<Vec<Service>, Box<dyn Error>> {
-        let mut services = self.repository.list_services()?;
+    pub fn list_services(&self, filter: bool) -> Result<Vec<Service>, Box<dyn Error>> {
+        let mut services = self.repository.list_services(filter)?;
         services.sort_by_key(|a| a.name().to_lowercase());
         Ok(services)
     }

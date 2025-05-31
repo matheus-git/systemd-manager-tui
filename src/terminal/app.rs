@@ -313,7 +313,7 @@ impl App {
             ])
             .areas(area);
 
-            let tabs = Tabs::new(vec!["System services","Session services"])
+            let tabs = Tabs::new(vec!["System units","Session units"])
                 .select(self.selected_tab_index)
                 .highlight_style(Style::default().fg(Color::Yellow));
 
@@ -330,11 +330,16 @@ impl App {
         let mut help_text: Vec<Line<'_>> = Vec::new();
         let shortcuts_lens = shortcuts.len();
 
-        help_text.extend(shortcuts);
+        help_text.extend(shortcuts.clone());
 
         if shortcuts_lens > 0 {
             help_text.push(Line::raw(""));
-            if help_area.width > 140 {
+            let shortcuts_width = shortcuts.clone()
+                .iter()
+                .map(|line|  line.spans.iter().map(|span| span.width()).sum())
+                .max()
+                .unwrap_or(0);
+            if help_area.width > shortcuts_width as u16 {
                 help_text.push(Line::raw(""));
             }
         }
