@@ -177,7 +177,7 @@ impl App {
                 AppEvent::Action(Actions::GoLog) => {
                     self.status = Status::Log;
                     self.event_tx.send(AppEvent::Action(Actions::RefreshLog))?;
-                    //log.start_auto_refresh();
+                    log.start_auto_refresh();
                 }
                 AppEvent::Action(Actions::GoList) => self.status = Status::List,
                 AppEvent::Action(Actions::ResetList) => {

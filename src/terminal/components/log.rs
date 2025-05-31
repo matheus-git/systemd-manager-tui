@@ -4,7 +4,7 @@ use ratatui::{
     layout::{Alignment, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Wrap, ListState, List, ListItem, ListDirection},
+    widgets::{Block, Borders, Paragraph, ListState, List, ListItem, ListDirection},
     Frame,
 };
 use std::sync::mpsc::Sender;
@@ -43,6 +43,7 @@ pub struct ServiceLog {
     auto_refresh: Arc<Mutex<bool>>,
     usecase: Rc<RefCell<ServicesManager>>,
     log: String,
+    log_lines: Vec<ListItem<'static>>,
     list_state: ListState,
     height: u16
 }
@@ -59,6 +60,7 @@ impl ServiceLog {
             auto_refresh: Arc::new(Mutex::new(false)),
             usecase,
             log: String::new(),
+            log_lines: vec![],
             list_state: ListState::default(),
             height: 0
         }
@@ -114,9 +116,10 @@ impl ServiceLog {
             })
             .collect();
 
+        self.log_lines = log_lines;
 
         let log_list = 
-            List::new(log_lines)
+            List::new(self.log_lines.clone())
                 .block(
                     Block::default()
                         .title(format!(" {} logs (newest at the top) ", self.service_name))
@@ -177,28 +180,32 @@ impl ServiceLog {
                     .send(AppEvent::Action(Actions::GoDetails))
                     .unwrap();
             }
-    KeyCode::Up => {
-        let current = self.list_state.selected().unwrap_or(0);
-        let step = self.height.saturating_sub(1).max(1) as usize;
-        let new = current.saturating_sub(step);
-        self.list_state.select(Some(new));
-    }
-    KeyCode::Down => {
-        let current = self.list_state.selected().unwrap_or(0);
-        let step = self.height.saturating_sub(1).max(1) as usize;
-        let new = (current + step).min(self.log.len().saturating_sub(1));
-        self.list_state.select(Some(new));
-    }
-    KeyCode::PageUp => {
-        let current = self.list_state.selected().unwrap_or(0);
-        let new = current.saturating_sub(self.height as usize);
-        self.list_state.select(Some(new));
-    }
-    KeyCode::PageDown => {
-        let current = self.list_state.selected().unwrap_or(0);
-        let new = (current + self.height as usize).min(self.log.len().saturating_sub(1));
-        self.list_state.select(Some(new));
-    }
+            KeyCode::Up => {
+                let current = self.list_state.selected().unwrap_or(0);
+                let height = self.height as usize;
+                let max = self.log_lines.len();
+
+                let new = if current < max.saturating_sub(height) {
+                    current.saturating_sub(1)
+                } else {
+                    current.saturating_sub(height + 1)
+                };
+
+                self.list_state.select(Some(new));
+            }
+            KeyCode::Down => {
+                let current = self.list_state.selected().unwrap_or(0);
+                let height = self.height as usize;
+                let max = self.log_lines.len();
+
+                let new = if current < max.saturating_sub(height) {
+                    (current + height + 1).min(max)
+                } else {
+                    (current + 1).min(max)
+                };
+
+                self.list_state.select(Some(new));
+            }
             KeyCode::Char('a') => self.toogle_auto_refresh(),
             KeyCode::Char('q') => {
                 self.reset();
@@ -234,11 +241,11 @@ impl ServiceLog {
     pub fn start_auto_refresh(&mut self) {
         self.set_auto_refresh(true);
         self.auto_refresh_thread();
+        self.list_state.select(Some(self.log_lines.len().saturating_sub(1)));
     }
 
     pub fn reset(&mut self) {
         self.set_auto_refresh(false);
-        self.scroll = 0;
         self.log_paragraph = None;
     }
 
@@ -280,7 +287,6 @@ impl ServiceLog {
 pub fn update(&mut self, service_name: String, log: String) {
     self.service_name = service_name;
         self.log = log;
-        self.list_state.select(Some(self.log.len().saturating_sub(1)));
 
 }
 
