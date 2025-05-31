@@ -34,7 +34,7 @@ fn generate_rows(services: &[Service]) -> Vec<Row<'static>> {
             };
 
             Row::new(vec![
-                Cell::from(service.formatted_name().to_string()).style(highlight_style),
+                Cell::from(service.name().to_string()).style(highlight_style),
                 Cell::from(format!(
                     "{} ({})",
                     service.state().active(),
@@ -56,6 +56,7 @@ pub enum ServiceAction {
     Enable,
     Disable,
     RefreshAll,
+    ToggleFilter
 }
  
 pub struct TableServices {
@@ -68,11 +69,13 @@ pub struct TableServices {
     pub ignore_key_events: bool,
     sender: Sender<AppEvent>,
     usecase: Rc<RefCell<ServicesManager>>,
+    filter_all: bool
 }
 
 impl TableServices {
     pub fn new(sender: Sender<AppEvent>,  usecase: Rc<RefCell<ServicesManager>>) -> Self {
-        let (services, rows) = match usecase.borrow().list_services() {
+        let filter_all = true;
+        let (services, rows) = match usecase.borrow().list_services(filter_all) {
             Ok(svcs) => {
                 let rows = generate_rows(&svcs);
                 (svcs, rows)
@@ -88,7 +91,7 @@ impl TableServices {
         let table = Table::new(
             rows.clone(),
             [
-                Constraint::Percentage(15),
+                Constraint::Percentage(20),
                 Constraint::Length(20),
                 Constraint::Length(10),
                 Constraint::Length(10),
@@ -124,6 +127,7 @@ impl TableServices {
             old_filter_text: String::new(),
             ignore_key_events: false,
             usecase,
+            filter_all
         }
     }
 
@@ -185,7 +189,7 @@ impl TableServices {
     }
 
     fn fetch_services(&mut self) {
-        if let Ok(services) = self.usecase.borrow().list_services() {
+        if let Ok(services) = self.usecase.borrow().list_services(self.filter_all) {
             self.services = services
         } else {
             self.services = vec![]
@@ -202,7 +206,7 @@ impl TableServices {
         services
             .into_iter()
             .filter(|service| {
-                let name = service.formatted_name();
+                let name = service.name();
                 name.to_lowercase().contains(&lower_filter)
             })
             .collect()
@@ -225,7 +229,8 @@ impl TableServices {
             KeyCode::Char('u') => self.act_on_selected_service(ServiceAction::RefreshAll),
             KeyCode::Char('x') => self.act_on_selected_service(ServiceAction::Stop),
             KeyCode::Char('v') => self.sender.send(AppEvent::Action(Actions::GoLog)).unwrap(),
-            KeyCode::Char('p') => self
+            KeyCode::Char('f') => self.act_on_selected_service(ServiceAction::ToggleFilter),
+            KeyCode::Char('c') => self
                 .sender
                 .send(AppEvent::Action(Actions::GoDetails))
                 .unwrap(),
@@ -299,6 +304,7 @@ impl TableServices {
                 ServiceAction::Restart => self.handle_result(usecase.restart_service(service)),
                 ServiceAction::Enable => self.handle_result(usecase.enable_service(service)),
                 ServiceAction::Disable => self.handle_result(usecase.disable_service(service)),
+                ServiceAction::ToggleFilter => {self.filter_all = !self.filter_all},
                 ServiceAction::RefreshAll => self.fetch_services(),
             }
         }
@@ -325,7 +331,7 @@ impl TableServices {
             )));
 
             help_text.push(Line::from(
-                "Navigate: ↑/↓ | Switch tab: ←/→ | Start: s | Stop: x | Restart: r | Enable: e | Disable: d | Refresh all: u | View logs: v | Properties: p"
+                "Navigate: ↑/↓ | Switch tab: ←/→ | Toggle Filter: f | Start: s | Stop: x | Restart: r | Enable: e | Disable: d | Refresh all: u | Log: v | Unit File: c"
             ));
         }
 
