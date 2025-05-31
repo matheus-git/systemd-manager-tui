@@ -13,6 +13,7 @@ use std::thread;
 use std::time::Duration;
 use std::rc::Rc;
 use std::cell::RefCell;
+use textwrap::wrap;
 
 use crate::domain::service::Service;
 use crate::terminal::app::{Actions, AppEvent};
@@ -100,10 +101,20 @@ impl ServiceLog {
 
         //let log_block = self.log_block.clone().unwrap();
        self.height = area.height; 
-    let log_lines: Vec<ListItem> = self
-        .log.lines()
-        .map(|line| ListItem::new(Span::raw(line)))
-        .collect();
+
+let width = area.width as usize; // use a largura real do terminal
+
+let log_lines: Vec<ListItem> = self
+    .log
+    .lines()
+    .flat_map(|line| {
+        wrap(line,width)
+            .into_iter()
+            .map(|wrapped| ListItem::new(Span::raw(wrapped.into_owned())))
+            .collect::<Vec<_>>()
+    })
+    .collect();
+
 
     let log_list = 
         List::new(log_lines)
@@ -232,7 +243,8 @@ impl ServiceLog {
         self.log_paragraph = None;
     }
 
-    fn exit(&self) {
+    fn exit(&mut self) {
+        self.log = String::new();
         self.sender.send(AppEvent::Action(Actions::GoList)).unwrap();
     }
 
