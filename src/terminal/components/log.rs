@@ -94,40 +94,39 @@ impl ServiceLog {
     }
 
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
-//        if self.log_paragraph.is_none() || self.log_block.is_none() {
-//            self.render_loading(frame, area);
-//            return;
-//        }
+        if self.log.is_empty()  {
+            self.render_loading(frame, area);
+            return;
+        }
 
-        //let log_block = self.log_block.clone().unwrap();
-       self.height = area.height; 
+        self.height = area.height; 
 
-let width = area.width as usize; // use a largura real do terminal
+        let width = area.width as usize;
 
-let log_lines: Vec<ListItem> = self
-    .log
-    .lines()
-    .flat_map(|line| {
-        wrap(line,width)
-            .into_iter()
-            .map(|wrapped| ListItem::new(Span::raw(wrapped.into_owned())))
-            .collect::<Vec<_>>()
-    })
-    .collect();
+        let log_lines: Vec<ListItem> = self
+            .log
+            .lines()
+            .flat_map(|line| {
+                wrap(line,width)
+                    .into_iter()
+                    .map(|wrapped| ListItem::new(Span::raw(wrapped.into_owned())))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
 
 
-    let log_list = 
-        List::new(log_lines)
-            .block(
-                Block::default()
-                    .title(format!(" {} logs (newest at the top) ", self.service_name))
-                    .borders(Borders::ALL)
-                    .border_style(Style::default().fg(self.border_color.to_color()))
-                    .title_alignment(Alignment::Center),
-            )
-            .highlight_style(Style::default()) // opcional
-            .highlight_symbol("")
-            .direction(ListDirection::TopToBottom);             // opcional
+        let log_list = 
+            List::new(log_lines)
+                .block(
+                    Block::default()
+                        .title(format!(" {} logs (newest at the top) ", self.service_name))
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(self.border_color.to_color()))
+                        .title_alignment(Alignment::Center),
+                )
+                .highlight_style(Style::default())
+                .highlight_symbol("")
+                .direction(ListDirection::TopToBottom); 
 
         frame.render_stateful_widget(log_list, area, &mut self.list_state);
     }
