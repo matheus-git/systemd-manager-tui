@@ -4,7 +4,7 @@ use ratatui::{
     layout::{Alignment, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Wrap},
+    widgets::{Block, Borders, Paragraph, ListState, List, ListItem, ListDirection},
     Frame,
 };
 use std::sync::mpsc::Sender;
@@ -13,6 +13,7 @@ use std::thread;
 use std::time::Duration;
 use std::rc::Rc;
 use std::cell::RefCell;
+use textwrap::wrap;
 
 use crate::domain::service::Service;
 use crate::terminal::app::{Actions, AppEvent};
@@ -33,7 +34,7 @@ impl BorderColor {
 }
 
 pub struct ServiceLog {
-    log_paragraph: Option<Paragraph<'static>>,
+    log_paragraph: Option<List<'static>>,
     log_block: Option<Block<'static>>,
     border_color: BorderColor,
     service_name: String,
@@ -41,6 +42,10 @@ pub struct ServiceLog {
     sender: Sender<AppEvent>,
     auto_refresh: Arc<Mutex<bool>>,
     usecase: Rc<RefCell<ServicesManager>>,
+    log: String,
+    log_lines: Vec<ListItem<'static>>,
+    list_state: ListState,
+    height: u16
 }
 
 impl ServiceLog {
@@ -53,7 +58,11 @@ impl ServiceLog {
             scroll: 0,
             sender,
             auto_refresh: Arc::new(Mutex::new(false)),
-            usecase
+            usecase,
+            log: String::new(),
+            log_lines: vec![],
+            list_state: ListState::default(),
+            height: 0
         }
     }
 
@@ -87,20 +96,42 @@ impl ServiceLog {
     }
 
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
-        if self.log_paragraph.is_none() || self.log_block.is_none() {
+        if self.log.is_empty()  {
             self.render_loading(frame, area);
             return;
         }
 
-        let log_block = self.log_block.clone().unwrap();
-        let paragraph = self
-            .log_paragraph
-            .clone()
-            .unwrap()
-            .scroll((self.scroll, 0))
-            .block(log_block);
+        self.height = area.height; 
 
-        frame.render_widget(paragraph, area);
+        let width = area.width as usize;
+
+        let log_lines: Vec<ListItem> = self
+            .log
+            .lines()
+            .flat_map(|line| {
+                wrap(line,width)
+                    .into_iter()
+                    .map(|wrapped| ListItem::new(Span::raw(wrapped.into_owned())))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+
+        self.log_lines = log_lines;
+
+        let log_list = 
+            List::new(self.log_lines.clone())
+                .block(
+                    Block::default()
+                        .title(format!(" {} logs (newest at the top) ", self.service_name))
+                        .borders(Borders::ALL)
+                        .border_style(Style::default().fg(self.border_color.to_color()))
+                        .title_alignment(Alignment::Center),
+                )
+                .highlight_style(Style::default())
+                .highlight_symbol("")
+                .direction(ListDirection::TopToBottom); 
+
+        frame.render_stateful_widget(log_list, area, &mut self.list_state);
     }
 
     fn toogle_auto_refresh(&mut self) {
@@ -150,16 +181,30 @@ impl ServiceLog {
                     .unwrap();
             }
             KeyCode::Up => {
-                self.scroll = self.scroll.saturating_sub(1);
+                let current = self.list_state.selected().unwrap_or(0);
+                let height = self.height as usize;
+                let max = self.log_lines.len();
+
+                let new = if current < max.saturating_sub(height) {
+                    current.saturating_sub(1)
+                } else {
+                    current.saturating_sub(height + 1)
+                };
+
+                self.list_state.select(Some(new));
             }
             KeyCode::Down => {
-                self.scroll += 1;
-            }
-            KeyCode::PageUp => {
-                self.scroll = self.scroll.saturating_sub(10);
-            }
-            KeyCode::PageDown => {
-                self.scroll += 10;
+                let current = self.list_state.selected().unwrap_or(0);
+                let height = self.height as usize;
+                let max = self.log_lines.len();
+
+                let new = if current < max.saturating_sub(height) {
+                    (current + height + 1).min(max)
+                } else {
+                    (current + 1).min(max)
+                };
+
+                self.list_state.select(Some(new));
             }
             KeyCode::Char('a') => self.toogle_auto_refresh(),
             KeyCode::Char('q') => {
@@ -196,15 +241,16 @@ impl ServiceLog {
     pub fn start_auto_refresh(&mut self) {
         self.set_auto_refresh(true);
         self.auto_refresh_thread();
+        self.list_state.select(Some(self.log_lines.len().saturating_sub(1)));
     }
 
     pub fn reset(&mut self) {
         self.set_auto_refresh(false);
-        self.scroll = 0;
         self.log_paragraph = None;
     }
 
-    fn exit(&self) {
+    fn exit(&mut self) {
+        self.log = String::new();
         self.sender.send(AppEvent::Action(Actions::GoList)).unwrap();
     }
 
@@ -237,20 +283,11 @@ impl ServiceLog {
         }
     }
 
-    pub fn update(&mut self, service_name: String, log: String) {
-        self.service_name = service_name;
-        self.log_paragraph =
-            Some(Paragraph::new(self.reversed_log(log)).wrap(Wrap { trim: false }));
-        self.log_block = Some(
-            Block::default()
-                .title(format!(" {} logs (newest at the top) ", self.service_name))
-                .borders(Borders::ALL)
-                .border_style(Style::default().fg(self.border_color.to_color()))
-                .title_alignment(Alignment::Center),
-        );
-    }
 
-    pub fn reversed_log(&self, log: String) -> String {
-        log.lines().rev().collect::<Vec<_>>().join("\n")
-    }
+pub fn update(&mut self, service_name: String, log: String) {
+    self.service_name = service_name;
+        self.log = log;
+
+}
+
 }
