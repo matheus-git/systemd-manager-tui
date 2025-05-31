@@ -304,7 +304,10 @@ impl TableServices {
                 ServiceAction::Restart => self.handle_result(usecase.restart_service(service)),
                 ServiceAction::Enable => self.handle_result(usecase.enable_service(service)),
                 ServiceAction::Disable => self.handle_result(usecase.disable_service(service)),
-                ServiceAction::ToggleFilter => {self.filter_all = !self.filter_all},
+                ServiceAction::ToggleFilter => {
+                    self.table_state.select(Some(0));
+                    self.filter_all = !self.filter_all
+                },
                 ServiceAction::RefreshAll => self.fetch_services(),
             }
         }
