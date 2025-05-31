@@ -16,4 +16,4 @@ libc = "0.2"
 zbus = "5.5.0"
 crossterm = "0.28.1"
 color-eyre = "0.6.3"
-ratatui = "0.29.0"
+ratatui = { version = "0.29", features = ["unstable-rendered-line-info"] }
