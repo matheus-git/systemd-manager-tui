@@ -115,7 +115,7 @@ impl ServiceLog {
             List::new(log_lines)
                 .block(
                     Block::default()
-                        .title(format!(" {} logs ", self.service_name))
+                        .title(format!(" {} log ", self.service_name))
                         .borders(Borders::ALL)
                         .border_style(Style::default().fg(self.border_color.to_color()))
                         .title_alignment(Alignment::Center),

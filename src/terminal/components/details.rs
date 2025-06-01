@@ -43,7 +43,7 @@ impl ServiceDetails {
                 .block(
                     Block::default()
                         .borders(Borders::ALL)
-                        .title(format!(" {} properties ", service.name()))
+                        .title(format!(" {} file ", service.name()))
                         .title_alignment(Alignment::Center),
                 )
                 .scroll((self.scroll, 0))
