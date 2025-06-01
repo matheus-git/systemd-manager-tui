@@ -10,9 +10,7 @@ Additionally, it is possible to navigate between system and session units, and c
 
 ## Screenshots
 ![screenshot_list](assets/screenshot_list.png?v=2)
-![screenshot_log](assets/screenshot_log.png)
-![screenshot_properties](assets/screenshot_properties.png)
-<!-- View more [screenshots](docs/screenshots.md) -->
+View more [screenshots](docs/screenshots.md)
 
 ## Usage
 
