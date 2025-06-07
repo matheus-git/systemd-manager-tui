@@ -1,5 +1,10 @@
 use color_eyre::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::{
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, LeaveAlternateScreen, EnterAlternateScreen},
+};
+use std::{io::{self}, process::Command};
 use ratatui::layout::{Alignment, Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -9,7 +14,8 @@ use ratatui::Frame;
 use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
 use std::time::Duration;
-
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -40,6 +46,7 @@ pub enum Actions {
     UpdateDetails,
     Filter(String),
     UpdateIgnoreListKeys(bool),
+    EditCurrentService
 }
 
 pub enum AppEvent {
@@ -63,24 +70,11 @@ fn get_user_friendly_error(error: &str) -> &str {
         error
     }
 }
-fn spawn_key_event_listener(event_tx: Sender<AppEvent>) {
-    thread::spawn(move || {
-        loop {
-            if event::poll(Duration::from_millis(100)).unwrap_or(false) {
-                if let Ok(Event::Key(key_event)) = event::read() {
-                    if key_event.kind == KeyEventKind::Press
-                        && event_tx.send(AppEvent::Key(key_event)).is_err()
-                    {
-                        break;
-                    }
-                }
-            }
-        }
-    });
-}
+
 pub struct App {
     running: bool,
     status: Status,
+    event_listener_enabled: Arc<AtomicBool>,
     table_service: Rc<RefCell<TableServices>>,
     filter: Rc<RefCell<Filter>>,
     service_log: Rc<RefCell<ServiceLog>>,
@@ -104,6 +98,7 @@ impl App {
         Self {
             running: true,
             status: Status::List,
+            event_listener_enabled: Arc::new(AtomicBool::new(true)),
             table_service,
             filter,
             service_log,
@@ -116,8 +111,32 @@ impl App {
     }
 
     pub fn init(&mut self) {
-        spawn_key_event_listener(self.event_tx.clone());
+        self.spawn_key_event_listener();
     }
+
+fn spawn_key_event_listener(&self) {
+    let event_tx = self.event_tx.clone();
+    let event_listener_enabled = self.event_listener_enabled.clone();
+
+    thread::spawn(move || {
+        loop {
+            if !event_listener_enabled.load(Ordering::Relaxed) {
+                thread::sleep(Duration::from_millis(50));
+                continue;
+            }
+
+            if event::poll(Duration::from_millis(100)).unwrap_or(false) {
+                if let Ok(Event::Key(key_event)) = event::read() {
+                    if key_event.kind == KeyEventKind::Press
+                        && event_tx.send(AppEvent::Key(key_event)).is_err()
+                    {
+                        break;
+                    }
+                }
+            }
+        }
+    });
+}
 
     pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         self.running = true;
@@ -196,11 +215,78 @@ impl App {
                         .send(AppEvent::Action(Actions::RefreshDetails))?;
                     self.status = Status::Details;
                 }
+                AppEvent::Action(Actions::EditCurrentService) => {
+                    if let Some(service) = table_service.get_selected_service() {
+                        self.edit_unit(&mut terminal, service.name())?;    
+                        self.event_tx.send(AppEvent::Action(Actions::RefreshDetails))?;
+                    }
+                }
                 AppEvent::Error(error_msg) => {
                     self.error_popup(&mut terminal, error_msg)?;    
                 }
             }
         }
+
+        Ok(())
+    }
+
+    fn resume_tui(&self, terminal: &mut DefaultTerminal) -> Result<()> {
+        enable_raw_mode()?;
+        execute!(io::stdout(), EnterAlternateScreen)?;
+        terminal.draw(|f| {
+            let area = f.area();
+            f.render_widget(Clear, area);
+        })?;
+        Ok(())
+    }
+
+
+    fn edit_unit(&mut self, terminal: &mut DefaultTerminal, unit_name: &str) -> Result<()> {
+        self.event_listener_enabled.store(false, Ordering::Relaxed);
+
+        if let Err(e) = disable_raw_mode() {
+                self.resume_tui(terminal)?;
+            self.error_popup(terminal, format!("Failed to disable raw mode: {}", e))?;
+            return Ok(());
+        }
+
+        let mut stdout = io::stdout();
+        if let Err(e) = execute!(stdout, LeaveAlternateScreen) {
+                self.resume_tui(terminal)?;
+            self.error_popup(terminal, format!("Failed to leave alternate screen: {}", e))?;
+            return Ok(());
+        }
+
+        if let Err(e) = terminal.show_cursor() {
+                self.resume_tui(terminal)?;
+            self.error_popup(terminal, format!("Failed to show cursor: {}", e))?;
+            return Ok(());
+        }
+
+        let status = Command::new("systemctl")
+            .arg("edit")
+            .arg("--full")
+            .arg(unit_name)
+            .status();
+
+        match status {
+            Ok(s) if s.success() => {},
+            Ok(s) => {
+                self.resume_tui(terminal)?;
+                self.error_popup(terminal, format!("systemctl edit failed with status: {}", s))?;
+            },
+            Err(e) => {
+                self.resume_tui(terminal)?;
+                self.error_popup(terminal, format!("Error executing systemctl: {}", e))?;
+            }
+        }
+
+        if let Err(e) = self.resume_tui(terminal) {
+            self.error_popup(terminal, format!("Failed to return to TUI: {}", e))?;
+            return Ok(());
+        }
+
+        self.event_listener_enabled.store(true, Ordering::Relaxed);
 
         Ok(())
     }

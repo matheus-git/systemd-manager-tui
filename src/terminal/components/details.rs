@@ -98,9 +98,10 @@ impl ServiceDetails {
             KeyCode::PageDown => {
                 self.scroll += 10;
             }
-
+            KeyCode::Char('e') => {
+                self.sender.send(AppEvent::Action(Actions::EditCurrentService)).unwrap();
+            }
             KeyCode::Char('q') => {
-                self.reset();
                 self.exit();
             }
             _ => {}
@@ -115,7 +116,7 @@ impl ServiceDetails {
                     .fg(Color::LightMagenta)
                     .add_modifier(Modifier::BOLD),
             )]),
-            Line::from("Switch tabs: ←/→ | Go back: q"),
+            Line::from("Switch tabs: ←/→ | Go back: q | Edit: e"),
         ];
 
         help_text
@@ -127,17 +128,23 @@ impl ServiceDetails {
         self.unit_file = String::new();
     }
 
-    fn exit(&self) {
+    fn exit(&mut self) {
+        self.reset();
         self.sender.send(AppEvent::Action(Actions::GoList)).unwrap();
     }
 
     pub fn fetch_unit_file(&mut self) {
-        if let Some(service_arc) = &self.service {
+        let maybe_service = self.service.clone();
+
+        if let Some(service_arc) = maybe_service {
             let service = service_arc.lock().unwrap();
-            match self.usecase.borrow().systemctl_cat(&service) {
+
+            let result = self.usecase.borrow().systemctl_cat(&service);
+
+            match result {
                 Ok(content) => {
                     self.unit_file = content;
-                },
+                }
                 Err(e) => {
                     self.sender.send(AppEvent::Error(e.to_string())).unwrap();
                 }

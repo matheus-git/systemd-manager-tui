@@ -230,10 +230,13 @@ impl TableServices {
             KeyCode::Char('x') => self.act_on_selected_service(ServiceAction::Stop),
             KeyCode::Char('v') => self.sender.send(AppEvent::Action(Actions::GoLog)).unwrap(),
             KeyCode::Char('f') => self.act_on_selected_service(ServiceAction::ToggleFilter),
-            KeyCode::Char('c') => self
+            KeyCode::Char('c') => {
+                self
                 .sender
                 .send(AppEvent::Action(Actions::GoDetails))
-                .unwrap(),
+                .unwrap();
+
+            }
             _ => {}
         }
     }
