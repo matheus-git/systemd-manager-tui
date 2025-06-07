@@ -91,11 +91,13 @@ impl ServiceLog {
             return;
         }
 
+        let width = area.width.saturating_sub(2) as usize;
+
         let log_lines: Vec<ListItem> = self
             .log
             .lines()
             .flat_map(|line| {
-                wrap(line,area.width as usize)
+                wrap(line,width)
                     .into_iter()
                     .map(|wrapped| ListItem::new(Span::raw(wrapped.into_owned())))
                     .collect::<Vec<_>>()
