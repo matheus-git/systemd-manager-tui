@@ -230,21 +230,35 @@ fn spawn_key_event_listener(&self) {
         Ok(())
     }
 
+    fn resume_tui(&self, terminal: &mut DefaultTerminal) -> Result<()> {
+        enable_raw_mode()?;
+        execute!(io::stdout(), EnterAlternateScreen)?;
+        terminal.draw(|f| {
+            let area = f.area();
+            f.render_widget(Clear, area);
+        })?;
+        Ok(())
+    }
+
+
     fn edit_unit(&mut self, terminal: &mut DefaultTerminal, unit_name: &str) -> Result<()> {
         self.event_listener_enabled.store(false, Ordering::Relaxed);
 
         if let Err(e) = disable_raw_mode() {
+                self.resume_tui(terminal)?;
             self.error_popup(terminal, format!("Failed to disable raw mode: {}", e))?;
             return Ok(());
         }
 
         let mut stdout = io::stdout();
         if let Err(e) = execute!(stdout, LeaveAlternateScreen) {
+                self.resume_tui(terminal)?;
             self.error_popup(terminal, format!("Failed to leave alternate screen: {}", e))?;
             return Ok(());
         }
 
         if let Err(e) = terminal.show_cursor() {
+                self.resume_tui(terminal)?;
             self.error_popup(terminal, format!("Failed to show cursor: {}", e))?;
             return Ok(());
         }
@@ -258,28 +272,18 @@ fn spawn_key_event_listener(&self) {
         match status {
             Ok(s) if s.success() => {},
             Ok(s) => {
+                self.resume_tui(terminal)?;
                 self.error_popup(terminal, format!("systemctl edit failed with status: {}", s))?;
             },
             Err(e) => {
+                self.resume_tui(terminal)?;
                 self.error_popup(terminal, format!("Error executing systemctl: {}", e))?;
             }
         }
 
-        if let Err(e) = enable_raw_mode() {
-            self.error_popup(terminal, format!("Failed to enable raw mode: {}", e))?;
+        if let Err(e) = self.resume_tui(terminal) {
+            self.error_popup(terminal, format!("Failed to return to TUI: {}", e))?;
             return Ok(());
-        }
-
-        if let Err(e) = execute!(io::stdout(), EnterAlternateScreen) {
-            self.error_popup(terminal, format!("Failed to re-enter alternate screen: {}", e))?;
-            return Ok(());
-        }
-
-        if let Err(e) = terminal.draw(|f| {
-            let area = f.area();
-            f.render_widget(Clear, area);
-        }) {
-            self.error_popup(terminal, format!("Failed to clear screen: {}", e))?;
         }
 
         self.event_listener_enabled.store(true, Ordering::Relaxed);
