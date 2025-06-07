@@ -2,7 +2,7 @@ use zbus::blocking::{Connection, Proxy};
 use zbus::zvariant::OwnedObjectPath;
 use zbus::Error;
 use std::process::Command;
-use std::io::{self, ErrorKind};
+use std::io::{self};
 use crate::domain::service::Service;
 use crate::domain::service_property::{ServiceProperty, SASBTTUII};
 use crate::domain::service_repository::ServiceRepository;
@@ -147,7 +147,7 @@ impl ServiceRepository for SystemdServiceAdapter {
             Ok(String::from_utf8_lossy(&output.stdout).to_string())
         } else {
             let err_msg = String::from_utf8_lossy(&output.stderr).to_string();
-            Err(Box::new(io::Error::new(ErrorKind::Other, err_msg)))
+            Err(Box::new(io::Error::other(err_msg)))
         }
     }
 
