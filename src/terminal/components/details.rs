@@ -98,7 +98,9 @@ impl ServiceDetails {
             KeyCode::PageDown => {
                 self.scroll += 10;
             }
-
+            KeyCode::Char('e') => {
+                self.sender.send(AppEvent::Action(Actions::EditCurrentService)).unwrap();
+            }
             KeyCode::Char('q') => {
                 self.reset();
                 self.exit();
@@ -115,7 +117,7 @@ impl ServiceDetails {
                     .fg(Color::LightMagenta)
                     .add_modifier(Modifier::BOLD),
             )]),
-            Line::from("Switch tabs: ←/→ | Go back: q"),
+            Line::from("Switch tabs: ←/→ | Go back: q | Edit: e"),
         ];
 
         help_text
