@@ -8,6 +8,9 @@ edition = "2024"
 exclude = [
     "docs/*"
 ]
+readme = "README.md"
+repository = "https://github.com/matheus-git/systemd-manager-tui"
+keywords = ["ratatui", "systemd", "manager", "tui"]
 
 [profile.release]
 codegen-units = 1
