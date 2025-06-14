@@ -12,9 +12,13 @@ Additionally, it is possible to navigate between system and session units, choos
 ![screenshot_list](https://raw.githubusercontent.com/matheus-git/systemd-manager-tui/main/assets/screenshot_list.png)
 View more [screenshots](https://github.com/matheus-git/systemd-manager-tui/blob/main/docs/screenshots.md)
 
-## Install
+## Usage
 
-    cargo install systemd-manager-tui
+### Build binary
+    cargo build --release
+    
+### Run binary *(use **`sudo`** if you intend to perform actions on **`system`** services)*
+    ./target/release/systemd-manager-tui
     
 ## Main libraries
 
