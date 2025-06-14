@@ -7,6 +7,7 @@ license = "MIT"
 edition = "2024"
 exclude = [
     "assets/*",
+    "docs/*"
 ]
 
 [profile.release]
