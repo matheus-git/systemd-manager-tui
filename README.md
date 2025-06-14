@@ -9,32 +9,17 @@ This tool allows you to manage systemd services with ease. You can view logs, li
 Additionally, it is possible to navigate between system and session units, choose to list either all units or only those of type 'service', and directly edit the selected unit's file.
 
 ## Screenshots
-![screenshot_list](https://github.com/matheus-git/systemd-manager-tui/blob/main/assets/screenshot_list.png?v=2)
+![screenshot_list](https://raw.githubusercontent.com/matheus-git/systemd-manager-tui/main/assets/screenshot_list.png)
 View more [screenshots](https://github.com/matheus-git/systemd-manager-tui/blob/main/docs/screenshots.md)
 
-## Usage
+## Install
 
-### Build binary
-    cargo build --release
-### Run binary *(use **`sudo`** if you intend to perform actions on **`system`** services)*
-    ./target/release/systemd-manager-tui
-
-## Architecture
-
-See the architecture [here](docs/architecture.md).
-
-## Request New Features or Properties
-
-There are many possible actions and pieces of information that can be retrieved, so I’ve implemented the ones I found most relevant. If you’d like more to be added, feel free to open an issue with your request! You can check all available methods and properties on D-Bus [here](https://www.freedesktop.org/software/systemd/man/latest/org.freedesktop.systemd1.html).
-
+    cargo install systemd-manager-tui
+    
 ## Main libraries
 
 - ratatui - 0.29.0
 - zbus - 5.5.0
-
-## Future Improvements
-
-- Edit unit file
 
 ## Weekly Updates
 
