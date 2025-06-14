@@ -1,4 +1,3 @@
-use super::service_property::ServiceProperty;
 use super::service_state::ServiceState;
 
 #[derive(Clone)]
@@ -6,7 +5,6 @@ pub struct Service {
     name: String,
     description: String,
     state: ServiceState,
-    properties: Option<ServiceProperty>,
 }
 
 impl Service {
@@ -15,7 +13,6 @@ impl Service {
             name,
             description,
             state,
-            properties: None,
         }
     }
 
@@ -29,14 +26,5 @@ impl Service {
 
     pub fn state(&self) -> &ServiceState {
         &self.state
-    }
-
-    #[allow(dead_code)]
-    pub fn properties(&self) -> Option<&ServiceProperty> {
-        self.properties.as_ref()
-    }
-
-    pub fn update_properties(&mut self, properties: ServiceProperty) {
-        self.properties = Some(properties);
     }
 }

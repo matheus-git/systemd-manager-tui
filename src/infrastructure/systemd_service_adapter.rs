@@ -4,23 +4,9 @@ use zbus::Error;
 use std::process::Command;
 use std::io::{self};
 use crate::domain::service::Service;
-use crate::domain::service_property::{ServiceProperty, SASBTTUII};
 use crate::domain::service_repository::ServiceRepository;
 use crate::domain::service_state::ServiceState;
 
-/// Represents a systemd unit as returned by the D-Bus ListUnits method.
-/// Each tuple element corresponds to a specific property of the unit:
-///
-/// 1. name - The unit name (e.g., "nginx.service")
-/// 2. description - Human-readable description of the service
-/// 3. load_state - Service load state (e.g., "loaded", "not-found")
-/// 4. active_state - Active state (e.g., "active", "inactive", "failed")
-/// 5. sub_state - Sub-state (e.g., "running", "dead", "exited")
-/// 6. followed - Followed unit name
-/// 7. object_path - D-Bus object path to the unit
-/// 8. job_id - Job ID if there's a job queued for this unit
-/// 9. job_type - Type of pending job if any
-/// 10. job_object - D-Bus object path to the job object
 type SystemdUnit = (
     String,
     String,
@@ -104,7 +90,6 @@ impl ServiceRepository for SystemdServiceAdapter {
                     _job_type,
                     _job_object,
                 )| {
-                    // Chamada D-Bus para pegar estado do arquivo da unidade
                     let state: String = proxy
                         .call("GetUnitFileState", &name)
                         .unwrap_or_else(|_| "unknown".into());
@@ -187,80 +172,5 @@ impl ServiceRepository for SystemdServiceAdapter {
         let proxy = self.manager_proxy()?;
         proxy.call::<&str, (), ()>("Reload", &())?;
         Ok(())
-    }
-
-    fn get_service_property(
-        &self,
-        name: &str,
-    ) -> Result<ServiceProperty, Box<dyn std::error::Error>> {
-        let proxy = self.manager_proxy()?;
-
-        let unit_path: OwnedObjectPath = proxy.call("GetUnit", &(name))?;
-
-        let service_proxy = Proxy::new(
-            &self.connection,
-            "org.freedesktop.systemd1",
-            unit_path.as_str(),
-            "org.freedesktop.systemd1.Service",
-        )?;
-
-        let exec_start: Vec<SASBTTUII> = service_proxy.get_property("ExecStart")?;
-        let exec_start_pre: Vec<SASBTTUII> = service_proxy.get_property("ExecStartPre")?;
-        let exec_start_post: Vec<SASBTTUII> = service_proxy.get_property("ExecStartPost")?;
-        let exec_stop: Vec<SASBTTUII> = service_proxy.get_property("ExecStop")?;
-        let exec_stop_post: Vec<SASBTTUII> = service_proxy.get_property("ExecStopPost")?;
-
-        let exec_main_pid: u32 = service_proxy.get_property("ExecMainPID")?;
-        let exec_main_start_timestamp: u64 =
-        service_proxy.get_property("ExecMainStartTimestamp")?;
-        let exec_main_exit_timestamp: u64 = service_proxy.get_property("ExecMainExitTimestamp")?;
-        let exec_main_code: i32 = service_proxy.get_property("ExecMainCode")?;
-        let exec_main_status: i32 = service_proxy.get_property("ExecMainStatus")?;
-
-        let main_pid: u32 = service_proxy.get_property("MainPID")?;
-        let control_pid: u32 = service_proxy.get_property("ControlPID")?;
-
-        let restart: String = service_proxy.get_property("Restart")?;
-        let restart_usec: u64 = service_proxy.get_property("RestartUSec")?;
-
-        let status_text: String = service_proxy.get_property("StatusText")?;
-        let result: String = service_proxy.get_property("Result")?;
-
-        let user: String = service_proxy.get_property("User")?;
-        let group: String = service_proxy.get_property("Group")?;
-
-        let limit_cpu: u64 = service_proxy.get_property("LimitCPU")?;
-        let limit_nofile: u64 = service_proxy.get_property("LimitNOFILE")?;
-        let limit_nproc: u64 = service_proxy.get_property("LimitNPROC")?;
-        let limit_memlock: u64 = service_proxy.get_property("LimitMEMLOCK")?;
-        let memory_limit: u64 = service_proxy.get_property("MemoryLimit")?;
-        let cpu_shares: u64 = service_proxy.get_property("CPUShares")?;
-
-        Ok(ServiceProperty::new(
-            exec_start,
-            exec_start_pre,
-            exec_start_post,
-            exec_stop,
-            exec_stop_post,
-            exec_main_pid,
-            exec_main_start_timestamp,
-            exec_main_exit_timestamp,
-            exec_main_code,
-            exec_main_status,
-            main_pid,
-            control_pid,
-            restart,
-            restart_usec,
-            status_text,
-            result,
-            user,
-            group,
-            limit_cpu,
-            limit_nofile,
-            limit_nproc,
-            limit_memlock,
-            memory_limit,
-            cpu_shares,
-        ))
     }
 }
