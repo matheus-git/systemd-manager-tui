@@ -12,22 +12,31 @@ Additionally, it is possible to navigate between system and session units, choos
 ![screenshot_list](https://raw.githubusercontent.com/matheus-git/systemd-manager-tui/main/assets/screenshot_list.png)
 View more [screenshots](https://github.com/matheus-git/systemd-manager-tui/blob/main/docs/screenshots.md)
 
-## Usage
+## Install
 
-### Build binary
-    cargo build --release
-    
-### Run binary *(use **`sudo`** if you intend to perform actions on **`system`** services)*
-    ./target/release/systemd-manager-tui
-    
+After installation, you can create an `alias` to make it easier to use.
+
+### Ubuntu (recommended)
+    sudo dpkg -i systemd-manager-tui_x.x.x-x_amd64.deb
+Download the .deb file from Releases
+
+### Arch linux (recommended)
+    yay -S systemd-manager-tui
+https://aur.archlinux.org/packages/systemd-manager-tui
+(Support the project by voting to help it gain visibility)
+
+### Binary
+    chmod +x systemd-manager-tui
+    ./systemd-manager-tui
+Download binary from Releases
+
+### Cargo
+    cargo install systemd-manager-tui
+        
 ## Main libraries
 
 - ratatui - 0.29.0
 - zbus - 5.5.0
-
-## Weekly Updates
-
-This project is actively maintained and updated every weekend.  
 
 ## Contributing
 
