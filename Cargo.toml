@@ -1,11 +1,12 @@
 [package]
 name = "systemd-manager-tui"
-version = "1.0.2"
+version = "1.0.3"
 description = "systemd manager tui"
 authors = ["Matheus-git <mathiew0@gmail.com>"]
 license = "MIT"
 edition = "2024"
 exclude = [
+    "assets/*",
     "docs/*"
 ]
 readme = "README.md"
