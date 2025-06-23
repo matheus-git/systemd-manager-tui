@@ -23,7 +23,6 @@ Download the .deb file from Releases
 ### Arch linux (recommended)
     yay -S systemd-manager-tui
 https://aur.archlinux.org/packages/systemd-manager-tui
-(Support the project by voting to help it gain visibility)
 
 ### Binary
     chmod +x systemd-manager-tui
@@ -31,7 +30,7 @@ https://aur.archlinux.org/packages/systemd-manager-tui
 Download binary from Releases
 
 ### Cargo
-    cargo install systemd-manager-tui
+    cargo install --locked systemd-manager-tui
         
 ## Main libraries
 
