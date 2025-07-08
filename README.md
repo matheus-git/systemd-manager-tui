@@ -21,8 +21,8 @@ After installation, you can create an `alias` to make it easier to use.
 Download the .deb file from Releases
 
 ### Arch linux (recommended)
-    yay -S systemd-manager-tui
-https://aur.archlinux.org/packages/systemd-manager-tui
+    yay -S systemd-manager-tui-bin
+https://aur.archlinux.org/packages/systemd-manager-tui-bin
 
 ### Binary
     chmod +x systemd-manager-tui
