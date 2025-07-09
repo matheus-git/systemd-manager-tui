@@ -1127,7 +1127,7 @@ dependencies = [
 
 [[package]]
 name = "systemd-manager-tui"
-version = "1.0.3"
+version = "1.0.4"
 dependencies = [
  "chrono",
  "color-eyre",
