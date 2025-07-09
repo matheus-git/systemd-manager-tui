@@ -104,6 +104,36 @@ impl ServiceRepository for SystemdServiceAdapter {
         Ok(services)
     }
 
+    fn list_service_files(&self, filter: bool) -> Result<Vec<Service>, Box<dyn std::error::Error>> {
+        let proxy = self.manager_proxy()?;
+
+        let units: Vec<(String, String)> = proxy.call("ListUnitFiles", &())?;
+
+        let services = units
+            .into_iter()
+            .filter_map(|unit_tuple| {
+                let name = &unit_tuple.0;
+                if !filter || name.ends_with(".service") {
+                    Some(unit_tuple)
+                } else {
+                    None
+                }
+            })
+            .map(
+                |(
+                    name,
+                    state,
+                )| {
+                    let service_state = ServiceState::new(String::new(), String::new(), String::new(), state );
+                    let short_name = name.rsplit('/').next().unwrap_or(&name);
+                    Service::new(short_name.to_string(), String::new(), service_state)
+                },
+            )
+            .collect::<Vec<_>>();
+
+        Ok(services)
+    }
+
     fn get_service_log(&self, name: &str) -> Result<String, Box<dyn std::error::Error>> {
         let output = std::process::Command::new("journalctl")
             .arg("-e")
