@@ -4,6 +4,7 @@ use crate::infrastructure::systemd_service_adapter::ConnectionType;
 use std::error::Error;
 use std::thread;
 use std::time::Duration;
+use std::collections::HashSet;
 
 const SLEEP_DURATION: u64 = 200;
 
@@ -49,9 +50,24 @@ impl ServicesManager {
     }
 
     pub fn list_services(&self, filter: bool) -> Result<Vec<Service>, Box<dyn Error>> {
-        let mut services = self.repository.list_services(filter)?;
-        services.sort_by_key(|a| a.name().to_lowercase());
-        Ok(services)
+        let mut all = Vec::new();
+
+        let mut services_runtime = self.repository.list_services(filter)?;
+        let mut services_files = self.repository.list_service_files(filter)?;
+
+        all.append(&mut services_runtime);
+        all.append(&mut services_files);
+
+        if filter {
+            all.retain(|s| s.name().ends_with(".service"));
+        }
+
+        let mut seen = HashSet::new();
+        all.retain(|s| seen.insert(s.name().to_string()));
+
+        all.sort_by_key(|s| s.name().to_lowercase());
+
+        Ok(all)
     }
 
     pub fn get_log(&self, service: &Service) -> Result<String, Box<dyn Error>> {
