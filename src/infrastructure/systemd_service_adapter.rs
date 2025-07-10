@@ -188,7 +188,7 @@ impl ServiceRepository for SystemdServiceAdapter {
     }
 
     fn start_service(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
-        let proxy = self.manager_proxy()?; // deve ser zbus::blocking::Proxy
+        let proxy = self.manager_proxy()?;
         let _job: OwnedObjectPath = proxy.call("StartUnit", &(name, "replace"))?;
         thread::sleep(Duration::from_millis(SLEEP_DURATION));
         self.get_unit(name)

@@ -77,19 +77,24 @@ impl ServiceDetails {
     }
 
     pub fn on_key_event(&mut self, key: KeyEvent) {
+        let right_keys = [KeyCode::Right, KeyCode::Char('l')];
+        let left_keys = [KeyCode::Left, KeyCode::Char('h')];
+        let up_keys = [KeyCode::Up, KeyCode::Char('k')];
+        let down_keys = [KeyCode::Down, KeyCode::Char('j')];
+
         match key.code {
-            KeyCode::Right => {
+            code if right_keys.contains(&code) => {
                 self.reset();
                 self.sender.send(AppEvent::Action(Actions::GoLog)).unwrap();
             }
-            KeyCode::Left => {
+            code if left_keys.contains(&code) => {
                 self.reset();
                 self.sender.send(AppEvent::Action(Actions::GoLog)).unwrap();
             }
-            KeyCode::Up => {
+            code if up_keys.contains(&code) => {
                 self.scroll = self.scroll.saturating_sub(1);
             }
-            KeyCode::Down => {
+            code if down_keys.contains(&code) => {
                 self.scroll += 1;
             }
             KeyCode::PageUp => {

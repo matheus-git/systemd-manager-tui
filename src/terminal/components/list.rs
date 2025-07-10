@@ -12,6 +12,7 @@ use std::error::Error;
 use std::sync::mpsc::Sender;
 use std::rc::Rc;
 use std::cell::RefCell;
+use std::env;
 
 use crate::domain::service::Service;
 use crate::terminal::app::{Actions, AppEvent};
@@ -71,7 +72,8 @@ pub struct TableServices {
     pub ignore_key_events: bool,
     sender: Sender<AppEvent>,
     usecase: Rc<RefCell<ServicesManager>>,
-    filter_all: bool
+    filter_all: bool,
+    vim_mode: bool
 }
 
 impl TableServices {
@@ -129,7 +131,8 @@ impl TableServices {
             old_filter_text: String::new(),
             ignore_key_events: false,
             usecase,
-            filter_all
+            filter_all,
+            vim_mode: env::args().any(|arg| arg == "--vim")
         }
     }
 
@@ -219,9 +222,12 @@ impl TableServices {
             return;
         }
 
+        let up_keys = [KeyCode::Up, KeyCode::Char('k')];
+        let down_keys = [KeyCode::Down, KeyCode::Char('j')];
+
         match key.code {
-            KeyCode::Down => self.select_next(),
-            KeyCode::Up => self.select_previous(),
+            code if down_keys.contains(&code) => self.select_next(),
+            code if up_keys.contains(&code) => self.select_previous(),
             KeyCode::PageDown => self.select_page_down(),
             KeyCode::PageUp => self.select_page_up(),
             KeyCode::Char('r') => self.act_on_selected_service(ServiceAction::Restart),
@@ -233,11 +239,7 @@ impl TableServices {
             KeyCode::Char('v') => self.sender.send(AppEvent::Action(Actions::GoLog)).unwrap(),
             KeyCode::Char('f') => self.act_on_selected_service(ServiceAction::ToggleFilter),
             KeyCode::Char('c') => {
-                self
-                .sender
-                .send(AppEvent::Action(Actions::GoDetails))
-                .unwrap();
-
+                self.sender.send(AppEvent::Action(Actions::GoDetails)).unwrap();
             }
             _ => {}
         }

@@ -106,7 +106,7 @@ impl App {
             usecases,
             event_rx,
             event_tx,
-            selected_tab_index: 0
+            selected_tab_index: 0,
         }
     }
 
@@ -445,6 +445,9 @@ fn spawn_key_event_listener(&self) {
     }
 
     fn on_key_event(&mut self, key: KeyEvent) {
+        let left_keys = [KeyCode::Left, KeyCode::Char('h')];
+        let right_keys = [KeyCode::Right, KeyCode::Char('l')];
+
         match key {
             KeyEvent {
                 modifiers: KeyModifiers::CONTROL,
@@ -455,12 +458,12 @@ fn spawn_key_event_listener(&self) {
             }
 
             KeyEvent {
-                code: KeyCode::Left,
+                code,
                 ..
-            } => {
+            } if left_keys.contains(&code) => {
                 if matches!(self.status, Status::List) {
                     self.selected_tab_index = if self.selected_tab_index == 0 {
-                        1 
+                        1
                     } else {
                         self.selected_tab_index - 1
                     };
@@ -469,13 +472,9 @@ fn spawn_key_event_listener(&self) {
                 }
             }
 
-            KeyEvent {
-                code: KeyCode::Right,
-                ..
-            } => {
+            KeyEvent { code, .. } if right_keys.contains(&code) => {
                 if matches!(self.status, Status::List) {
                     self.selected_tab_index = (self.selected_tab_index + 1) % 2;
-
                     self.update_connection_and_reset();
                 }
             }

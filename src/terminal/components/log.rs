@@ -151,24 +151,24 @@ impl ServiceLog {
     }
 
     pub fn on_key_event(&mut self, key: KeyEvent) {
-        match key.code {
-            KeyCode::Right => {
-                self.reset();
-                self.sender
-                    .send(AppEvent::Action(Actions::GoDetails))
-                    .unwrap();
-            }
-            KeyCode::Left => {
-                self.reset();
-                self.sender
-                    .send(AppEvent::Action(Actions::GoDetails))
-                    .unwrap();
-            }
+        let right_keys = [KeyCode::Right, KeyCode::Char('l')];
+        let left_keys = [KeyCode::Left, KeyCode::Char('h')];
+        let up_keys = [KeyCode::Up, KeyCode::Char('k')];
+        let down_keys = [KeyCode::Down, KeyCode::Char('j')];
 
-            KeyCode::Up => {
+        match key.code {
+            code if right_keys.contains(&code) => {
+                self.reset();
+                self.sender.send(AppEvent::Action(Actions::GoDetails)).unwrap();
+            }
+            code if left_keys.contains(&code) => {
+                self.reset();
+                self.sender.send(AppEvent::Action(Actions::GoDetails)).unwrap();
+            }
+            code if up_keys.contains(&code) => {
                 self.scroll = self.scroll.saturating_add(1);
             }
-            KeyCode::Down => {
+            code if down_keys.contains(&code) => {
                 self.scroll = self.scroll.saturating_sub(1);
             }
             KeyCode::PageUp => {
@@ -176,7 +176,7 @@ impl ServiceLog {
             }
             KeyCode::PageDown => {
                 self.scroll = self.scroll.saturating_sub(10);
-            } 
+            }
             KeyCode::Char('a') => {
                 self.toogle_auto_refresh();
                 self.auto_refresh_thread();
