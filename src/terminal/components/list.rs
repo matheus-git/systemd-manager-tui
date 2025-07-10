@@ -304,24 +304,34 @@ impl TableServices {
             let binding_usecase = self.usecase.clone();
             let usecase = binding_usecase.borrow();
             match action {
-                ServiceAction::Start => self.handle_result(usecase.start_service(service)),
-                ServiceAction::Stop => self.handle_result(usecase.stop_service(service)),
-                ServiceAction::Restart => self.handle_result(usecase.restart_service(service)),
-                ServiceAction::Enable => self.handle_result(usecase.enable_service(service)),
-                ServiceAction::Disable => self.handle_result(usecase.disable_service(service)),
+                ServiceAction::Start => self.handle_service_result(usecase.start_service(service)),
+                ServiceAction::Stop => self.handle_service_result(usecase.stop_service(service)),
+                ServiceAction::Restart => self.handle_service_result(usecase.restart_service(service)),
+                ServiceAction::Enable => self.handle_service_result(usecase.enable_service(service)),
+                ServiceAction::Disable => self.handle_service_result(usecase.disable_service(service)),
                 ServiceAction::ToggleFilter => {
                     self.table_state.select(Some(0));
-                    self.filter_all = !self.filter_all
+                    self.filter_all = !self.filter_all;
+                    self.fetch_and_refresh(self.old_filter_text.clone());
                 },
-                ServiceAction::RefreshAll => self.fetch_services(),
+                ServiceAction::RefreshAll => {
+                    self.fetch_services();
+                    self.fetch_and_refresh(self.old_filter_text.clone());
+                },
             }
         }
-        self.fetch_and_refresh(self.old_filter_text.clone());
     }
 
-    fn handle_result(&mut self, result: Result<(), Box<dyn Error>>) {
+    fn handle_service_result(&mut self, result: Result<Service, Box<dyn Error>>) {
         match result {
-            Ok(_) => {}
+            Ok(service) => {
+                if let Some(pos) = self.services.iter().position(|s| s.name() == service.name()) {
+                    self.services[pos] = service;
+                } else {
+                    self.services.push(service);
+                }
+                self.refresh(self.old_filter_text.clone());
+            }
             Err(e) => {
                 self.sender.send(AppEvent::Error(e.to_string())).unwrap();
             }

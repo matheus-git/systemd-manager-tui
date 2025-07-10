@@ -1,11 +1,15 @@
 use zbus::blocking::{Connection, Proxy};
 use zbus::zvariant::OwnedObjectPath;
 use zbus::Error;
+use std::time::Duration;
 use std::process::Command;
 use std::io::{self};
+use std::thread;
 use crate::domain::service::Service;
 use crate::domain::service_repository::ServiceRepository;
 use crate::domain::service_state::ServiceState;
+
+const SLEEP_DURATION: u64 = 300;
 
 type SystemdUnit = (
     String,
@@ -95,7 +99,6 @@ impl ServiceRepository for SystemdServiceAdapter {
                         .unwrap_or_else(|_| "unknown".into());
 
                     let service_state = ServiceState::new(load_state, active_state, sub_state, state);
-
                     Service::new(name, description, service_state)
                 },
             )
@@ -166,36 +169,59 @@ impl ServiceRepository for SystemdServiceAdapter {
         }
     }
 
-    fn start_service(&self, name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    fn get_unit(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
+
+        let units: Vec<SystemdUnit> = proxy.call("ListUnitsByNames", &(vec![name]))?;
+
+        let state: String = proxy
+                        .call("GetUnitFileState", &name)
+                        .unwrap_or_else(|_| "unknown".into());
+        
+        if let Some(unit) = units.first() {
+            let service_state = ServiceState::new(unit.2.clone(), unit.3.clone(), unit.4.clone(), state );
+            let service = Service::new(unit.0.clone(), unit.1.clone(), service_state);
+            Ok(service)
+        }else {
+            Err(format!("Unit '{}' not found", name).into())
+        }
+    }
+
+    fn start_service(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
+        let proxy = self.manager_proxy()?; // deve ser zbus::blocking::Proxy
         let _job: OwnedObjectPath = proxy.call("StartUnit", &(name, "replace"))?;
-        Ok(())
+        thread::sleep(Duration::from_millis(SLEEP_DURATION));
+        self.get_unit(name)
     }
 
-    fn stop_service(&self, name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    fn stop_service(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
-        let _job: OwnedObjectPath = proxy.call("StopUnit", &(name, "replace"))?;
-        Ok(())
+        let _job: OwnedObjectPath = proxy.call("StopUnit", &(name.to_string(), "replace"))?;
+        thread::sleep(Duration::from_millis(SLEEP_DURATION));
+        self.get_unit(name)
     }
 
-    fn restart_service(&self, name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    fn restart_service(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
         let _job: OwnedObjectPath = proxy.call("RestartUnit", &(name, "replace"))?;
-        Ok(())
+        thread::sleep(Duration::from_millis(SLEEP_DURATION));
+        self.get_unit(name)
     }
 
-    fn enable_service(&self, name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    fn enable_service(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
         let (_carries_install_info, _changes): (bool, Vec<(String, String, String)>) =
-            proxy.call("EnableUnitFiles", &(vec![name], false, true))?;
-        Ok(())
+        proxy.call("EnableUnitFiles", &(vec![name], false, true))?;
+        thread::sleep(Duration::from_millis(SLEEP_DURATION));
+        self.get_unit(name)
     }
 
-    fn disable_service(&self, name: &str) -> Result<(), Box<dyn std::error::Error>> {
+    fn disable_service(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
         let _changes: Vec<(String, String, String)> =
-            proxy.call("DisableUnitFiles", &(vec![name], false))?;
-        Ok(())
+        proxy.call("DisableUnitFiles", &(vec![name], false))?;
+        thread::sleep(Duration::from_millis(SLEEP_DURATION));
+        self.get_unit(name)
     }
 
     fn reload_daemon(&self) -> Result<(), Box<dyn std::error::Error>> {

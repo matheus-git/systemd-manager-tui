@@ -2,11 +2,7 @@ use crate::domain::service::Service;
 use crate::domain::service_repository::ServiceRepository;
 use crate::infrastructure::systemd_service_adapter::ConnectionType;
 use std::error::Error;
-use std::thread;
-use std::time::Duration;
 use std::collections::HashSet;
-
-const SLEEP_DURATION: u64 = 200;
 
 pub struct ServicesManager {
     repository: Box<dyn ServiceRepository>,
@@ -17,36 +13,31 @@ impl ServicesManager {
         Self { repository }
     }
 
-    pub fn start_service(&self, service: &Service) -> Result<(), Box<dyn Error>> {
-        self.repository.start_service(service.name())?;
-        thread::sleep(Duration::from_millis(SLEEP_DURATION));
-        Ok(())
+    pub fn start_service(&self, service: &Service) -> Result<Service, Box<dyn Error>> {
+        let service = self.repository.start_service(service.name())?;
+        Ok(service)
     }
 
-    pub fn stop_service(&self, service: &Service) -> Result<(), Box<dyn Error>> {
-        self.repository.stop_service(service.name())?;
-        thread::sleep(Duration::from_millis(SLEEP_DURATION));
-        Ok(())
+    pub fn stop_service(&self, service: &Service) -> Result<Service, Box<dyn Error>> {
+        let service = self.repository.stop_service(service.name())?;
+        Ok(service)
     }
 
-    pub fn restart_service(&self, service: &Service) -> Result<(), Box<dyn Error>> {
-        self.repository.restart_service(service.name())?;
-        thread::sleep(Duration::from_millis(SLEEP_DURATION));
-        Ok(())
+    pub fn restart_service(&self, service: &Service) -> Result<Service, Box<dyn Error>> {
+        let service = self.repository.restart_service(service.name())?;
+        Ok(service)
     }
 
-    pub fn enable_service(&self, service: &Service) -> Result<(), Box<dyn Error>> {
-        self.repository.enable_service(service.name())?;
-        thread::sleep(Duration::from_millis(SLEEP_DURATION));
+    pub fn enable_service(&self, service: &Service) -> Result<Service, Box<dyn Error>> {
+        let service = self.repository.enable_service(service.name())?;
         self.repository.reload_daemon()?;
-        Ok(())
+        Ok(service)
     }
 
-    pub fn disable_service(&self, service: &Service) -> Result<(), Box<dyn Error>> {
-        self.repository.disable_service(service.name())?;
-        thread::sleep(Duration::from_millis(SLEEP_DURATION));
+    pub fn disable_service(&self, service: &Service) -> Result<Service, Box<dyn Error>> {
+        let service = self.repository.disable_service(service.name())?;
         self.repository.reload_daemon()?;
-        Ok(())
+        Ok(service)
     }
 
     pub fn list_services(&self, filter: bool) -> Result<Vec<Service>, Box<dyn Error>> {
