@@ -1,6 +1,6 @@
 [package]
 name = "systemd-manager-tui"
-version = "1.0.7"
+version = "1.0.8"
 description = "TUI for managing systemd services"
 authors = ["Matheus-git <mathiew0@gmail.com>"]
 license = "MIT"
@@ -19,7 +19,6 @@ lto = true
 
 [dependencies]
 chrono = "0.4"
-libc = "0.2"
 zbus = "5.5.0"
 crossterm = "0.28.1"
 color-eyre = "0.6.3"

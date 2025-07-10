@@ -6,7 +6,6 @@ pkgdesc="systemd manager tui"
 arch=('x86_64')
 url="https://github.com/matheus-git/systemd-manager-tui"
 license=('MIT')
-depends=('glibc')
 makedepends=('git' 'rust' 'cargo')
 source=("git+https://github.com/matheus-git/systemd-manager-tui.git")
 sha256sums=('SKIP')

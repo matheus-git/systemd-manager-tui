@@ -1132,7 +1132,6 @@ dependencies = [
  "chrono",
  "color-eyre",
  "crossterm",
- "libc",
  "ratatui",
  "textwrap",
  "zbus",
