@@ -1,6 +1,6 @@
 [package]
 name = "systemd-manager-tui"
-version = "1.0.4"
+version = "1.0.5"
 description = "systemd manager tui"
 authors = ["Matheus-git <mathiew0@gmail.com>"]
 license = "MIT"
