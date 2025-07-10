@@ -33,11 +33,11 @@ fn generate_rows(services: &[Service]) -> Vec<Row<'static>> {
                 _ => Style::default().fg(Color::Red),
             };
 
-            let active = if !service.state().active().is_empty() {
-                let sub_val = service.state().sub();
-                format!("{} ({})", service.state().active(), sub_val)
+            let sub = service.state().sub();
+            let active = if !sub.is_empty() {
+                format!("{} ({})", service.state().active(), sub)
             } else {
-                "".to_string()
+                service.state().active().to_string()
             };
 
             Row::new(vec![

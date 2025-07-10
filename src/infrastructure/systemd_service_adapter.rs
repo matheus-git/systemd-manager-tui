@@ -124,7 +124,7 @@ impl ServiceRepository for SystemdServiceAdapter {
                     name,
                     state,
                 )| {
-                    let service_state = ServiceState::new(String::new(), String::new(), String::new(), state );
+                    let service_state = ServiceState::new(String::new(), "inactive".to_string(), String::new(), state );
                     let short_name = name.rsplit('/').next().unwrap_or(&name);
                     Service::new(short_name.to_string(), String::new(), service_state)
                 },
