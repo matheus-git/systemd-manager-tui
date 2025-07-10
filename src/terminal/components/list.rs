@@ -12,7 +12,6 @@ use std::error::Error;
 use std::sync::mpsc::Sender;
 use std::rc::Rc;
 use std::cell::RefCell;
-use std::env;
 
 use crate::domain::service::Service;
 use crate::terminal::app::{Actions, AppEvent};
@@ -73,7 +72,6 @@ pub struct TableServices {
     sender: Sender<AppEvent>,
     usecase: Rc<RefCell<ServicesManager>>,
     filter_all: bool,
-    vim_mode: bool
 }
 
 impl TableServices {
@@ -132,7 +130,6 @@ impl TableServices {
             ignore_key_events: false,
             usecase,
             filter_all,
-            vim_mode: env::args().any(|arg| arg == "--vim")
         }
     }
 
