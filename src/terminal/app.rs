@@ -23,7 +23,7 @@ use crate::infrastructure::systemd_service_adapter::ConnectionType;
 use crate::usecases::services_manager::ServicesManager;
 
 use super::components::details::ServiceDetails;
-use super::components::filter::Filter;
+use super::components::filter::{Filter, InputMode};
 use super::components::list::TableServices;
 use super::components::log::ServiceLog;
 
@@ -165,6 +165,7 @@ fn spawn_key_event_listener(&self) {
                     }
                     Status::List => {
                         self.on_key_event(key);
+                        self.on_key_horizontal_event(key, filter.input_mode == InputMode::Editing);
                         table_service.on_key_event(key);
                         filter.on_key_event(key);
                     }
@@ -245,20 +246,20 @@ fn spawn_key_event_listener(&self) {
         self.event_listener_enabled.store(false, Ordering::Relaxed);
 
         if let Err(e) = disable_raw_mode() {
-                self.resume_tui(terminal)?;
+            self.resume_tui(terminal)?;
             self.error_popup(terminal, format!("Failed to disable raw mode: {}", e))?;
             return Ok(());
         }
 
         let mut stdout = io::stdout();
         if let Err(e) = execute!(stdout, LeaveAlternateScreen) {
-                self.resume_tui(terminal)?;
+            self.resume_tui(terminal)?;
             self.error_popup(terminal, format!("Failed to leave alternate screen: {}", e))?;
             return Ok(());
         }
 
         if let Err(e) = terminal.show_cursor() {
-                self.resume_tui(terminal)?;
+            self.resume_tui(terminal)?;
             self.error_popup(terminal, format!("Failed to show cursor: {}", e))?;
             return Ok(());
         }
@@ -445,9 +446,6 @@ fn spawn_key_event_listener(&self) {
     }
 
     fn on_key_event(&mut self, key: KeyEvent) {
-        let left_keys = [KeyCode::Left, KeyCode::Char('h')];
-        let right_keys = [KeyCode::Right, KeyCode::Char('l')];
-
         match key {
             KeyEvent {
                 modifiers: KeyModifiers::CONTROL,
@@ -456,12 +454,18 @@ fn spawn_key_event_listener(&self) {
             } => {
                 self.quit();
             }
-
+            _ => {}
+        }
+    }
+    fn on_key_horizontal_event(&mut self, key: KeyEvent, is_filtering: bool) {
+        let left_keys = [KeyCode::Left, KeyCode::Char('h')];
+        let right_keys = [KeyCode::Right, KeyCode::Char('l')];
+        match key {
             KeyEvent {
                 code,
                 ..
             } if left_keys.contains(&code) => {
-                if matches!(self.status, Status::List) {
+                if !is_filtering && self.status == Status::List {
                     self.selected_tab_index = if self.selected_tab_index == 0 {
                         1
                     } else {
@@ -473,7 +477,7 @@ fn spawn_key_event_listener(&self) {
             }
 
             KeyEvent { code, .. } if right_keys.contains(&code) => {
-                if matches!(self.status, Status::List) {
+                if !is_filtering && self.status == Status::List {
                     self.selected_tab_index = (self.selected_tab_index + 1) % 2;
                     self.update_connection_and_reset();
                 }
@@ -482,7 +486,6 @@ fn spawn_key_event_listener(&self) {
             _ => {}
         }
     }
-
     fn update_connection_and_reset(&mut self) {
         let conn_type = match self.selected_tab_index {
             0 => ConnectionType::System,
