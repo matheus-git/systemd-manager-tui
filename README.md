@@ -33,29 +33,8 @@ https://aur.archlinux.org/packages/systemd-manager-tui
 
     nix run github:matheus-git/systemd-manager-tui
 
-### NixOS with flakes
-
-```nix
-{
-  inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    systemd-manager-tui.url = "github:matheus-git/systemd-manager-tui";
-  };
-
-  outputs = { self, nixpkgs, systemd-manager-tui, ... }: {
-    nixosConfigurations.yourhostname = nixpkgs.lib.nixosSystem {
-      system = "x86_64-linux";
-      modules = [
-        {
-          environment.systemPackages = [
-            systemd-manager-tui.packages.x86_64-linux.default
-          ];
-        }
-      ];
-    };
-  };
-}
-```
+NixOS with flakes
+[Read here](docs/flakes.md)
 
 ### Binary
 
