@@ -6,7 +6,7 @@ A program for managing systemd services through a TUI (Terminal User Interfaces)
 
 This tool allows you to manage systemd services with ease. You can view logs, list services, view properties, and control their lifecycle—start, stop, restart, enable, and disable—using the D-Bus API. 
 
-Additionally, it is possible to navigate between system and session units, choose to list either all units or only those of type 'service', and directly edit the selected unit's file.
+Additionally, it is possible to navigate between system and session units, choose to list either all units or only those of type 'service', and directly edit the selected unit's file. It also supports Vim-like navigation.
 
 ## Screenshots
 ![screenshot_list](https://raw.githubusercontent.com/matheus-git/systemd-manager-tui/main/assets/systemd-manager-tui.gif)
