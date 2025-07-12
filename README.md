@@ -19,9 +19,15 @@ After installation, you can create an `alias` to make it easier to use.
 
 ### Ubuntu (recommended)
 
-    sudo dpkg -i systemd-manager-tui_x.x.x-x_amd64.deb
+    sudo dpkg -i ./systemd-manager-tui_x.x.x-x_amd64.deb 
 
 Download the .deb file from [Releases](https://github.com/matheus-git/systemd-manager-tui/releases)
+
+### Fedora (recommended)
+
+    sudo dnf install ./systemd-manager-tui_x.x.x-x_x86_64.rpm
+    
+Download the .rpm file from [Releases](https://github.com/matheus-git/systemd-manager-tui/releases)
 
 ### Arch linux
 
