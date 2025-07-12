@@ -21,7 +21,7 @@ After installation, you can create an `alias` to make it easier to use.
 
     sudo dpkg -i systemd-manager-tui_x.x.x-x_amd64.deb
 
-Download the .deb file from Releases
+Download the .deb file from [Releases](https://github.com/matheus-git/systemd-manager-tui/releases)
 
 ### Arch linux (recommended)
 
@@ -29,19 +29,15 @@ Download the .deb file from Releases
 
 https://aur.archlinux.org/packages/systemd-manager-tui
 
-### NixOS (Quick Run)
-
+### NixOS
     nix run github:matheus-git/systemd-manager-tui
 
-NixOS with flakes
-[Read here](docs/flakes.md)
-
+NixOS with flakes [Read here](docs/flakes.md)
 ### Binary
 
     chmod +x systemd-manager-tui
     ./systemd-manager-tui
-
-Download binary from Releases
+Download binary from [Releases](https://github.com/matheus-git/systemd-manager-tui/releases)
 
 ### Cargo
 
