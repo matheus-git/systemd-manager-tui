@@ -23,7 +23,7 @@ After installation, you can create an `alias` to make it easier to use.
 
 Download the .deb file from [Releases](https://github.com/matheus-git/systemd-manager-tui/releases)
 
-### Arch linux (recommended)
+### Arch linux
 
     yay -S systemd-manager-tui
 
