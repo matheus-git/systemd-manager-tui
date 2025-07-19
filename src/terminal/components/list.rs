@@ -382,7 +382,7 @@ impl TableServices {
             )));
 
             help_text.push(Line::from(
-                "Navigate: ↑/↓ | Switch tab: ←/→ | Toggle Filter: f | Start: s | Stop: x | Restart: r | Enable: e | Disable: d | Refresh all: u | Log: v | Unit File: c"
+                "Navigate: ↑/↓ | Switch tab: ←/→ | List all: f | Start: s | Stop: x | Restart: r | Enable: e | Disable: d | Refresh all: u | Log: v | Unit File: c"
             ));
         }
 
