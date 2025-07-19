@@ -247,16 +247,8 @@ impl TableServices {
                 self.sender.send(AppEvent::Action(Actions::ServiceAction(ServiceAction::RefreshAll))).unwrap();
                 return;
             }
-            KeyCode::Char('v') => {
-                self.sender.send(AppEvent::Action(Actions::GoLog)).unwrap();
-                return;
-            }
             KeyCode::Char('f') => {
                 self.sender.send(AppEvent::Action(Actions::ServiceAction(ServiceAction::ToggleFilter))).unwrap();
-                return;
-            }
-            KeyCode::Char('c') => {
-                self.sender.send(AppEvent::Action(Actions::GoDetails)).unwrap();
                 return;
             }
             KeyCode::Char('m') => {
@@ -276,6 +268,14 @@ impl TableServices {
             code if up_keys.contains(&code) => self.select_previous(),
             KeyCode::PageDown => self.select_page_down(),
             KeyCode::PageUp => self.select_page_up(),
+            KeyCode::Char('c') => {
+                self.sender.send(AppEvent::Action(Actions::GoDetails)).unwrap();
+                return;
+            }
+            KeyCode::Char('v') => {
+                self.sender.send(AppEvent::Action(Actions::GoLog)).unwrap();
+                return;
+            }
             _ => {}
         }
     }
