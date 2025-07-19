@@ -39,6 +39,16 @@ impl ServicesManager {
         self.repository.reload_daemon()?;
         Ok(service)
     }
+    
+    pub fn mask_service(&self, service: &Service) -> Result<Service, Box<dyn Error>> {
+        let service = self.repository.mask_service(service.name())?;
+        Ok(service)
+    }
+
+    pub fn unmask_service(&self, service: &Service) -> Result<Service, Box<dyn Error>> {
+        let service = self.repository.unmask_service(service.name())?;
+        Ok(service)
+    }
 
     pub fn list_services(&self, filter: bool) -> Result<Vec<Service>, Box<dyn Error>> {
         let mut all = Vec::new();

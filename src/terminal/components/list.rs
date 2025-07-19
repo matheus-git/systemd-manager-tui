@@ -58,7 +58,8 @@ pub enum ServiceAction {
     Enable,
     Disable,
     RefreshAll,
-    ToggleFilter
+    ToggleFilter,
+    ToggleMask
 }
  
 pub struct TableServices {
@@ -258,6 +259,10 @@ impl TableServices {
                 self.sender.send(AppEvent::Action(Actions::GoDetails)).unwrap();
                 return;
             }
+            KeyCode::Char('m') => {
+                self.sender.send(AppEvent::Action(Actions::ServiceAction(ServiceAction::ToggleMask))).unwrap();
+                return;
+            }
             _ => {}
         }
 
@@ -336,6 +341,15 @@ impl TableServices {
             let binding_usecase = self.usecase.clone();
             let usecase = binding_usecase.borrow();
             match action {
+                ServiceAction::ToggleMask => {
+                    match service.state().file() {
+                        "masked" => self.handle_service_result(usecase.unmask_service(service)),
+                        "masked-runtime" => self.handle_service_result(usecase.unmask_service(service)),
+                        _ => self.handle_service_result(usecase.mask_service(service)),
+                    }
+                    self.fetch_services();
+                    self.fetch_and_refresh(self.old_filter_text.clone());
+                },
                 ServiceAction::Start => self.handle_service_result(usecase.start_service(service)),
                 ServiceAction::Stop => self.handle_service_result(usecase.stop_service(service)),
                 ServiceAction::Restart => self.handle_service_result(usecase.restart_service(service)),
@@ -382,7 +396,7 @@ impl TableServices {
             )));
 
             help_text.push(Line::from(
-                "Navigate: ↑/↓ | Switch tab: ←/→ | List all: f | Start: s | Stop: x | Restart: r | Enable: e | Disable: d | Refresh all: u | Log: v | Unit File: c"
+                "Navigate: ↑/↓ | Switch tab: ←/→ | List all: f | Start: s | Stop: x | Restart: r | Enable: e | Disable: d | Mask/Unmask: m | Refresh list: u | Log: v | Unit File: c"
             ));
         }
 

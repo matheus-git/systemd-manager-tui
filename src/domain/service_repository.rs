@@ -13,6 +13,8 @@ pub trait ServiceRepository {
     fn restart_service(&self, name: &str) -> Result<Service, Box<dyn Error>>;
     fn enable_service(&self, name: &str) -> Result<Service, Box<dyn Error>>;
     fn disable_service(&self, name: &str) -> Result<Service, Box<dyn Error>>;
+    fn mask_service(&self, name: &str) -> Result<Service, Box<dyn Error>>;
+    fn unmask_service(&self, name: &str) -> Result<Service, Box<dyn Error>>;
     fn reload_daemon(&self) -> Result<(), Box<dyn std::error::Error>>;
     fn change_connection(&mut self, connection_type: ConnectionType) -> Result<(), zbus::Error>;
     fn systemctl_cat(&self, name: &str) -> Result<String, Box<dyn Error>>;
