@@ -219,6 +219,50 @@ impl TableServices {
             return;
         }
 
+        self.set_ignore_key_events(true);
+
+        match key.code {
+            KeyCode::Char('r') => {
+                self.sender.send(AppEvent::Action(Actions::ServiceAction(ServiceAction::Restart))).unwrap();
+                return;
+            }
+            KeyCode::Char('s') => {
+                self.sender.send(AppEvent::Action(Actions::ServiceAction(ServiceAction::Start))).unwrap();
+                return;
+            }
+            KeyCode::Char('x') => {
+                self.sender.send(AppEvent::Action(Actions::ServiceAction(ServiceAction::Stop))).unwrap();
+                return;
+            }
+            KeyCode::Char('e') => {
+                self.sender.send(AppEvent::Action(Actions::ServiceAction(ServiceAction::Enable))).unwrap();
+                return;
+            }
+            KeyCode::Char('d') => {
+                self.sender.send(AppEvent::Action(Actions::ServiceAction(ServiceAction::Disable))).unwrap();
+                return;
+            }
+            KeyCode::Char('u') => {
+                self.sender.send(AppEvent::Action(Actions::ServiceAction(ServiceAction::RefreshAll))).unwrap();
+                return;
+            }
+            KeyCode::Char('v') => {
+                self.sender.send(AppEvent::Action(Actions::GoLog)).unwrap();
+                return;
+            }
+            KeyCode::Char('f') => {
+                self.sender.send(AppEvent::Action(Actions::ServiceAction(ServiceAction::ToggleFilter))).unwrap();
+                return;
+            }
+            KeyCode::Char('c') => {
+                self.sender.send(AppEvent::Action(Actions::GoDetails)).unwrap();
+                return;
+            }
+            _ => {}
+        }
+
+        self.set_ignore_key_events(false);
+
         let up_keys = [KeyCode::Up, KeyCode::Char('k')];
         let down_keys = [KeyCode::Down, KeyCode::Char('j')];
 
@@ -227,17 +271,6 @@ impl TableServices {
             code if up_keys.contains(&code) => self.select_previous(),
             KeyCode::PageDown => self.select_page_down(),
             KeyCode::PageUp => self.select_page_up(),
-            KeyCode::Char('r') => self.act_on_selected_service(ServiceAction::Restart),
-            KeyCode::Char('s') => self.act_on_selected_service(ServiceAction::Start),
-            KeyCode::Char('e') => self.act_on_selected_service(ServiceAction::Enable),
-            KeyCode::Char('d') => self.act_on_selected_service(ServiceAction::Disable),
-            KeyCode::Char('u') => self.act_on_selected_service(ServiceAction::RefreshAll),
-            KeyCode::Char('x') => self.act_on_selected_service(ServiceAction::Stop),
-            KeyCode::Char('v') => self.sender.send(AppEvent::Action(Actions::GoLog)).unwrap(),
-            KeyCode::Char('f') => self.act_on_selected_service(ServiceAction::ToggleFilter),
-            KeyCode::Char('c') => {
-                self.sender.send(AppEvent::Action(Actions::GoDetails)).unwrap();
-            }
             _ => {}
         }
     }
@@ -298,7 +331,7 @@ impl TableServices {
         }
     }
 
-    fn act_on_selected_service(&mut self, action: ServiceAction) {
+    pub fn act_on_selected_service(&mut self, action: ServiceAction) {
         if let Some(service) = self.get_selected_service() {
             let binding_usecase = self.usecase.clone();
             let usecase = binding_usecase.borrow();
@@ -319,6 +352,7 @@ impl TableServices {
                 },
             }
         }
+        self.set_ignore_key_events(false);
     }
 
     fn handle_service_result(&mut self, result: Result<Service, Box<dyn Error>>) {
