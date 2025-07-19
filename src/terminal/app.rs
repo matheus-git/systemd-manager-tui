@@ -24,7 +24,7 @@ use crate::usecases::services_manager::ServicesManager;
 
 use super::components::details::ServiceDetails;
 use super::components::filter::{Filter, InputMode};
-use super::components::list::TableServices;
+use super::components::list::{TableServices, ServiceAction};
 use super::components::log::ServiceLog;
 
 #[derive(PartialEq)]
@@ -46,7 +46,8 @@ pub enum Actions {
     UpdateDetails,
     Filter(String),
     UpdateIgnoreListKeys(bool),
-    EditCurrentService
+    EditCurrentService,
+    ServiceAction(ServiceAction)
 }
 
 pub enum AppEvent {
@@ -174,6 +175,9 @@ fn spawn_key_event_listener(&self) {
                         details.on_key_event(key);
                     }
                 },
+                AppEvent::Action(Actions::ServiceAction(action)) => {
+                    table_service.act_on_selected_service(action);
+                }
                 AppEvent::Action(Actions::UpdateIgnoreListKeys(bool)) => {
                     table_service.set_ignore_key_events(bool);
                 }

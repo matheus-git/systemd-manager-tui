@@ -191,21 +191,36 @@ impl ServiceRepository for SystemdServiceAdapter {
         let proxy = self.manager_proxy()?;
         let _job: OwnedObjectPath = proxy.call("StartUnit", &(name, "replace"))?;
         thread::sleep(Duration::from_millis(SLEEP_DURATION));
-        self.get_unit(name)
+        let mut service = self.get_unit(name)?;
+        while service.state().active().ends_with("ing") {
+            service = self.get_unit(name)?;
+            thread::sleep(Duration::from_millis(100));
+        }
+        Ok(service)
     }
 
     fn stop_service(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
         let _job: OwnedObjectPath = proxy.call("StopUnit", &(name.to_string(), "replace"))?;
         thread::sleep(Duration::from_millis(SLEEP_DURATION));
-        self.get_unit(name)
+        let mut service = self.get_unit(name)?;
+        while service.state().active().ends_with("ing") {
+            service = self.get_unit(name)?;
+            thread::sleep(Duration::from_millis(100));
+        }
+        Ok(service)
     }
 
     fn restart_service(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
         let _job: OwnedObjectPath = proxy.call("RestartUnit", &(name, "replace"))?;
         thread::sleep(Duration::from_millis(SLEEP_DURATION));
-        self.get_unit(name)
+        let mut service = self.get_unit(name)?;
+        while service.state().active().ends_with("ing") {
+            service = self.get_unit(name)?;
+            thread::sleep(Duration::from_millis(100));
+        }
+        Ok(service)
     }
 
     fn enable_service(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
@@ -220,6 +235,22 @@ impl ServiceRepository for SystemdServiceAdapter {
         let proxy = self.manager_proxy()?;
         let _changes: Vec<(String, String, String)> =
         proxy.call("DisableUnitFiles", &(vec![name], false))?;
+        thread::sleep(Duration::from_millis(SLEEP_DURATION));
+        self.get_unit(name)
+    }
+
+    fn mask_service(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
+        let proxy = self.manager_proxy()?;
+        let _output: Vec<(String, String, String)> =
+        proxy.call("MaskUnitFiles", &(vec![name], false, true))?;
+        thread::sleep(Duration::from_millis(SLEEP_DURATION));
+        self.get_unit(name)
+    }
+
+    fn unmask_service(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
+        let proxy = self.manager_proxy()?;
+        let _output: Vec<(String, String, String)> =
+        proxy.call("UnmaskUnitFiles", &(vec![name], false))?;
         thread::sleep(Duration::from_millis(SLEEP_DURATION));
         self.get_unit(name)
     }
