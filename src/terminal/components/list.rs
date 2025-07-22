@@ -59,7 +59,8 @@ pub enum ServiceAction {
     Disable,
     RefreshAll,
     ToggleFilter,
-    ToggleMask
+    ToggleMask,
+    ToggleActiveFilter,
 }
  
 pub struct TableServices {
@@ -73,6 +74,7 @@ pub struct TableServices {
     sender: Sender<AppEvent>,
     usecase: Rc<RefCell<ServicesManager>>,
     filter_all: bool,
+    show_active_only: bool,
 }
 
 impl TableServices {
@@ -131,6 +133,7 @@ impl TableServices {
             ignore_key_events: false,
             usecase,
             filter_all,
+            show_active_only: false,
         }
     }
 
@@ -210,7 +213,13 @@ impl TableServices {
             .into_iter()
             .filter(|service| {
                 let name = service.name();
-                name.to_lowercase().contains(&lower_filter)
+                let name_matches = name.to_lowercase().contains(&lower_filter);
+                let active_matches = if self.show_active_only {
+                    service.state().active() == "active"
+                } else {
+                    true
+                };
+                name_matches && active_matches
             })
             .collect()
     }
@@ -249,6 +258,10 @@ impl TableServices {
             }
             KeyCode::Char('f') => {
                 self.sender.send(AppEvent::Action(Actions::ServiceAction(ServiceAction::ToggleFilter))).unwrap();
+                return;
+            }
+            KeyCode::Char('a') => {
+                self.sender.send(AppEvent::Action(Actions::ServiceAction(ServiceAction::ToggleActiveFilter))).unwrap();
                 return;
             }
             KeyCode::Char('m') => {
@@ -360,6 +373,11 @@ impl TableServices {
                     self.filter_all = !self.filter_all;
                     self.fetch_and_refresh(self.old_filter_text.clone());
                 },
+                ServiceAction::ToggleActiveFilter => {
+                    self.table_state.select(Some(0));
+                    self.show_active_only = !self.show_active_only;
+                    self.refresh(self.old_filter_text.clone());
+                },
                 ServiceAction::RefreshAll => {
                     self.fetch_services();
                     self.fetch_and_refresh(self.old_filter_text.clone());
@@ -396,7 +414,7 @@ impl TableServices {
             )));
 
             help_text.push(Line::from(
-                "Navigate: ↑/↓ | Switch tab: ←/→ | List all: f | Start: s | Stop: x | Restart: r | Enable: e | Disable: d | Mask/Unmask: m | Refresh list: u | Log: v | Unit File: c"
+                "Navigate: ↑/↓ | Switch tab: ←/→ | List all: f | Active only: a | Start: s | Stop: x | Restart: r | Enable: e | Disable: d | Mask/Unmask: m | Refresh list: u | Log: v | Unit File: c"
             ));
         }
 
