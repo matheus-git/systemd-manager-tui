@@ -1,6 +1,6 @@
 # Mantainer: matheus-git <mathiew0@gmail.com>
 pkgname=systemd-manager-tui
-pkgver=1.0.1
+pkgver=1.1.0
 pkgrel=1
 pkgdesc="systemd manager tui"
 arch=('x86_64')

@@ -51,6 +51,34 @@ fn generate_rows(services: &[Service]) -> Vec<Row<'static>> {
         .collect()
 }
 
+#[derive(Clone, Copy)]
+pub enum ActiveFilterState {
+    All,
+    Active,
+    Inactive,
+    Failed,
+}
+
+impl ActiveFilterState {
+    pub fn next(self) -> Self {
+        match self {
+            ActiveFilterState::All => ActiveFilterState::Active,
+            ActiveFilterState::Active => ActiveFilterState::Inactive,
+            ActiveFilterState::Inactive => ActiveFilterState::Failed,
+            ActiveFilterState::Failed => ActiveFilterState::All,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ActiveFilterState::All => "all",
+            ActiveFilterState::Active => "active",
+            ActiveFilterState::Inactive => "inactive",
+            ActiveFilterState::Failed => "failed",
+        }
+    }
+}
+
 pub enum ServiceAction {
     Start,
     Stop,
@@ -59,7 +87,7 @@ pub enum ServiceAction {
     Disable,
     RefreshAll,
     ToggleFilter,
-    ToggleMask
+    ToggleMask,
 }
  
 pub struct TableServices {
@@ -73,6 +101,7 @@ pub struct TableServices {
     sender: Sender<AppEvent>,
     usecase: Rc<RefCell<ServicesManager>>,
     filter_all: bool,
+    active_filter_state: ActiveFilterState,
 }
 
 impl TableServices {
@@ -131,6 +160,7 @@ impl TableServices {
             ignore_key_events: false,
             usecase,
             filter_all,
+            active_filter_state: ActiveFilterState::All,
         }
     }
 
@@ -189,6 +219,21 @@ impl TableServices {
         self.filtered_services = self.filter(filter_text, self.services.clone());
         self.rows = generate_rows(&self.filtered_services.clone());
         self.table = self.table.clone().rows(self.rows.clone());
+        
+        // If no item is selected and the list is not empty, select the first item
+        if self.table_state.selected().is_none() && !self.filtered_services.is_empty() {
+            self.table_state.select(Some(0));
+        }
+        // If the selected index is out of bounds, reset to first item or None
+        else if let Some(selected) = self.table_state.selected() {
+            if selected >= self.filtered_services.len() {
+                if self.filtered_services.is_empty() {
+                    self.table_state.select(None);
+                } else {
+                    self.table_state.select(Some(0));
+                }
+            }
+        }
     }
 
     fn fetch_services(&mut self) {
@@ -210,7 +255,14 @@ impl TableServices {
             .into_iter()
             .filter(|service| {
                 let name = service.name();
-                name.to_lowercase().contains(&lower_filter)
+                let name_matches = name.to_lowercase().contains(&lower_filter);
+                let active_matches = match self.active_filter_state {
+                    ActiveFilterState::All => true,
+                    ActiveFilterState::Active => service.state().active() == "active",
+                    ActiveFilterState::Inactive => service.state().active() != "active" && service.state().active() != "failed",
+                    ActiveFilterState::Failed => service.state().active() == "failed",
+                };
+                name_matches && active_matches
             })
             .collect()
     }
@@ -251,8 +303,24 @@ impl TableServices {
                 self.sender.send(AppEvent::Action(Actions::ServiceAction(ServiceAction::ToggleFilter))).unwrap();
                 return;
             }
+            KeyCode::Char('a') => {
+                self.active_filter_state = self.active_filter_state.next();
+                self.refresh(self.old_filter_text.clone());
+                // Select the first element only if the list is not empty
+                if !self.filtered_services.is_empty() {
+                    self.table_state.select(Some(0));
+                } else {
+                    self.table_state.select(None);
+                }
+                self.set_ignore_key_events(false);
+                return;
+            }
             KeyCode::Char('m') => {
                 self.sender.send(AppEvent::Action(Actions::ServiceAction(ServiceAction::ToggleMask))).unwrap();
+                return;
+            }
+            KeyCode::Char('?') => {
+                self.sender.send(AppEvent::Action(Actions::ShowHelp)).unwrap();
                 return;
             }
             _ => {}
@@ -385,6 +453,14 @@ impl TableServices {
         }
     }
 
+    pub fn is_filtered_list_empty(&self) -> bool {
+        self.filtered_services.is_empty()
+    }
+
+    pub fn get_active_filter_state(&self) -> ActiveFilterState {
+        self.active_filter_state
+    }
+
     pub fn shortcuts(&mut self) -> Vec<Line<'_>> {
         let mut help_text: Vec<Line<'_>> = Vec::new();
         if !self.ignore_key_events {
@@ -396,7 +472,7 @@ impl TableServices {
             )));
 
             help_text.push(Line::from(
-                "Navigate: ↑/↓ | Switch tab: ←/→ | List all: f | Start: s | Stop: x | Restart: r | Enable: e | Disable: d | Mask/Unmask: m | Refresh list: u | Log: v | Unit File: c"
+                "Navigate: ↑/↓ | Switch tab: ←/→ | Start: s | Stop: x | Restart: r | Enable: e | Disable: d | Help: ? | List all: f | Filter: a | Mask/Unmask: m | Refresh: u | Log: v | Unit File: c"
             ));
         }
 
