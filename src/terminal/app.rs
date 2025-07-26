@@ -5,10 +5,10 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, LeaveAlternateScreen, EnterAlternateScreen},
 };
 use std::{io::{self}, process::Command};
-use ratatui::layout::{Alignment, Constraint, Layout, Rect};
+use ratatui::layout::{Alignment, Constraint, Margin, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, Borders, Clear, Paragraph, Tabs};
+use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Tabs, Padding};
 use ratatui::DefaultTerminal;
 use ratatui::Frame;
 use std::sync::mpsc::{Receiver, Sender};
@@ -343,24 +343,24 @@ fn spawn_key_event_listener(&self) {
             )]),
             Line::from(""),
             Line::from(vec![Span::styled("Navigation:", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
-            Line::from("  ↑/k - Move up    ↓/j - Move down"),
-            Line::from("  ←/h - Previous tab    →/l - Next tab"),
-            Line::from("  PageUp/PageDown - Jump 10 items"),
+            Line::from("↑/k - Move up    ↓/j - Move down"),
+            Line::from("←/h - Previous tab    →/l - Next tab"),
+            Line::from("PageUp/PageDown - Jump 10 items"),
             Line::from(""),
             Line::from(vec![Span::styled("Service Control:", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
-            Line::from("  s - Start service    x - Stop service"),
-            Line::from("  r - Restart service"),
-            Line::from("  e - Enable service    d - Disable service"),
-            Line::from("  m - Mask/Unmask service"),
+            Line::from("s - Start service    x - Stop service"),
+            Line::from("r - Restart service"),
+            Line::from("e - Enable service    d - Disable service"),
+            Line::from("m - Mask/Unmask service"),
             Line::from(""),
             Line::from(vec![Span::styled("View & Filter:", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
-            Line::from("  f - Toggle all/services filter"),
-            Line::from("  a - Cycle filter (all→active→inactive→failed)"),
-            Line::from("  u - Refresh service list"),
+            Line::from("f - Toggle all/services filter"),
+            Line::from("a - Cycle filter (all→active→inactive→failed)"),
+            Line::from("u - Refresh service list"),
             Line::from(""),
             Line::from(vec![Span::styled("Information:", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
-            Line::from("  v - View service logs"),
-            Line::from("  c - View unit file details"),
+            Line::from("v - View service logs"),
+            Line::from("c - View unit file details"),
             Line::from(""),
             Line::from(vec![Span::styled(
                 "Press ? or any key to close",
@@ -372,13 +372,18 @@ fn spawn_key_event_listener(&self) {
             .block(
                 Block::default()
                     .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
                     .border_style(Style::default().fg(Color::Cyan))
+                    .padding(Padding::new(1,1,0,0))
                     .title("Help"),
             )
             .alignment(Alignment::Left)
             .wrap(ratatui::widgets::Wrap { trim: true });
 
-        frame.render_widget(help_block, popup_area);
+        frame.render_widget(help_block, popup_area.inner(Margin {
+            vertical: 0,
+            horizontal: 1
+        }));
     }
 
     fn error_popup(&self, terminal: &mut DefaultTerminal, error_msg: String) -> Result<()> {
