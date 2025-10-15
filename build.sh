@@ -9,11 +9,20 @@ RESET="\033[0m"
 echo -e "${YELLOW_BOLD}\ncargo build --release${RESET}"
 cargo build --release
 
+echo -e "${YELLOW_BOLD}\nstrip target/release/systemd-manager-tui${RESET}"
+strip target/release/systemd-manager-tui
+
 echo -e "${YELLOW_BOLD}\ncross build --release --target x86_64-unknown-linux-musl${RESET}"
 cross build --release --target x86_64-unknown-linux-musl
 
+echo -e "${YELLOW_BOLD}\nstrip target/x86_64-unknown-linux-musl/release/systemd-manager-tui${RESET}"
+strip target/x86_64-unknown-linux-musl/release/systemd-manager-tui
+
 echo -e "${YELLOW_BOLD}\ncross build --release --target aarch64-unknown-linux-musl${RESET}"
 cross build --release --target aarch64-unknown-linux-musl 
+
+echo -e "${YELLOW_BOLD}\nstrip target/aarch64-unknown-linux-musl/release/systemd-manager-tui${RESET}"
+strip target/aarch64-unknown-linux-musl/release/systemd-manager-tui
 
 echo -e "${YELLOW_BOLD}\ncargo deb${RESET}"
 cargo deb --target x86_64-unknown-linux-musl --no-build
