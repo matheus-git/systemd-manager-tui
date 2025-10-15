@@ -292,17 +292,26 @@ fn spawn_key_event_listener(&self) {
             return Ok(());
         }
 
-        let status = Command::new("systemctl")
+        let mut cmd = Command::new("systemctl");
+
+        cmd
             .arg("edit")
-            .arg("--full")
+            .arg("--full");
+
+        if self.selected_tab_index==1{
+            cmd
+                .arg("--user");
+        }
+
+        let status = cmd
             .arg(unit_name)
             .status();
 
         match status {
             Ok(s) if s.success() => {},
-            Ok(s) => {
+            Ok(_s) => {
                 self.resume_tui(terminal)?;
-                self.error_popup(terminal, format!("systemctl edit failed with status: {}", s))?;
+                self.error_popup(terminal, format!("'systemctl edit' failed. Try running the program with sudo!"))?;
             },
             Err(e) => {
                 self.resume_tui(terminal)?;
@@ -621,7 +630,7 @@ fn spawn_key_event_listener(&self) {
             .borrow_mut()
             .change_repository_connection(conn_type)
         {
-            self.event_tx.send(AppEvent::Error("Failed to change connection type with D-Bus, try run without sudo".to_string())).expect("Failed to change connection type");
+            self.event_tx.send(AppEvent::Error("Failed to change connection type with D-Bus. Try run without sudo".to_string())).expect("Failed to change connection type");
             self.selected_tab_index = 0;
             return
         }
