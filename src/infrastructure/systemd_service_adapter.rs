@@ -30,7 +30,8 @@ pub enum ConnectionType {
 }
 
 pub struct SystemdServiceAdapter {
-    connection: Connection
+    connection: Connection,
+    connection_type: ConnectionType
 }
 
 impl SystemdServiceAdapter {
@@ -41,10 +42,8 @@ impl SystemdServiceAdapter {
                 ConnectionType::System => Connection::system()?
             };
 
-        Ok(Self {connection})
+        Ok(Self {connection, connection_type})
     }
-
-
 
     fn manager_proxy(&self) -> Result<Proxy<'static>, Box<dyn std::error::Error>> {
         let proxy = Proxy::new(
@@ -63,6 +62,7 @@ impl ServiceRepository for SystemdServiceAdapter {
             ConnectionType::Session => Connection::session()?,
             ConnectionType::System => Connection::system()?
         };
+        self.connection_type = connection_type;
         Ok(())
     }
 
@@ -138,10 +138,17 @@ impl ServiceRepository for SystemdServiceAdapter {
     }
 
     fn get_service_log(&self, name: &str) -> Result<String, Box<dyn std::error::Error>> {
-        let output = std::process::Command::new("journalctl")
-            .arg("-e")
+        let mut cmd = std::process::Command::new("journalctl");
+
+        cmd.arg("-e")
             .arg(format!("--unit={}", name))
-            .arg("--no-pager")
+            .arg("--no-pager");
+
+        if matches!(self.connection_type, ConnectionType::Session){
+            cmd.arg("--user");
+        }
+
+        let output = cmd
             .output()?;
 
         let log = if output.status.success() {
@@ -154,9 +161,18 @@ impl ServiceRepository for SystemdServiceAdapter {
     }
     
     fn systemctl_cat(&self, name: &str) -> Result<String, Box<dyn std::error::Error>> {
-        let output = Command::new("systemctl")
+        let mut cmd = Command::new("systemctl");
+
+        cmd
             .arg("cat")
-            .arg("--no-pager")
+            .arg("--no-pager");
+
+        if matches!(self.connection_type, ConnectionType::Session){
+            cmd
+                .arg("--user");
+        }
+
+        let output = cmd
             .arg("--")
             .arg(name)
             .output()?;
