@@ -130,14 +130,12 @@ fn spawn_key_event_listener(&self) {
                 continue;
             }
 
-            if event::poll(Duration::from_millis(100)).unwrap_or(false) {
-                if let Ok(Event::Key(key_event)) = event::read() {
-                    if key_event.kind == KeyEventKind::Press
+            if event::poll(Duration::from_millis(100)).unwrap_or(false) 
+                && let Ok(Event::Key(key_event)) = event::read() 
+                    && key_event.kind == KeyEventKind::Press
                         && event_tx.send(AppEvent::Key(key_event)).is_err()
-                    {
-                        break;
-                    }
-                }
+            {
+                break;
             }
         }
     });
@@ -211,13 +209,12 @@ fn spawn_key_event_listener(&self) {
                     log.update(data.0, data.1);
                 }
                 AppEvent::Action(Actions::RefreshLog) => {
-                    if self.status == Status::Log {
-                        if let Some(service) =
+                    if self.status == Status::Log
+                        && let Some(service) =
                             table_service.get_selected_service()
-                        {
-                            log
-                                .fetch_log_and_dispatch(service.clone());
-                        }
+                    {
+                        log
+                            .fetch_log_and_dispatch(service.clone());
                     }
                 }
                 AppEvent::Action(Actions::GoLog) => {
@@ -312,7 +309,7 @@ fn spawn_key_event_listener(&self) {
             Ok(s) if s.success() => {},
             Ok(_s) => {
                 self.resume_tui(terminal)?;
-                self.error_popup(terminal, format!("'systemctl edit' failed. Try running the program with sudo!"))?;
+                self.error_popup(terminal, "'systemctl edit' failed. Try running the program with sudo!".to_string())?;
             },
             Err(e) => {
                 self.resume_tui(terminal)?;
@@ -581,16 +578,13 @@ fn spawn_key_event_listener(&self) {
     }
 
     fn on_key_event(&mut self, key: KeyEvent) {
-        match key {
-            KeyEvent {
-                modifiers: KeyModifiers::CONTROL,
-                code: KeyCode::Char('c') | KeyCode::Char('C'),
-                ..
-            } => {
-                self.quit();
-            }
-            _ => {}
-        }
+         if let KeyEvent {
+                 modifiers: KeyModifiers::CONTROL,
+                 code: KeyCode::Char('c') | KeyCode::Char('C'),
+                 ..
+             } = key {
+             self.quit();
+         }
     }
     fn on_key_horizontal_event(&mut self, key: KeyEvent, is_filtering: bool) {
         let left_keys = [KeyCode::Left, KeyCode::Char('h')];

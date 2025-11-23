@@ -203,11 +203,10 @@ impl TableServices {
     }
 
     pub fn get_selected_service(&self) -> Option<&Service> {
-        if let Some(selected_index) = self.table_state.selected() {
-            if let Some(service) = self.filtered_services.get(selected_index) {
+        if let Some(selected_index) = self.table_state.selected()
+            && let Some(service) = self.filtered_services.get(selected_index) {
                 return Some(service);
             }
-        }
         None
     }
 
@@ -226,14 +225,13 @@ impl TableServices {
             self.table_state.select(Some(0));
         }
         // If the selected index is out of bounds, reset to first item or None
-        else if let Some(selected) = self.table_state.selected() {
-            if selected >= self.filtered_services.len() {
+        else if let Some(selected) = self.table_state.selected()
+            && selected >= self.filtered_services.len() {
                 if self.filtered_services.is_empty() {
                     self.table_state.select(None);
                 } else {
                     self.table_state.select(Some(0));
                 }
-            }
         }
     }
 
@@ -346,11 +344,9 @@ impl TableServices {
             KeyCode::PageUp => self.select_page_up(),
             KeyCode::Char('c') => {
                 self.sender.send(AppEvent::Action(Actions::GoDetails)).unwrap();
-                return;
             }
             KeyCode::Char('v') => {
                 self.sender.send(AppEvent::Action(Actions::GoLog)).unwrap();
-                return;
             }
             _ => {}
         }
