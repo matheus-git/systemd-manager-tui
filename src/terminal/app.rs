@@ -18,6 +18,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::cell::RefCell;
 use std::rc::Rc;
+use rayon::prelude::*;
 
 use crate::infrastructure::systemd_service_adapter::ConnectionType;
 use crate::usecases::services_manager::ServicesManager;
@@ -555,7 +556,7 @@ fn spawn_key_event_listener(&self) {
         if shortcuts_lens > 0 {
             help_text.push(Line::raw(""));
             let shortcuts_width = shortcuts.clone()
-                .iter()
+                .par_iter()
                 .map(|line|  line.spans.iter().map(|span| span.width()).sum())
                 .max()
                 .unwrap_or(0);
