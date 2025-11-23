@@ -88,7 +88,6 @@ impl ServiceRepository for SystemdServiceAdapter {
                     _job_type,
                     _job_object,
                 )| {
-                    // chamada no DBus — extremamente lenta comparado com o resto
                     let state: String = proxy
                         .call("GetUnitFileState", &name)
                         .unwrap_or_else(|_| "unknown".into());
