@@ -15,12 +15,13 @@ use std::cell::RefCell;
 
 use crate::domain::service::Service;
 use crate::terminal::app::{Actions, AppEvent};
+use rayon::prelude::*;
 
 const PADDING: Padding = Padding::new(1, 1, 1, 1);
 
 fn generate_rows(services: &[Service]) -> Vec<Row<'static>> {
     services
-        .iter()
+        .par_iter()
         .map(|service| {
             let highlight_style = Style::default()
                 .fg(Color::Cyan)
@@ -215,7 +216,7 @@ impl TableServices {
 
     pub fn refresh(&mut self, filter_text: String) {
         self.old_filter_text = filter_text.clone();
-        self.filtered_services = self.filter(filter_text, self.services.clone());
+        self.filtered_services = self.filter(&filter_text, &self.services.clone());
         self.rows = generate_rows(&self.filtered_services.clone());
         self.table = self.table.clone().rows(self.rows.clone());
         
@@ -247,21 +248,28 @@ impl TableServices {
         self.refresh(filter_text);
     }
 
-    fn filter(&self, filter_text: String, services: Vec<Service>) -> Vec<Service> {
+    fn filter(&self, filter_text: &str, services: &[Service]) -> Vec<Service> {
         let lower_filter = filter_text.to_lowercase();
+
         services
-            .into_iter()
+            .iter()
             .filter(|service| {
-                let name = service.name();
-                let name_matches = name.to_lowercase().contains(&lower_filter);
+                let name_matches =
+                    service.name().to_lowercase().contains(&lower_filter);
+
                 let active_matches = match self.active_filter_state {
                     ActiveFilterState::All => true,
                     ActiveFilterState::Active => service.state().active() == "active",
-                    ActiveFilterState::Inactive => service.state().active() != "active" && service.state().active() != "failed",
+                    ActiveFilterState::Inactive => {
+                        service.state().active() != "active"
+                            && service.state().active() != "failed"
+                    }
                     ActiveFilterState::Failed => service.state().active() == "failed",
                 };
+
                 name_matches && active_matches
             })
+            .cloned()
             .collect()
     }
 

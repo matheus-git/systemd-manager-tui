@@ -8,6 +8,7 @@ use std::thread;
 use crate::domain::service::Service;
 use crate::domain::service_repository::ServiceRepository;
 use crate::domain::service_state::ServiceState;
+use rayon::prelude::*;
 
 const SLEEP_DURATION: u64 = 300;
 
@@ -72,15 +73,8 @@ impl ServiceRepository for SystemdServiceAdapter {
         let units: Vec<SystemdUnit> = proxy.call("ListUnits", &())?;
 
         let services = units
-            .into_iter()
-            .filter_map(|unit_tuple| {
-                let name = &unit_tuple.0;
-                if !filter || name.ends_with(".service") {
-                    Some(unit_tuple)
-                } else {
-                    None
-                }
-            })
+            .into_par_iter()
+            .filter(|(name, ..)| !filter || name.ends_with(".service"))
             .map(
                 |(
                     name,
@@ -98,7 +92,9 @@ impl ServiceRepository for SystemdServiceAdapter {
                         .call("GetUnitFileState", &name)
                         .unwrap_or_else(|_| "unknown".into());
 
-                    let service_state = ServiceState::new(load_state, active_state, sub_state, state);
+                    let service_state =
+                        ServiceState::new(load_state, active_state, sub_state, state);
+
                     Service::new(name, description, service_state)
                 },
             )
@@ -113,25 +109,18 @@ impl ServiceRepository for SystemdServiceAdapter {
         let units: Vec<(String, String)> = proxy.call("ListUnitFiles", &())?;
 
         let services = units
-            .into_iter()
-            .filter_map(|unit_tuple| {
-                let name = &unit_tuple.0;
-                if !filter || name.ends_with(".service") {
-                    Some(unit_tuple)
-                } else {
-                    None
-                }
-            })
-            .map(
-                |(
-                    name,
+            .into_par_iter()
+            .filter(|(name, _)| !filter || name.ends_with(".service"))
+            .map(|(name, state)| {
+                let service_state = ServiceState::new(
+                    String::new(),
+                    "inactive".to_string(),
+                    String::new(),
                     state,
-                )| {
-                    let service_state = ServiceState::new(String::new(), "inactive".to_string(), String::new(), state );
-                    let short_name = name.rsplit('/').next().unwrap_or(&name);
-                    Service::new(short_name.to_string(), String::new(), service_state)
-                },
-            )
+                );
+                let short_name = name.rsplit('/').next().unwrap_or(&name);
+                Service::new(short_name.to_string(), String::new(), service_state)
+            })
             .collect::<Vec<_>>();
 
         Ok(services)

@@ -14,6 +14,7 @@ use std::time::Duration;
 use std::rc::Rc;
 use std::cell::RefCell;
 use textwrap::wrap;
+use rayon::prelude::*;
 
 use crate::domain::service::Service;
 use crate::terminal::app::{Actions, AppEvent};
@@ -98,7 +99,7 @@ impl ServiceLog {
             .lines()
             .flat_map(|line| {
                 wrap(line,width)
-                    .into_iter()
+                    .into_par_iter()
                     .map(|wrapped| ListItem::new(Span::raw(wrapped.into_owned())))
                     .collect::<Vec<_>>()
             })
