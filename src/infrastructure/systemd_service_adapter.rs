@@ -88,12 +88,12 @@ impl ServiceRepository for SystemdServiceAdapter {
                     _job_type,
                     _job_object,
                 )| {
-                    let state: String = proxy
-                        .call("GetUnitFileState", &name)
-                        .unwrap_or_else(|_| "unknown".into());
+                    //let state: String = proxy
+                    //   .call("GetUnitFileState", &name)
+                    //    .unwrap_or_else(|_| "unknown".into());
 
                     let service_state =
-                        ServiceState::new(load_state, active_state, sub_state, state);
+                        ServiceState::new(load_state, active_state, sub_state, String::new());
 
                     Service::new(name, description, service_state)
                 },
@@ -103,6 +103,7 @@ impl ServiceRepository for SystemdServiceAdapter {
         Ok(services)
     }
 
+    #[allow(dead_code)]
     fn list_service_files(&self, filter: bool) -> Result<Vec<Service>, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
 
@@ -130,7 +131,7 @@ impl ServiceRepository for SystemdServiceAdapter {
         let mut cmd = std::process::Command::new("journalctl");
 
         cmd.arg("-e")
-            .arg(format!("--unit={}", name))
+            .arg(format!("--unit={name}"))
             .arg("--no-pager");
 
         if matches!(self.connection_type, ConnectionType::Session){
@@ -188,7 +189,7 @@ impl ServiceRepository for SystemdServiceAdapter {
             let service = Service::new(unit.0.clone(), unit.1.clone(), service_state);
             Ok(service)
         }else {
-            Err(format!("Unit '{}' not found", name).into())
+            Err(format!("Unit '{name}' not found").into())
         }
     }
 

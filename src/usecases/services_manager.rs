@@ -54,10 +54,10 @@ impl ServicesManager {
         let mut all = Vec::new();
 
         let mut services_runtime = self.repository.list_services(filter)?;
-        let mut services_files = self.repository.list_service_files(filter)?;
+        //let mut services_files = self.repository.list_service_files(filter)?;
 
         all.append(&mut services_runtime);
-        all.append(&mut services_files);
+        //all.append(&mut services_files);
 
         if filter {
             all.retain(|s| s.name().ends_with(".service"));

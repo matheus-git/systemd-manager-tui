@@ -66,7 +66,7 @@ impl ServiceDetails {
                 lines.push(Line::styled(line, Style::default().fg(Color::LightBlue)));
             } else if let Some((key, value)) = line.split_once('=') {
                 lines.push(Line::from(vec![
-                    Span::styled(format!("{}=", key), Style::default().fg(Color::Yellow)),
+                    Span::styled(format!("{key}="), Style::default().fg(Color::Yellow)),
                     Span::raw(value),
                 ]));
             } else {
@@ -112,8 +112,9 @@ impl ServiceDetails {
             _ => {}
         }
     }
-
-    pub fn shortcuts(&mut self) -> Vec<Line<'_>> {
+    
+    #[allow(clippy::unused_self)]
+    pub fn shortcuts(&self) -> Vec<Line<'_>> {
         let help_text = vec![
             Line::from(vec![Span::styled(
                 "Actions",

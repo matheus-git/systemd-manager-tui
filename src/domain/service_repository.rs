@@ -5,6 +5,7 @@ use std::error::Error;
 
 pub trait ServiceRepository {
     fn list_services(&self, filter: bool) -> Result<Vec<Service>, Box<dyn Error>>;
+    #[allow(dead_code)]
     fn list_service_files(&self, filter: bool) -> Result<Vec<Service>, Box<dyn Error>>;
     fn get_unit(&self, name: &str) -> Result<Service, Box<dyn Error>>;
     fn get_service_log(&self, name: &str) -> Result<String, Box<dyn Error>>;

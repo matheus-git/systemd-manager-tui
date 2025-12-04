@@ -16,8 +16,10 @@ use terminal::components::details::ServiceDetails;
 use terminal::components::filter::Filter;
 use terminal::components::list::TableServices;
 use terminal::components::log::ServiceLog;
+use std::time::Instant;
 
 fn main() -> color_eyre::Result<()> {
+        let start = Instant::now();
     color_eyre::install()?;
     let terminal = ratatui::init();
     
@@ -34,13 +36,15 @@ fn main() -> color_eyre::Result<()> {
     let mut app = App::new(
         event_tx,
         event_rx,
-        Rc::new(RefCell::new(table_services)),
-        Rc::new(RefCell::new(filter)),
-        Rc::new(RefCell::new(service_log)),
-        Rc::new(RefCell::new(details)),
+        table_services,
+        filter,
+        service_log,
+        details,
         usecase,
     );
     app.init();
+    let _elapsed = start.elapsed();
+    //panic!("Tempo de execução: {:.2?}", elapsed);
     let result = app.run(terminal);
     ratatui::restore();
     result

@@ -35,16 +35,16 @@ fn generate_rows(services: &[Service]) -> Vec<Row<'static>> {
             };
 
             let sub = service.state().sub();
-            let active = if !sub.is_empty() {
-                format!("{} ({})", service.state().active(), sub)
-            } else {
+            let active = if sub.is_empty() {
                 service.state().active().to_string()
+            } else {
+                format!("{} ({})", service.state().active(), sub)
             };
 
             Row::new(vec![
                 Cell::from(service.name().to_string()).style(highlight_style),
                 Cell::from(active).style(state_style),
-                Cell::from(service.state().file().to_string()).style(normal_style),
+                Cell::from(service.state().active().to_string()).style(normal_style),
                 Cell::from(service.state().load().to_string()).style(normal_style),
                 Cell::from(service.description().to_string()).style(normal_style),
             ])
@@ -108,15 +108,12 @@ pub struct TableServices {
 impl TableServices {
     pub fn new(sender: Sender<AppEvent>,  usecase: Rc<RefCell<ServicesManager>>) -> Self {
         let filter_all = true;
-        let (services, rows) = match usecase.borrow().list_services(filter_all) {
-            Ok(svcs) => {
-                let rows = generate_rows(&svcs);
-                (svcs, rows)
-            }
-            Err(_) => {
-                let error_row = Row::new(vec!["Error loading services", "", "", "", ""]);
-                (vec![], vec![error_row])
-            }
+        let (services, rows) = if let Ok(svcs) = usecase.borrow().list_services(filter_all) {
+             let rows = generate_rows(&svcs);
+             (svcs, rows)
+         } else {
+            let error_row = Row::new(vec!["Error loading services", "", "", "", ""]);
+             (vec![], vec![error_row])
         };
 
         let mut table_state = TableState::default();
@@ -180,7 +177,7 @@ impl TableServices {
         self.table_state.select(Some(0));
         self.services.clear();
         self.filtered_services.clear();
-        self.fetch_and_refresh(self.old_filter_text.clone());
+        self.fetch_and_refresh(&self.old_filter_text.clone());
     }
 
     pub fn set_ignore_key_events(&mut self, has_ignore_key_events: bool) {
@@ -199,7 +196,7 @@ impl TableServices {
                     .add_modifier(Modifier::BOLD),
             );
         }
-        self.ignore_key_events = has_ignore_key_events
+        self.ignore_key_events = has_ignore_key_events;
     }
 
     pub fn get_selected_service(&self) -> Option<&Service> {
@@ -214,9 +211,10 @@ impl TableServices {
         self.table_state.select(Some(index));
     }
 
-    pub fn refresh(&mut self, filter_text: String) {
-        self.old_filter_text = filter_text.clone();
-        self.filtered_services = self.filter(&filter_text, &self.services.clone());
+    pub fn refresh(&mut self, filter_text: &str) {
+        self.old_filter_text.clear();
+        self.old_filter_text.push_str(filter_text);
+        self.filtered_services = self.filter(filter_text, &self.services.clone());
         self.rows = generate_rows(&self.filtered_services.clone());
         self.table = self.table.clone().rows(self.rows.clone());
         
@@ -237,13 +235,13 @@ impl TableServices {
 
     fn fetch_services(&mut self) {
         if let Ok(services) = self.usecase.borrow().list_services(self.filter_all) {
-            self.services = services
+            self.services = services;
         } else {
-            self.services = vec![]
+            self.services = vec![];
         }
     }
 
-    fn fetch_and_refresh(&mut self, filter_text: String) {
+    fn fetch_and_refresh(&mut self, filter_text: &str) {
         self.fetch_services();
         self.refresh(filter_text);
     }
@@ -311,12 +309,12 @@ impl TableServices {
             }
             KeyCode::Char('a') => {
                 self.active_filter_state = self.active_filter_state.next();
-                self.refresh(self.old_filter_text.clone());
+                self.refresh(&self.old_filter_text.clone());
                 // Select the first element only if the list is not empty
-                if !self.filtered_services.is_empty() {
-                    self.table_state.select(Some(0));
-                } else {
+                if self.filtered_services.is_empty() {
                     self.table_state.select(None);
+                } else {
+                    self.table_state.select(Some(0));
                 }
                 self.set_ignore_key_events(false);
                 return;
@@ -370,11 +368,13 @@ impl TableServices {
     fn select_page_up(&mut self) {
         let jump = 10;
         if let Some(selected_index) = self.table_state.selected() {
-            let new_index = selected_index as isize - jump as isize;
+            let selected_index = isize::try_from(selected_index).expect("Failed to convert selected index to isize");
+            let new_index = selected_index - jump as isize;
             let wrapped_index = if new_index < 0 {
-                (self.rows.len() as isize + new_index % self.rows.len() as isize) as usize
+                let len = isize::try_from(self.rows.len()).expect("Failed to convert table length to isize");
+                usize::try_from(len + new_index % len).expect("Failed to convert calculated circular index to usize")
             } else {
-                new_index as usize
+                usize::try_from(new_index).expect("Failed to convert new_index to usize")
             };
             self.table_state.select(Some(wrapped_index));
         } else {
@@ -408,19 +408,18 @@ impl TableServices {
         }
     }
 
-    pub fn act_on_selected_service(&mut self, action: ServiceAction) {
+    pub fn act_on_selected_service(&mut self, action: &ServiceAction) {
         if let Some(service) = self.get_selected_service() {
             let binding_usecase = self.usecase.clone();
             let usecase = binding_usecase.borrow();
             match action {
                 ServiceAction::ToggleMask => {
                     match service.state().file() {
-                        "masked" => self.handle_service_result(usecase.unmask_service(service)),
-                        "masked-runtime" => self.handle_service_result(usecase.unmask_service(service)),
+                        "masked" | "masked-runtime" => self.handle_service_result(usecase.unmask_service(service)),
                         _ => self.handle_service_result(usecase.mask_service(service)),
                     }
                     self.fetch_services();
-                    self.fetch_and_refresh(self.old_filter_text.clone());
+                    self.fetch_and_refresh(&self.old_filter_text.clone());
                 },
                 ServiceAction::Start => self.handle_service_result(usecase.start_service(service)),
                 ServiceAction::Stop => self.handle_service_result(usecase.stop_service(service)),
@@ -430,11 +429,11 @@ impl TableServices {
                 ServiceAction::ToggleFilter => {
                     self.table_state.select(Some(0));
                     self.filter_all = !self.filter_all;
-                    self.fetch_and_refresh(self.old_filter_text.clone());
+                    self.fetch_and_refresh(&self.old_filter_text.clone());
                 },
                 ServiceAction::RefreshAll => {
                     self.fetch_services();
-                    self.fetch_and_refresh(self.old_filter_text.clone());
+                    self.fetch_and_refresh(&self.old_filter_text.clone());
                 },
             }
         }
@@ -449,7 +448,7 @@ impl TableServices {
                 } else {
                     self.services.push(service);
                 }
-                self.refresh(self.old_filter_text.clone());
+                self.refresh(&self.old_filter_text.clone());
             }
             Err(e) => {
                 self.sender.send(AppEvent::Error(e.to_string())).unwrap();
@@ -465,7 +464,7 @@ impl TableServices {
         self.active_filter_state
     }
 
-    pub fn shortcuts(&mut self) -> Vec<Line<'_>> {
+    pub fn shortcuts(&self) -> Vec<Line<'_>> {
         let mut help_text: Vec<Line<'_>> = Vec::new();
         if !self.ignore_key_events {
             help_text.push(Line::from(Span::styled(
