@@ -9,9 +9,9 @@ RESET="\033[0m"
 PGO_DIR="/tmp/pgo-data"
 MERGED_PROFILE="$(pwd)/merged.profdata"
 
-echo -e "${YELLOW_BOLD}\nCleaning old builds${RESET}"
-cargo clean
-rm -rf "$PGO_DIR" "$MERGED_PROFILE"
+#echo -e "${YELLOW_BOLD}\nCleaning old builds${RESET}"
+#cargo clean
+#rm -rf "$PGO_DIR" "$MERGED_PROFILE"
 
 echo -e "${YELLOW_BOLD}\ncargo build --release${RESET}"
 RUSTFLAGS="-Cprofile-generate=/tmp/pgo-data" cargo build --release
