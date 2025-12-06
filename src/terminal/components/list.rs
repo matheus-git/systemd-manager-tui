@@ -23,7 +23,7 @@ use rayon::prelude::*;
 
 const PADDING: Padding = Padding::new(1, 1, 1, 1);
 
-fn generate_rows(services: &[Service]) -> Vec<Row<'static>> {
+fn generate_rows(services: &[Service], states: &HashMap<String, String>) -> Vec<Row<'static>> {
     services
         .par_iter()
         .map(|service| {
@@ -45,10 +45,16 @@ fn generate_rows(services: &[Service]) -> Vec<Row<'static>> {
                 format!("{} ({})", service.state().active(), sub)
             };
 
+            let file = if let Some(state) = states.get(service.name()) && service.state().file() == "..." {
+                state
+            } else {
+                service.state().file()  
+            };
+
             Row::new(vec![
                 Cell::from(service.name().to_string()).style(highlight_style),
                 Cell::from(active).style(state_style),
-                Cell::from(service.state().file().to_string()).style(normal_style),
+                Cell::from(file.to_string()).style(normal_style),
                 Cell::from(service.state().load().to_string()).style(normal_style),
                 Cell::from(service.description().to_string()).style(normal_style),
             ])
@@ -56,9 +62,9 @@ fn generate_rows(services: &[Service]) -> Vec<Row<'static>> {
         .collect()
 }
 
-fn generate_table(rows: Vec<Row<'_>>) -> Table<'_> {
-    Table::new(
-        rows.clone(),
+fn generate_table<'a>(rows: &'a [Row<'a>], ignore_key_events: bool) -> Table<'a> {
+    let mut table = Table::new(
+        rows.to_owned(),
         [
             Constraint::Percentage(20),
             Constraint::Length(20),
@@ -85,10 +91,21 @@ fn generate_table(rows: Vec<Row<'_>>) -> Table<'_> {
             .fg(Color::White)
             .add_modifier(Modifier::BOLD),
     )
-    .highlight_symbol(">> ")
+    .highlight_symbol(">> ");
+
+    if ignore_key_events {
+        table = table.row_highlight_style(
+            Style::default()
+                .bg(Color::DarkGray)
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        );
+    }
+
+    table
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum ActiveFilterState {
     All,
     Active,
@@ -135,8 +152,9 @@ pub struct TableServices {
     table: Table<'static>,
     pub table_state: TableState,
     pub rows: Vec<Row<'static>>,
-    pub services: Arc<Mutex<Vec<Service>>>,
-    filtered_services: Arc<Mutex<Vec<Service>>>,
+    pub services: Vec<Service>,
+    filtered_services: Vec<Service>,
+    states: Arc<Mutex<HashMap<String, String>>>,
     old_filter_text: String,
     pub ignore_key_events: bool,
     sender: Sender<AppEvent>,
@@ -150,7 +168,7 @@ pub struct TableServices {
 impl TableServices {
     pub fn new(sender: Sender<AppEvent>,  usecase: Rc<RefCell<ServicesManager>>) -> Self {
         let (event_tx, event_rx) = mpsc::channel::<QueryUnitFile>();
-        let filter_all = true;
+        let filter_all = false;
 
         let mut table_state = TableState::default();
         table_state.select(Some(0));
@@ -159,8 +177,9 @@ impl TableServices {
             table: Table::default(),
             table_state,
             rows: Vec::new(),
-            filtered_services: Arc::new(Mutex::new(Vec::new())),
-            services: Arc::new(Mutex::new(Vec::new())),
+            filtered_services: Vec::new(),
+            services: Vec::new(),
+            states: Arc::new(Mutex::new(HashMap::new())),
             sender,
             old_filter_text: String::new(),
             ignore_key_events: false,
@@ -174,45 +193,32 @@ impl TableServices {
 
     pub fn init(&mut self) {
         let (services, rows) = if let Ok(svcs) = self.usecase.borrow().list_services(self.filter_all, self.event_tx.clone()) {
-                let rows = generate_rows(&svcs);
+                let rows = generate_rows(&svcs, &self.states.lock().unwrap());
                 (svcs, rows)
          } else {
                 let error_row = Row::new(vec!["Error loading services", "", "", "", ""]);
                 (vec![], vec![error_row])
         };
 
-        self.filtered_services = Arc::new(Mutex::new(services.clone()));
-        self.services = Arc::new(Mutex::new(services));
-        self.table = generate_table(rows.clone()); 
+        self.rows = rows;
+        self.filtered_services.clone_from(&services);
+        self.services = services;
         self.spawn_query_listener();
     }
 
     fn spawn_query_listener(&self) {
         let event_rx = self.event_rx.clone();
-        let filtered = self.filtered_services.clone(); 
-        let services = self.services.clone(); 
         let sender = self.sender.clone();
+        let states = self.states.clone();
 
         thread::spawn(move || {
             loop {
                 let rx = event_rx.lock().unwrap();
                 if let Ok(msg) = rx.recv() {
                     match msg {
-                        QueryUnitFile::Finished(states) => {
-                            let mut services = services.lock().unwrap();
-                            let mut filtered = filtered.lock().unwrap();
-                            for service in filtered.iter_mut() {
-                                if let Some(state) = states.get(service.name()) {
-                                    service.set_file_state(state.clone());
-                                }
-                            }
-                            for service in services.iter_mut() {
-                                if let Some(state) = states.get(service.name()) {
-                                    service.set_file_state(state.clone());
-                                }
-                            }
+                        QueryUnitFile::Finished(s) => {
+                            *states.lock().unwrap() = s;
                             sender.send(AppEvent::Action(Actions::Redraw)).expect("Error");
-                            //log::info!("{:?}", services);
                         }
                     }
                 }
@@ -221,9 +227,9 @@ impl TableServices {
     }
 
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
-        let rows = generate_rows(&self.filtered_services.lock().unwrap());
-        self.table = generate_table(rows); 
-        frame.render_stateful_widget(&self.table, area, &mut self.table_state);
+        let rows = generate_rows(&self.filtered_services, &self.states.lock().unwrap());
+        let table = generate_table(&rows, self.ignore_key_events); 
+        frame.render_stateful_widget(&table, area, &mut self.table_state);
     }
 
     pub fn set_usecase(&mut self, usecase: Rc<RefCell<ServicesManager>>) {
@@ -235,33 +241,18 @@ impl TableServices {
         );
         self.rows.clear();
         self.table_state.select(Some(0));
-        self.services.lock().unwrap().clear();
-        self.filtered_services.lock().unwrap().clear();
+        self.services.clear();
+        self.filtered_services.clear();
         self.fetch_and_refresh(&self.old_filter_text.clone());
     }
 
     pub fn set_ignore_key_events(&mut self, has_ignore_key_events: bool) {
-        if has_ignore_key_events {
-            self.table = self.table.clone().row_highlight_style(
-                Style::default()
-                    .bg(Color::DarkGray)
-                    .fg(Color::White)
-                    .add_modifier(Modifier::BOLD),
-            );
-        } else {
-            self.table = self.table.clone().row_highlight_style(
-                Style::default()
-                    .bg(Color::Blue)
-                    .fg(Color::White)
-                    .add_modifier(Modifier::BOLD),
-            );
-        }
         self.ignore_key_events = has_ignore_key_events;
     }
 
     pub fn get_selected_service(&self) -> Option<Service> {
         if let Some(selected_index) = self.table_state.selected()
-            && let Some(service) = self.filtered_services.lock().unwrap().get(selected_index) {
+            && let Some(service) = self.filtered_services.get(selected_index) {
                 return Some(service.clone());
             }
         None
@@ -274,18 +265,18 @@ impl TableServices {
     pub fn refresh(&mut self, filter_text: &str) {
         self.old_filter_text.clear();
         self.old_filter_text.push_str(filter_text);
-        self.filtered_services = Arc::new(Mutex::new(self.filter(filter_text, self.services.clone())));
-        self.rows = generate_rows(&self.filtered_services.lock().unwrap().clone());
+        self.filtered_services = self.filter(filter_text, &self.services);
+        self.rows = generate_rows(&self.filtered_services.clone(), &self.states.lock().unwrap());
         self.table = self.table.clone().rows(self.rows.clone());
         
         // If no item is selected and the list is not empty, select the first item
-        if self.table_state.selected().is_none() && !self.filtered_services.lock().unwrap().is_empty() {
+        if self.table_state.selected().is_none() && !self.filtered_services.is_empty() {
             self.table_state.select(Some(0));
         }
         // If the selected index is out of bounds, reset to first item or None
         else if let Some(selected) = self.table_state.selected()
-            && selected >= self.filtered_services.lock().unwrap().len() {
-                if self.filtered_services.lock().unwrap().is_empty() {
+            && selected >= self.filtered_services.len() {
+                if self.filtered_services.is_empty() {
                     self.table_state.select(None);
                 } else {
                     self.table_state.select(Some(0));
@@ -295,10 +286,9 @@ impl TableServices {
 
     fn fetch_services(&mut self) {
         if let Ok(services) = self.usecase.borrow().list_services(self.filter_all, self.event_tx.clone()) {
-            self.usecase.borrow().units_file(services.clone(), self.event_tx.clone());
-            self.services = Arc::new(Mutex::new(services));
+            self.services = services;
         } else {
-            self.services = Arc::new(Mutex::new(vec![]));
+            self.services = vec![];
         }
     }
 
@@ -307,11 +297,10 @@ impl TableServices {
         self.refresh(filter_text);
     }
 
-    fn filter(&self, filter_text: &str, services: Arc<Mutex<Vec<Service>>>) -> Vec<Service> {
+    fn filter(&self, filter_text: &str, services: &[Service]) -> Vec<Service> {
         let lower_filter = filter_text.to_lowercase();
 
         services
-            .lock().unwrap()
             .iter()
             .filter(|service| {
                 let name_matches =
@@ -373,7 +362,7 @@ impl TableServices {
                 self.active_filter_state = self.active_filter_state.next();
                 self.refresh(&self.old_filter_text.clone());
                 // Select the first element only if the list is not empty
-                if self.filtered_services.lock().unwrap().is_empty() {
+                if self.filtered_services.is_empty() {
                     self.table_state.select(None);
                 } else {
                     self.table_state.select(Some(0));
@@ -417,7 +406,7 @@ impl TableServices {
         if let Some(selected_index) = self.table_state.selected() {
             let new_index = selected_index + jump;
             let wrapped_index = if new_index >= self.rows.len() {
-                (new_index) % self.rows.len()
+                (new_index) % self.filtered_services.len()
             } else {
                 new_index
             };
@@ -433,7 +422,7 @@ impl TableServices {
             let selected_index = isize::try_from(selected_index).expect("Failed to convert selected index to isize");
             let new_index = selected_index - jump as isize;
             let wrapped_index = if new_index < 0 {
-                let len = isize::try_from(self.rows.len()).expect("Failed to convert table length to isize");
+                let len = isize::try_from(self.filtered_services.len()).expect("Failed to convert table length to isize");
                 usize::try_from(len + new_index % len).expect("Failed to convert calculated circular index to usize")
             } else {
                 usize::try_from(new_index).expect("Failed to convert new_index to usize")
@@ -446,7 +435,7 @@ impl TableServices {
 
     fn select_next(&mut self) {
         if let Some(selected_index) = self.table_state.selected() {
-            let next_index = if self.rows.len() > 0 && selected_index == self.rows.len() - 1 {
+            let next_index = if !self.filtered_services.is_empty() && selected_index == self.filtered_services.len() - 1 {
                 0
             } else {
                 selected_index + 1
@@ -460,7 +449,7 @@ impl TableServices {
     fn select_previous(&mut self) {
         if let Some(selected_index) = self.table_state.selected() {
             let prev_index = if selected_index == 0 {
-                self.rows.len() - 1
+                self.filtered_services.len() - 1
             } else {
                 selected_index - 1
             };
@@ -494,7 +483,6 @@ impl TableServices {
                     self.fetch_and_refresh(&self.old_filter_text.clone());
                 },
                 ServiceAction::RefreshAll => {
-                    self.fetch_services();
                     self.fetch_and_refresh(&self.old_filter_text.clone());
                 },
             }
@@ -505,11 +493,14 @@ impl TableServices {
     fn handle_service_result(&mut self, result: Result<Service, Box<dyn Error>>) {
         match result {
             Ok(service) => {
-                if let Some(pos) = self.services.lock().unwrap().iter().position(|s| s.name() == service.name()) {
-                    self.services.lock().unwrap()[pos] = service;
+                let services = &mut self.services;
+
+                if let Some(pos) = services.iter().position(|s| s.name() == service.name()) {
+                    services[pos] = service;
                 } else {
-                    self.services.lock().unwrap().push(service);
+                    services.push(service);
                 }
+
                 self.refresh(&self.old_filter_text.clone());
             }
             Err(e) => {
@@ -519,7 +510,7 @@ impl TableServices {
     }
 
     pub fn is_filtered_list_empty(&self) -> bool {
-        self.filtered_services.lock().unwrap().is_empty()
+        self.filtered_services.is_empty()
     }
 
     pub fn get_active_filter_state(&self) -> ActiveFilterState {

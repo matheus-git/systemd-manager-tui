@@ -98,7 +98,7 @@ impl ServiceRepository for SystemdServiceAdapter {
         
         let services = units
             .into_par_iter()
-            .filter(|(name, ..)| !filter || name.ends_with(".service"))
+            .filter(|(name, ..)| filter || name.ends_with(".service"))
             .map(
                 |(
                     name,
@@ -106,11 +106,7 @@ impl ServiceRepository for SystemdServiceAdapter {
                     load_state,
                     active_state,
                     sub_state,
-                    _followed,
-                    _object_path,
-                    _job_id,
-                    _job_type,
-                    _job_object,
+                    .. 
                 )| {
                     let service_state =
                         ServiceState::new(load_state, active_state, sub_state, "...".to_string());
@@ -124,14 +120,13 @@ impl ServiceRepository for SystemdServiceAdapter {
     }
 
     #[allow(dead_code)]
-    fn list_service_files(&self, filter: bool) -> Result<Vec<Service>, Box<dyn std::error::Error>> {
+    fn list_service_files(&self) -> Result<Vec<Service>, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
 
         let units: Vec<(String, String)> = proxy.call("ListUnitFiles", &())?;
 
         let services = units
             .into_par_iter()
-            .filter(|(name, _)| !filter || name.ends_with(".service"))
             .map(|(name, state)| {
                 let service_state = ServiceState::new(
                     String::new(),

@@ -27,8 +27,4 @@ impl Service {
     pub fn state(&self) -> &ServiceState {
         &self.state
     }
-
-    pub fn set_file_state(&mut self, file: String) {
-        self.state.file = file;
-    }
 }

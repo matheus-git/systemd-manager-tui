@@ -21,6 +21,7 @@ use std::rc::Rc;
 use rayon::prelude::*;
 
 use crate::infrastructure::systemd_service_adapter::ConnectionType;
+use crate::terminal::components::list::ActiveFilterState;
 use crate::usecases::services_manager::ServicesManager;
 
 use super::components::details::ServiceDetails;
@@ -218,7 +219,7 @@ impl App {
                 AppEvent::Action(Actions::ResetList) => {
                     self.table_service.set_usecase(self.usecases.clone());
                 },
-                AppEvent::Action(Actions::UpdateDetails) => {}
+                AppEvent::Action(Actions::UpdateDetails | Actions::Redraw) => {}
                 AppEvent::Action(Actions::RefreshDetails) => {
                     if self.status == Status::Details {
                         self.details.fetch_unit_file();
@@ -244,7 +245,6 @@ impl App {
                 AppEvent::Action(Actions::ShowHelp) => {
                     self.show_help = !self.show_help;
                 },
-                AppEvent::Action(Actions::Redraw) => {}
             }
         }
 
@@ -495,7 +495,7 @@ impl App {
 
             let filter_state = &self.table_service.get_active_filter_state();
             
-            let system_tab = if self.selected_tab_index == 0 {
+            let system_tab = if self.selected_tab_index == 0 && *filter_state != ActiveFilterState::All {
                 Line::from(vec![
                     Span::raw("System units"),
                     Span::styled(
@@ -507,7 +507,7 @@ impl App {
                 Line::from("System units")
             };
             
-            let session_tab = if self.selected_tab_index == 1 {
+            let session_tab = if self.selected_tab_index == 1 && *filter_state != ActiveFilterState::All{
                 Line::from(vec![
                     Span::raw("Session units"),
                     Span::styled(

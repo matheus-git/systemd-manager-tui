@@ -17,7 +17,6 @@ use terminal::components::filter::Filter;
 use terminal::components::list::TableServices;
 use terminal::components::log::ServiceLog;
 use std::time::Instant;
-use std::sync::Arc;
 use logcast::init_on_addr;
 
 fn main() -> color_eyre::Result<()> {

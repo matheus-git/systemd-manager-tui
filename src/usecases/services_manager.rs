@@ -58,41 +58,37 @@ impl ServicesManager {
         let mut all = Vec::new();
 
         let mut services_runtime = self.repository.lock().unwrap().list_services(filter)?;
-
         all.append(&mut services_runtime);
 
-        //if false {
-        //    let mut services_files = self.repository.list_service_files(filter)?;
-        //    all.append(&mut services_files);
-        //    all.retain(|s| s.name().ends_with(".service"));
-        //}
-
         let mut seen = HashSet::new();
-        all.retain(|s| seen.insert(s.name().to_string()));
+        #[allow(clippy::explicit_iter_loop)]
+        for s in all.iter() {
+            seen.insert(s.name().to_string());
+        }
+
+        if filter {
+            let services_files = self.repository.lock().unwrap().list_service_files()?;
+            #[allow(clippy::explicit_iter_loop)]
+            for s in services_files.iter() {
+                 if seen.insert(s.name().to_string()) {
+                     all.push(s.clone());
+                 }
+             }
+        }
 
         all.sort_by_key(|s| s.name().to_lowercase());
+
+        log::info!("{}", all.len());
         
         let repo = Arc::clone(&self.repository);
-
         thread::spawn(move || {
-            let services_runtime = repo.lock().unwrap().list_services(filter).expect("dfsdfds");
+            let services_runtime = repo.lock().unwrap().list_services(filter).expect("");
             if let Ok(states) = repo.lock().unwrap().unit_files_state(services_runtime) {
-                log::info!("states 1: {:?}", states);
                 let _ = tx.send(QueryUnitFile::Finished(states));
             }
         });
 
         Ok(all)
-    }
-
-    pub fn units_file(&self, services: Vec<Service>, tx: Arc<Sender<QueryUnitFile>>) {
-        let repo = Arc::clone(&self.repository);
-        thread::spawn(move || {
-            if let Ok(states) = repo.lock().unwrap().unit_files_state(services) {
-                log::info!("states: {:?}", states);
-                let _ = tx.send(QueryUnitFile::Finished(states));
-            }
-        });
     }
 
     pub fn get_log(&self, service: &Service) -> Result<String, Box<dyn Error>> {
