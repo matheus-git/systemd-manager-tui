@@ -16,12 +16,8 @@ use terminal::components::details::ServiceDetails;
 use terminal::components::filter::Filter;
 use terminal::components::list::TableServices;
 use terminal::components::log::ServiceLog;
-use std::time::Instant;
-use logcast::init_on_addr;
 
 fn main() -> color_eyre::Result<()> {
-    init_on_addr("127.0.0.1:8080");
-    let start = Instant::now();
     color_eyre::install()?;
     let terminal = ratatui::init();
     
@@ -45,8 +41,6 @@ fn main() -> color_eyre::Result<()> {
         usecase,
     );
     app.init();
-    let _elapsed = start.elapsed();
-    //panic!("Tempo de execução: {:.2?}", _elapsed);
     let result = app.run(terminal);
     ratatui::restore();
     result

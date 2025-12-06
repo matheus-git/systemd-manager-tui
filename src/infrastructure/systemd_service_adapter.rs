@@ -91,14 +91,13 @@ impl ServiceRepository for SystemdServiceAdapter {
         Ok(states)
     }
 
-    fn list_services(&self, filter: bool) -> Result<Vec<Service>, Box<dyn std::error::Error>> {
+    fn list_services(&self) -> Result<Vec<Service>, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
 
         let units: Vec<SystemdUnit> = proxy.call("ListUnits", &())?;
         
         let services = units
             .into_par_iter()
-            .filter(|(name, ..)| filter || name.ends_with(".service"))
             .map(
                 |(
                     name,
