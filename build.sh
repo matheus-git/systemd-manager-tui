@@ -14,16 +14,17 @@ MERGED_PROFILE="$(pwd)/merged.profdata"
 #rm -rf "$PGO_DIR" "$MERGED_PROFILE"
 
 echo -e "${YELLOW_BOLD}\ncargo build --release${RESET}"
-RUSTFLAGS="-Cprofile-generate=/tmp/pgo-data" cargo build --release
-
-echo -e "${YELLOW_BOLD}\nRunning binary to collect profiles${RESET}"
-./target/release/systemd-manager-tui
-
-echo -e "${YELLOW_BOLD}\nMerging profiles${RESET}"
-llvm-profdata merge -o "$MERGED_PROFILE" "$PGO_DIR"/*.profraw
-
-echo -e "${YELLOW_BOLD}\nFinal release build using PGO${RESET}"
-RUSTFLAGS="-Cprofile-use=$MERGED_PROFILE -Cllvm-args=-pgo-warn-missing-function" cargo build --release
+cargo build --release
+#RUSTFLAGS="-Cprofile-generate=/tmp/pgo-data" cargo build --release
+#
+#echo -e "${YELLOW_BOLD}\nRunning binary to collect profiles${RESET}"
+#./target/release/systemd-manager-tui
+#
+#echo -e "${YELLOW_BOLD}\nMerging profiles${RESET}"
+#llvm-profdata merge -o "$MERGED_PROFILE" "$PGO_DIR"/*.profraw
+#
+#echo -e "${YELLOW_BOLD}\nFinal release build using PGO${RESET}"
+#RUSTFLAGS="-Cprofile-use=$MERGED_PROFILE -Cllvm-args=-pgo-warn-missing-function" cargo build --release
 
 if ! command -v cross &> /dev/null; then
     echo -e "${YELLOW_BOLD}\nInstalling cross${RESET}"
@@ -31,10 +32,10 @@ if ! command -v cross &> /dev/null; then
 fi
 
 echo -e "${YELLOW_BOLD}\ncross build --release --target x86_64-unknown-linux-musl${RESET}"
-cross build --release --target x86_64-unknown-linux-musl --docker
+cross build --release --target x86_64-unknown-linux-musl
 
 echo -e "${YELLOW_BOLD}\ncross build --release --target aarch64-unknown-linux-musl${RESET}"
-cross build --release --target aarch64-unknown-linux-musl --docker
+cross build --release --target aarch64-unknown-linux-musl
 
 if ! command -v cargo-deb &> /dev/null; then
     echo -e "${YELLOW_BOLD}\nInstalling cargo-deb${RESET}"

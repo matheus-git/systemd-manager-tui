@@ -43,6 +43,5 @@ copyright = "MIT @ Matheus-git"
 name = "systemd-manager-tui"
 summary = "TUI for managing systemd services"
 license = "MIT"
-assets = [
-]
+assets = []
 arch = "aarch64"
