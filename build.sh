@@ -25,25 +25,16 @@ llvm-profdata merge -o "$MERGED_PROFILE" "$PGO_DIR"/*.profraw
 echo -e "${YELLOW_BOLD}\nFinal release build using PGO${RESET}"
 RUSTFLAGS="-Cprofile-use=$MERGED_PROFILE -Cllvm-args=-pgo-warn-missing-function" cargo build --release
 
-echo -e "${YELLOW_BOLD}\nstrip target/release/systemd-manager-tui${RESET}"
-strip target/release/systemd-manager-tui
-
 if ! command -v cross &> /dev/null; then
     echo -e "${YELLOW_BOLD}\nInstalling cross${RESET}"
     cargo install cross
 fi
 
 echo -e "${YELLOW_BOLD}\ncross build --release --target x86_64-unknown-linux-musl${RESET}"
-cross build --release --target x86_64-unknown-linux-musl
-
-echo -e "${YELLOW_BOLD}\nstrip target/x86_64-unknown-linux-musl/release/systemd-manager-tui${RESET}"
-strip target/x86_64-unknown-linux-musl/release/systemd-manager-tui
+cross build --release --target x86_64-unknown-linux-musl --docker
 
 echo -e "${YELLOW_BOLD}\ncross build --release --target aarch64-unknown-linux-musl${RESET}"
-cross build --release --target aarch64-unknown-linux-musl 
-
-echo -e "${YELLOW_BOLD}\nstrip target/aarch64-unknown-linux-musl/release/systemd-manager-tui${RESET}"
-strip target/aarch64-unknown-linux-musl/release/systemd-manager-tui
+cross build --release --target aarch64-unknown-linux-musl --docker
 
 if ! command -v cargo-deb &> /dev/null; then
     echo -e "${YELLOW_BOLD}\nInstalling cargo-deb${RESET}"
@@ -58,7 +49,7 @@ cargo deb --target aarch64-unknown-linux-musl --no-build
 
 if ! command -v cargo-generate-rpm &> /dev/null && ! command -v cargo generate-rpm &> /dev/null; then
     echo -e "${YELLOW_BOLD}\nInstalling cargo-rpm${RESET}"
-    cargo install cargo-rpm
+    cargo install cargo-generate-rpm
 fi 
 
 echo -e "${YELLOW_BOLD}\ncargo generate-rpm --target x86_64-unknown-linux-musl${RESET}"

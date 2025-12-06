@@ -149,9 +149,7 @@ pub enum QueryUnitFile {
 }
  
 pub struct TableServices {
-    table: Table<'static>,
     pub table_state: TableState,
-    pub rows: Vec<Row<'static>>,
     pub services: Vec<Service>,
     filtered_services: Vec<Service>,
     states: Arc<Mutex<HashMap<String, String>>>,
@@ -174,9 +172,7 @@ impl TableServices {
         table_state.select(Some(0));
 
         Self {
-            table: Table::default(),
             table_state,
-            rows: Vec::new(),
             filtered_services: Vec::new(),
             services: Vec::new(),
             states: Arc::new(Mutex::new(HashMap::new())),
@@ -192,15 +188,12 @@ impl TableServices {
     }
 
     pub fn init(&mut self) {
-        let (services, rows) = if let Ok(svcs) = self.usecase.borrow().list_services(self.filter_all, self.event_tx.clone()) {
-                let rows = generate_rows(&svcs, &self.states.lock().unwrap());
-                (svcs, rows)
+        let services = if let Ok(svcs) = self.usecase.borrow().list_services(self.filter_all, self.event_tx.clone()) {
+                svcs
          } else {
-                let error_row = Row::new(vec!["Error loading services", "", "", "", ""]);
-                (vec![], vec![error_row])
+                vec![]
         };
 
-        self.rows = rows;
         self.filtered_services.clone_from(&services);
         self.services = services;
         self.spawn_query_listener();
@@ -227,19 +220,18 @@ impl TableServices {
     }
 
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
-        let rows = generate_rows(&self.filtered_services, &self.states.lock().unwrap());
+        let states: HashMap<String, String> = if let Ok(states) = self.states.try_lock() {
+            states.clone()
+        } else {
+            HashMap::new()
+        };
+        let rows = generate_rows(&self.filtered_services, &states);
         let table = generate_table(&rows, self.ignore_key_events); 
         frame.render_stateful_widget(&table, area, &mut self.table_state);
     }
 
     pub fn set_usecase(&mut self, usecase: Rc<RefCell<ServicesManager>>) {
         self.usecase = usecase;
-        self.table = self.table.clone().block( 
-            Block::default()
-                .borders(Borders::NONE)
-                .padding(PADDING),
-        );
-        self.rows.clear();
         self.table_state.select(Some(0));
         self.services.clear();
         self.filtered_services.clear();
@@ -266,8 +258,6 @@ impl TableServices {
         self.old_filter_text.clear();
         self.old_filter_text.push_str(filter_text);
         self.filtered_services = self.filter(filter_text, &self.services);
-        self.rows = generate_rows(&self.filtered_services.clone(), &self.states.lock().unwrap());
-        self.table = self.table.clone().rows(self.rows.clone());
         
         // If no item is selected and the list is not empty, select the first item
         if self.table_state.selected().is_none() && !self.filtered_services.is_empty() {
@@ -405,7 +395,7 @@ impl TableServices {
         let jump = 10;
         if let Some(selected_index) = self.table_state.selected() {
             let new_index = selected_index + jump;
-            let wrapped_index = if new_index >= self.rows.len() {
+            let wrapped_index = if new_index >= self.filtered_services.len() {
                 (new_index) % self.filtered_services.len()
             } else {
                 new_index
@@ -528,7 +518,7 @@ impl TableServices {
             )));
 
             help_text.push(Line::from(
-                "Navigate: ↑/↓ | Switch tab: ←/→ | Start: s | Stop: x | Restart: r | Enable: e | Disable: d | Help: ? | List all: f | Filter: a | Mask/Unmask: m | Refresh: u | Log: v | Unit File: c"
+                "Navigate: ↑/↓ | Switch tab: ←/→ | Start: s | Stop: x | Restart: r | Enable: e | Disable: d | Help: ? | List all units: f | Filter: a | Mask/Unmask: m | Refresh: u | Log: v | Unit File: c"
             ));
         }
 

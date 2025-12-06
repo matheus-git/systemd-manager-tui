@@ -44,6 +44,5 @@ name = "systemd-manager-tui"
 summary = "TUI for managing systemd services"
 license = "MIT"
 assets = [
-  { source = "target/aarch64-unknown-linux-gnu/release/systemd-manager-tui", dest = "/usr/bin/systemd-manager-tui", mode = "0755" }
 ]
 arch = "aarch64"

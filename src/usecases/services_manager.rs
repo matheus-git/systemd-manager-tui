@@ -57,7 +57,7 @@ impl ServicesManager {
     pub fn list_services(&self, filter: bool, tx: Arc<Sender<QueryUnitFile>>) -> Result<Vec<Service>, Box<dyn Error>> {
         let mut all = Vec::new();
 
-        let mut services_runtime = self.repository.lock().unwrap().list_services()?;
+        let mut services_runtime = self.repository.lock().unwrap().list_services(filter)?;
         all.append(&mut services_runtime);
 
         let mut seen = HashSet::new();
@@ -76,12 +76,13 @@ impl ServicesManager {
              }
         }
 
-        all.sort_by_key(|s| s.name().to_lowercase());
+        all.sort_by(|a, b| a.name().to_ascii_lowercase().cmp(&b.name().to_ascii_lowercase()));
 
         let repo = Arc::clone(&self.repository);
         thread::spawn(move || {
-            let services_runtime = repo.lock().unwrap().list_services().expect("");
-            if let Ok(states) = repo.lock().unwrap().unit_files_state(services_runtime) {
+            let repo = repo.lock().unwrap();
+            let services_runtime = repo.list_services(filter).expect("");
+            if let Ok(states) = repo.unit_files_state(services_runtime) {
                 let _ = tx.send(QueryUnitFile::Finished(states));
             }
         });

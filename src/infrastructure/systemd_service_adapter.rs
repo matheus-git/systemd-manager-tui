@@ -91,29 +91,53 @@ impl ServiceRepository for SystemdServiceAdapter {
         Ok(states)
     }
 
-    fn list_services(&self) -> Result<Vec<Service>, Box<dyn std::error::Error>> {
+    fn list_services(&self, filter: bool) -> Result<Vec<Service>, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
 
         let units: Vec<SystemdUnit> = proxy.call("ListUnits", &())?;
-        
-        let services = units
-            .into_par_iter()
-            .map(
-                |(
-                    name,
-                    description,
-                    load_state,
-                    active_state,
-                    sub_state,
-                    .. 
-                )| {
-                    let service_state =
-                        ServiceState::new(load_state, active_state, sub_state, "...".to_string());
 
-                    Service::new(name, description, service_state)
-                },
-            )
-            .collect::<Vec<_>>();
+        let services: Vec<Service>;
+        
+        if filter {
+            services = units
+                .into_par_iter()
+                .map(
+                    |(
+                        name,
+                        description,
+                        load_state,
+                        active_state,
+                        sub_state,
+                        .. 
+                    )| {
+                        let service_state =
+                            ServiceState::new(load_state, active_state, sub_state, "...".to_string());
+
+                        Service::new(name, description, service_state)
+                    },
+                )
+                .collect::<Vec<_>>();
+        }else {
+            services = units
+                .into_par_iter()
+                .filter(|(name, ..)| name.ends_with(".service"))
+                .map(
+                    |(
+                        name,
+                        description,
+                        load_state,
+                        active_state,
+                        sub_state,
+                        .. 
+                    )| {
+                        let service_state =
+                            ServiceState::new(load_state, active_state, sub_state, "...".to_string());
+
+                        Service::new(name, description, service_state)
+                    },
+                )
+                .collect::<Vec<_>>();
+        }
 
         Ok(services)
     }

@@ -5,7 +5,7 @@ use std::error::Error;
 use std::collections::HashMap;
 
 pub trait ServiceRepository: Send + Sync {
-    fn list_services(&self) -> Result<Vec<Service>, Box<dyn Error>>;
+    fn list_services(&self, filter: bool) -> Result<Vec<Service>, Box<dyn Error>>;
     fn unit_files_state(&self, services: Vec<Service>) -> Result<HashMap<String, String>, Box<dyn Error>>;
     fn list_service_files(&self) -> Result<Vec<Service>, Box<dyn Error>>;
     fn get_unit(&self, name: &str) -> Result<Service, Box<dyn Error>>;
