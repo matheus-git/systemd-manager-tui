@@ -27,6 +27,8 @@ color-eyre = "0.6.3"
 ratatui = "0.29"
 textwrap = "0.16.2"
 rayon = "1.11.0"
+logcast = "0.2.9"
+log = "0.4.29"
 
 [package.metadata.deb]
 name = "systemd-manager-tui"

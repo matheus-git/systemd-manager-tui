@@ -9,6 +9,7 @@ use crate::domain::service::Service;
 use crate::domain::service_repository::ServiceRepository;
 use crate::domain::service_state::ServiceState;
 use rayon::prelude::*;
+use std::collections::HashMap;
 
 const SLEEP_DURATION: u64 = 300;
 
@@ -67,11 +68,34 @@ impl ServiceRepository for SystemdServiceAdapter {
         Ok(())
     }
 
+    fn unit_files_state(
+        &self,
+        services: Vec<Service>
+    ) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
+
+        let proxy = self.manager_proxy()?;
+
+        let states_vec: Vec<(String, String)> = services
+            .par_iter()
+            .map(|service| {
+                let name = service.name().to_string();
+                let state = proxy
+                    .call("GetUnitFileState", &name)
+                    .unwrap_or_else(|_| "unknown".to_string());
+                (name, state)
+            })
+            .collect();
+
+        let states: HashMap<String, String> = states_vec.into_iter().collect();
+
+        Ok(states)
+    }
+
     fn list_services(&self, filter: bool) -> Result<Vec<Service>, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
 
         let units: Vec<SystemdUnit> = proxy.call("ListUnits", &())?;
-
+        
         let services = units
             .into_par_iter()
             .filter(|(name, ..)| !filter || name.ends_with(".service"))
@@ -88,12 +112,8 @@ impl ServiceRepository for SystemdServiceAdapter {
                     _job_type,
                     _job_object,
                 )| {
-                    //let state: String = proxy
-                    //   .call("GetUnitFileState", &name)
-                    //    .unwrap_or_else(|_| "unknown".into());
-
                     let service_state =
-                        ServiceState::new(load_state, active_state, sub_state, String::new());
+                        ServiceState::new(load_state, active_state, sub_state, "...".to_string());
 
                     Service::new(name, description, service_state)
                 },

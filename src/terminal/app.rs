@@ -50,6 +50,7 @@ pub enum Actions {
     EditCurrentService,
     ServiceAction(ServiceAction),
     ShowHelp,
+    Redraw
 }
 
 pub enum AppEvent {
@@ -116,6 +117,7 @@ impl App {
     }
 
     pub fn init(&mut self) {
+        self.table_service.init();
         self.spawn_key_event_listener();
     }
 
@@ -205,7 +207,7 @@ impl App {
                             self.table_service.get_selected_service()
                     {
                         self.service_log
-                            .fetch_log_and_dispatch(service);
+                            .fetch_log_and_dispatch(&service);
                     }
                 }
                 AppEvent::Action(Actions::GoLog) => {
@@ -241,7 +243,8 @@ impl App {
                 }
                 AppEvent::Action(Actions::ShowHelp) => {
                     self.show_help = !self.show_help;
-                }
+                },
+                AppEvent::Action(Actions::Redraw) => {}
             }
         }
 
