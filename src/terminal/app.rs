@@ -21,6 +21,7 @@ use std::rc::Rc;
 use rayon::prelude::*;
 
 use crate::infrastructure::systemd_service_adapter::ConnectionType;
+use crate::terminal::components::list::ActiveFilterState;
 use crate::usecases::services_manager::ServicesManager;
 
 use super::components::details::ServiceDetails;
@@ -50,6 +51,7 @@ pub enum Actions {
     EditCurrentService,
     ServiceAction(ServiceAction),
     ShowHelp,
+    Redraw
 }
 
 pub enum AppEvent {
@@ -78,10 +80,10 @@ pub struct App {
     running: bool,
     status: Status,
     event_listener_enabled: Arc<AtomicBool>,
-    table_service: Rc<RefCell<TableServices>>,
-    filter: Rc<RefCell<Filter>>,
-    service_log: Rc<RefCell<ServiceLog>>,
-    details: Rc<RefCell<ServiceDetails>>,
+    table_service: TableServices,
+    filter: Filter,
+    service_log: ServiceLog,
+    details: ServiceDetails,
     usecases: Rc<RefCell<ServicesManager>>,
     event_rx: Receiver<AppEvent>,
     event_tx: Sender<AppEvent>,
@@ -93,10 +95,10 @@ impl App {
     pub fn new(
         event_tx: Sender<AppEvent>, 
         event_rx: Receiver<AppEvent>, 
-        table_service: Rc<RefCell<TableServices>>,
-        filter: Rc<RefCell<Filter>>,
-        service_log: Rc<RefCell<ServiceLog>>,
-        details: Rc<RefCell<ServiceDetails>>,
+        table_service: TableServices,
+        filter: Filter,
+        service_log: ServiceLog,
+        details: ServiceDetails,
         usecases: Rc<RefCell<ServicesManager>>
     ) -> Self {
         Self {
@@ -116,48 +118,40 @@ impl App {
     }
 
     pub fn init(&mut self) {
+        self.table_service.init();
         self.spawn_key_event_listener();
     }
 
-fn spawn_key_event_listener(&self) {
-    let event_tx = self.event_tx.clone();
-    let event_listener_enabled = self.event_listener_enabled.clone();
+    fn spawn_key_event_listener(&self) {
+        let event_tx = self.event_tx.clone();
+        let event_listener_enabled = self.event_listener_enabled.clone();
 
-    thread::spawn(move || {
-        loop {
-            if !event_listener_enabled.load(Ordering::Relaxed) {
-                thread::sleep(Duration::from_millis(50));
-                continue;
-            }
+        thread::spawn(move || {
+            loop {
+                if !event_listener_enabled.load(Ordering::Relaxed) {
+                    thread::sleep(Duration::from_millis(50));
+                    continue;
+                }
 
-            if event::poll(Duration::from_millis(100)).unwrap_or(false) 
-                && let Ok(Event::Key(key_event)) = event::read() 
-                    && key_event.kind == KeyEventKind::Press
-                        && event_tx.send(AppEvent::Key(key_event)).is_err()
-            {
-                break;
+                if event::poll(Duration::from_millis(100)).unwrap_or(false) 
+                    && let Ok(Event::Key(key_event)) = event::read() 
+                        && key_event.kind == KeyEventKind::Press
+                            && event_tx.send(AppEvent::Key(key_event)).is_err()
+                {
+                    break;
+                }
             }
-        }
-    });
-}
+        });
+    }
 
     pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
         self.running = true;
 
-        let binding_table_service = self.table_service.clone();
-        let mut table_service = binding_table_service.borrow_mut();
-        let binding_filter = self.filter.clone();
-        let mut filter = binding_filter.borrow_mut();
-        let binding_log = self.service_log.clone();
-        let mut log = binding_log.borrow_mut();
-        let bindind_details = self.details.clone();
-        let mut details = bindind_details.borrow_mut();
-
         while self.running {
             match self.status {
-                Status::Log => self.draw_log_status(&mut terminal, &mut log)?,
-                Status::List => self.draw_list_status(&mut terminal, &mut filter, &mut table_service)?,
-                Status::Details => self.draw_details_status(&mut terminal, &mut details)?,
+                Status::Log => self.draw_log_status(&mut terminal)?,
+                Status::List => self.draw_list_status(&mut terminal)?,
+                Status::Details => self.draw_details_status(&mut terminal)?,
             }
 
             match self.event_rx.recv()? {
@@ -167,23 +161,23 @@ fn spawn_key_event_listener(&self) {
                             self.show_help = false;
                         } else {
                             self.on_key_event(key);
-                            log.on_key_event(key);
+                            self.service_log.on_key_event(key);
                         }
                     }
                     Status::List => {
                         if self.show_help {
                             self.show_help = false;
                             // Ensure the table is active and can receive key events
-                            table_service.set_ignore_key_events(false);
+                            self.table_service.set_ignore_key_events(false);
                             // If no item is selected and list is not empty, select first item
-                            if table_service.table_state.selected().is_none() && !table_service.is_filtered_list_empty() {
-                                table_service.set_selected_index(0);
+                            if self.table_service.table_state.selected().is_none() && !self.table_service.is_filtered_list_empty() {
+                                self.table_service.set_selected_index(0);
                             }
                         } else {
                             self.on_key_event(key);
-                            self.on_key_horizontal_event(key, filter.input_mode == InputMode::Editing);
-                            table_service.on_key_event(key);
-                            filter.on_key_event(key);
+                            self.on_key_horizontal_event(key, self.filter.input_mode == InputMode::Editing);
+                            self.table_service.on_key_event(key);
+                            self.filter.on_key_event(key);
                         }
                     }
                     Status::Details => {
@@ -191,30 +185,30 @@ fn spawn_key_event_listener(&self) {
                             self.show_help = false;
                         } else {
                             self.on_key_event(key);
-                            details.on_key_event(key);
+                            self.details.on_key_event(key);
                         }
                     }
                 },
                 AppEvent::Action(Actions::ServiceAction(action)) => {
-                    table_service.act_on_selected_service(action);
+                    self.table_service.act_on_selected_service(&action);
                 }
                 AppEvent::Action(Actions::UpdateIgnoreListKeys(bool)) => {
-                    table_service.set_ignore_key_events(bool);
+                    self.table_service.set_ignore_key_events(bool);
                 }
                 AppEvent::Action(Actions::Filter(input)) => {
-                    table_service.set_selected_index(0);
-                    table_service.refresh(input);
+                    self.table_service.set_selected_index(0);
+                    self.table_service.refresh(&input);
                 }
                 AppEvent::Action(Actions::Updatelog(data)) => {
-                    log.update(data.0, data.1);
+                    self.service_log.update(data.0, data.1);
                 }
                 AppEvent::Action(Actions::RefreshLog) => {
                     if self.status == Status::Log
                         && let Some(service) =
-                            table_service.get_selected_service()
+                            self.table_service.get_selected_service()
                     {
-                        log
-                            .fetch_log_and_dispatch(service.clone());
+                        self.service_log
+                            .fetch_log_and_dispatch(&service);
                     }
                 }
                 AppEvent::Action(Actions::GoLog) => {
@@ -223,40 +217,41 @@ fn spawn_key_event_listener(&self) {
                 }
                 AppEvent::Action(Actions::GoList) => self.status = Status::List,
                 AppEvent::Action(Actions::ResetList) => {
-                    table_service.set_usecase(self.usecases.clone());
+                    self.table_service.set_usecase(self.usecases.clone());
                 },
-                AppEvent::Action(Actions::UpdateDetails) => {}
+                AppEvent::Action(Actions::UpdateDetails | Actions::Redraw) => {}
                 AppEvent::Action(Actions::RefreshDetails) => {
                     if self.status == Status::Details {
-                        details.fetch_unit_file();
+                        self.details.fetch_unit_file();
                     }
                 }
                 AppEvent::Action(Actions::GoDetails) => {
-                    if let Some(service) = table_service.get_selected_service() {
-                        details.update(service.clone());
+                    if let Some(service) = self.table_service.get_selected_service() {
+                        self.details.update(service.clone());
                     }
                     self.event_tx
                         .send(AppEvent::Action(Actions::RefreshDetails))?;
                     self.status = Status::Details;
                 }
                 AppEvent::Action(Actions::EditCurrentService) => {
-                    if let Some(service) = table_service.get_selected_service() {
+                    if let Some(service) = &self.table_service.get_selected_service() {
                         self.edit_unit(&mut terminal, service.name())?;    
                         self.event_tx.send(AppEvent::Action(Actions::RefreshDetails))?;
                     }
                 }
                 AppEvent::Error(error_msg) => {
-                    self.error_popup(&mut terminal, error_msg)?;    
+                    self.error_popup(&mut terminal, &error_msg)?;    
                 }
                 AppEvent::Action(Actions::ShowHelp) => {
                     self.show_help = !self.show_help;
-                }
+                },
             }
         }
 
         Ok(())
     }
 
+    #[allow(clippy::unused_self)]
     fn resume_tui(&self, terminal: &mut DefaultTerminal) -> Result<()> {
         enable_raw_mode()?;
         execute!(io::stdout(), EnterAlternateScreen)?;
@@ -268,25 +263,25 @@ fn spawn_key_event_listener(&self) {
     }
 
 
-    fn edit_unit(&mut self, terminal: &mut DefaultTerminal, unit_name: &str) -> Result<()> {
+    fn edit_unit(&self, terminal: &mut DefaultTerminal, unit_name: &str) -> Result<()> {
         self.event_listener_enabled.store(false, Ordering::Relaxed);
 
         if let Err(e) = disable_raw_mode() {
             self.resume_tui(terminal)?;
-            self.error_popup(terminal, format!("Failed to disable raw mode: {}", e))?;
+            self.error_popup(terminal, &format!("Failed to disable raw mode: {e}"))?;
             return Ok(());
         }
 
         let mut stdout = io::stdout();
         if let Err(e) = execute!(stdout, LeaveAlternateScreen) {
             self.resume_tui(terminal)?;
-            self.error_popup(terminal, format!("Failed to leave alternate screen: {}", e))?;
+            self.error_popup(terminal, &format!("Failed to leave alternate screen: {e}"))?;
             return Ok(());
         }
 
         if let Err(e) = terminal.show_cursor() {
             self.resume_tui(terminal)?;
-            self.error_popup(terminal, format!("Failed to show cursor: {}", e))?;
+            self.error_popup(terminal, &format!("Failed to show cursor: {e}"))?;
             return Ok(());
         }
 
@@ -309,16 +304,16 @@ fn spawn_key_event_listener(&self) {
             Ok(s) if s.success() => {},
             Ok(_s) => {
                 self.resume_tui(terminal)?;
-                self.error_popup(terminal, "'systemctl edit' failed. Try running the program with sudo!".to_string())?;
+                self.error_popup(terminal, "'systemctl edit' failed. Try running the program with sudo!")?;
             },
             Err(e) => {
                 self.resume_tui(terminal)?;
-                self.error_popup(terminal, format!("Error executing systemctl: {}", e))?;
+                self.error_popup(terminal, &format!("Error executing systemctl: {e}"))?;
             }
         }
 
         if let Err(e) = self.resume_tui(terminal) {
-            self.error_popup(terminal, format!("Failed to return to TUI: {}", e))?;
+            self.error_popup(terminal, &format!("Failed to return to TUI: {e}"))?;
             return Ok(());
         }
 
@@ -327,6 +322,7 @@ fn spawn_key_event_listener(&self) {
         Ok(())
     }
 
+    #[allow(clippy::unused_self)]
     fn draw_help_popup(&self, frame: &mut Frame, area: Rect) {
         let popup_width = std::cmp::min(80, area.width.saturating_sub(4));
         let popup_height = std::cmp::min(25, area.height.saturating_sub(4));
@@ -393,8 +389,9 @@ fn spawn_key_event_listener(&self) {
         }));
     }
 
-    fn error_popup(&self, terminal: &mut DefaultTerminal, error_msg: String) -> Result<()> {
-        let user_friendly_message = get_user_friendly_error(&error_msg);
+    #[allow(clippy::unused_self)]
+    fn error_popup(&self, terminal: &mut DefaultTerminal, error_msg: &str) -> Result<()> {
+        let user_friendly_message = get_user_friendly_error(error_msg);
 
         terminal.draw(|frame| {
             let area = frame.area();
@@ -443,14 +440,13 @@ fn spawn_key_event_listener(&self) {
 
         if let Ok(Event::Key(_)) = event::read() {
             // Continue after key press
-        };
+        }
         Ok(())
     }
 
     fn draw_details_status(
         &mut self,
         terminal: &mut DefaultTerminal,
-        service_details: &mut ServiceDetails,
     ) -> Result<()> {
         terminal.draw(|frame| {
             let area = frame.area();
@@ -458,8 +454,8 @@ fn spawn_key_event_listener(&self) {
             let [list_box, help_area_box] =
                 Layout::vertical([Constraint::Min(0), Constraint::Max(7)]).areas(area);
 
-            service_details.render(frame, list_box);
-            self.draw_shortcuts(frame, help_area_box, service_details.shortcuts());
+            self.details.render(frame, list_box);
+            self.draw_shortcuts(frame, help_area_box, &self.details.shortcuts());
         })?;
 
         Ok(())
@@ -468,7 +464,6 @@ fn spawn_key_event_listener(&self) {
     fn draw_log_status(
         &mut self,
         terminal: &mut DefaultTerminal,
-        service_log: &mut ServiceLog,
     ) -> Result<()> {
         terminal.draw(|frame| {
             let area = frame.area();
@@ -476,8 +471,8 @@ fn spawn_key_event_listener(&self) {
             let [list_box, help_area_box] =
                 Layout::vertical([Constraint::Min(0), Constraint::Max(7)]).areas(area);
 
-            service_log.render(frame, list_box);
-            self.draw_shortcuts(frame, help_area_box, service_log.shortcuts());
+            self.service_log.render(frame, list_box);
+            self.draw_shortcuts(frame, help_area_box, &self.service_log.shortcuts());
         })?;
 
         Ok(())
@@ -486,8 +481,6 @@ fn spawn_key_event_listener(&self) {
     fn draw_list_status(
         &mut self,
         terminal: &mut DefaultTerminal,
-        filter: &mut Filter,
-        table: &mut TableServices,
     ) -> Result<()> {
         terminal.draw(|frame| {
             let area = frame.area();
@@ -500,9 +493,9 @@ fn spawn_key_event_listener(&self) {
             ])
             .areas(area);
 
-            let filter_state = table.get_active_filter_state();
+            let filter_state = &self.table_service.get_active_filter_state();
             
-            let system_tab = if self.selected_tab_index == 0 {
+            let system_tab = if self.selected_tab_index == 0 && *filter_state != ActiveFilterState::All {
                 Line::from(vec![
                     Span::raw("System units"),
                     Span::styled(
@@ -514,7 +507,7 @@ fn spawn_key_event_listener(&self) {
                 Line::from("System units")
             };
             
-            let session_tab = if self.selected_tab_index == 1 {
+            let session_tab = if self.selected_tab_index == 1 && *filter_state != ActiveFilterState::All{
                 Line::from(vec![
                     Span::raw("Session units"),
                     Span::styled(
@@ -531,9 +524,12 @@ fn spawn_key_event_listener(&self) {
                 .highlight_style(Style::default().fg(Color::Yellow));
 
             frame.render_widget(tabs, tabs_box);
-            filter.draw(frame, filter_box);
-            table.render(frame, list_box);
-            self.draw_shortcuts(frame, help_area_box, table.shortcuts());
+
+            let shortcuts = self.table_service.shortcuts();
+            self.draw_shortcuts(frame, help_area_box, &shortcuts);
+            let table_service = &mut self.table_service;
+            self.filter.draw(frame, filter_box);
+            table_service.render(frame, list_box);
             
             // Show help popup if needed
             if self.show_help {
@@ -544,20 +540,22 @@ fn spawn_key_event_listener(&self) {
         Ok(())
     }
 
-    fn draw_shortcuts(&mut self, frame: &mut Frame, help_area: Rect, shortcuts: Vec<Line<'_>>) {
+    #[allow(clippy::unused_self)]
+    fn draw_shortcuts(&self, frame: &mut Frame, help_area: Rect, shortcuts: &[Line<'_>]) {
         let mut help_text: Vec<Line<'_>> = Vec::new();
         let shortcuts_lens = shortcuts.len();
 
-        help_text.extend(shortcuts.clone());
+        help_text.extend(shortcuts.to_owned());
 
         if shortcuts_lens > 0 {
             help_text.push(Line::raw(""));
-            let shortcuts_width = shortcuts.clone()
+            let shortcuts_width = shortcuts.to_owned()
                 .par_iter()
-                .map(|line|  line.spans.iter().map(|span| span.width()).sum())
+                .map(|line|  line.spans.iter().map(ratatui::prelude::Span::width).sum())
                 .max()
                 .unwrap_or(0);
-            if help_area.width > shortcuts_width as u16 {
+            let shortcuts_width = u16::try_from(shortcuts_width).expect("Failed to convert shortcuts_width to u16");
+            if help_area.width > shortcuts_width {
                 help_text.push(Line::raw(""));
             }
         }
@@ -580,7 +578,7 @@ fn spawn_key_event_listener(&self) {
     fn on_key_event(&mut self, key: KeyEvent) {
          if let KeyEvent {
                  modifiers: KeyModifiers::CONTROL,
-                 code: KeyCode::Char('c') | KeyCode::Char('C'),
+                 code: KeyCode::Char('c' | 'C'),
                  ..
              } = key {
              self.quit();
@@ -594,7 +592,7 @@ fn spawn_key_event_listener(&self) {
                 code,
                 ..
             } if left_keys.contains(&code) => {
-                if !is_filtering && self.status == Status::List {
+                if !is_filtering && self. status == Status::List {
                     self.selected_tab_index = if self.selected_tab_index == 0 {
                         1
                     } else {

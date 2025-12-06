@@ -3,7 +3,7 @@ pub struct ServiceState {
     load: String,
     active: String,
     sub: String,
-    file: String,
+    pub file: String,
 }
 
 impl ServiceState {

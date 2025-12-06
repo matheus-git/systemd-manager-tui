@@ -20,6 +20,35 @@ use crate::domain::service::Service;
 use crate::terminal::app::{Actions, AppEvent};
 use crate::usecases::services_manager::ServicesManager;
 
+fn render_loading(frame: &mut Frame, area: Rect) {
+    let block = Block::default().borders(Borders::ALL);
+
+    frame.render_widget(block.clone(), area);
+
+    let vertical = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(1)
+        .constraints([
+            Constraint::Percentage(45),
+            Constraint::Length(1),
+            Constraint::Percentage(45),
+        ])
+        .split(area);
+
+    let horizontal = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(25),
+            Constraint::Percentage(50),
+            Constraint::Percentage(25),
+        ])
+        .split(vertical[1]);
+
+    let loading = Paragraph::new("Loading...").alignment(Alignment::Center);
+
+    frame.render_widget(loading, horizontal[1]);
+}
+
 enum BorderColor {
     White,
     Orange,
@@ -57,38 +86,10 @@ impl ServiceLog {
         }
     }
 
-    fn render_loading(&mut self, frame: &mut Frame, area: Rect) {
-        let block = Block::default().borders(Borders::ALL);
-
-        frame.render_widget(block.clone(), area);
-
-        let vertical = Layout::default()
-            .direction(Direction::Vertical)
-            .margin(1)
-            .constraints([
-                Constraint::Percentage(45),
-                Constraint::Length(1),
-                Constraint::Percentage(45),
-            ])
-            .split(area);
-
-        let horizontal = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Percentage(25),
-                Constraint::Percentage(50),
-                Constraint::Percentage(25),
-            ])
-            .split(vertical[1]);
-
-        let loading = Paragraph::new("Loading...").alignment(Alignment::Center);
-
-        frame.render_widget(loading, horizontal[1]);
-    }
 
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
         if self.log.is_empty()  {
-            self.render_loading(frame, area);
+            render_loading(frame, area);
             return;
         }
 
@@ -190,7 +191,7 @@ impl ServiceLog {
         }
     }
 
-    pub fn shortcuts(&mut self) -> Vec<Line<'_>> {
+    pub fn shortcuts(&self) -> Vec<Line<'_>> {
         let is_refreshing = self.auto_refresh.lock().map(|r| *r).unwrap_or(false);
         let mut auto_refresh_label = "Enable auto-refresh";
         if is_refreshing {
@@ -205,8 +206,7 @@ impl ServiceLog {
                     .add_modifier(Modifier::BOLD),
             )]),
             Line::from(format!(
-                "Scroll: ↑/↓ | Switch tabs: ←/→ | {}: a | Go back: q",
-                auto_refresh_label
+                "Scroll: ↑/↓ | Switch tabs: ←/→ | {auto_refresh_label}: a | Go back: q",
             )),
         ];
 
@@ -240,9 +240,9 @@ impl ServiceLog {
         });
     }
 
-    pub fn fetch_log_and_dispatch(&mut self, service: Service) {
+    pub fn fetch_log_and_dispatch(&mut self, service: &Service) {
         let event_tx = self.sender.clone();
-        if let Ok(log) = self.usecase.borrow().get_log(&service) {
+        if let Ok(log) = self.usecase.borrow().get_log(service) {
             event_tx
                 .send(AppEvent::Action(Actions::Updatelog((
                     service.name().to_string(),

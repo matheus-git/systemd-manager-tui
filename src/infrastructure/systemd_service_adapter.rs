@@ -9,6 +9,7 @@ use crate::domain::service::Service;
 use crate::domain::service_repository::ServiceRepository;
 use crate::domain::service_state::ServiceState;
 use rayon::prelude::*;
+use std::collections::HashMap;
 
 const SLEEP_DURATION: u64 = 300;
 
@@ -67,14 +68,36 @@ impl ServiceRepository for SystemdServiceAdapter {
         Ok(())
     }
 
-    fn list_services(&self, filter: bool) -> Result<Vec<Service>, Box<dyn std::error::Error>> {
+    fn unit_files_state(
+        &self,
+        services: Vec<Service>
+    ) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
+
+        let proxy = self.manager_proxy()?;
+
+        let states_vec: Vec<(String, String)> = services
+            .par_iter()
+            .map(|service| {
+                let name = service.name().to_string();
+                let state = proxy
+                    .call("GetUnitFileState", &name)
+                    .unwrap_or_else(|_| "unknown".to_string());
+                (name, state)
+            })
+            .collect();
+
+        let states: HashMap<String, String> = states_vec.into_iter().collect();
+
+        Ok(states)
+    }
+
+    fn list_services(&self) -> Result<Vec<Service>, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
 
         let units: Vec<SystemdUnit> = proxy.call("ListUnits", &())?;
-
+        
         let services = units
             .into_par_iter()
-            .filter(|(name, ..)| !filter || name.ends_with(".service"))
             .map(
                 |(
                     name,
@@ -82,18 +105,10 @@ impl ServiceRepository for SystemdServiceAdapter {
                     load_state,
                     active_state,
                     sub_state,
-                    _followed,
-                    _object_path,
-                    _job_id,
-                    _job_type,
-                    _job_object,
+                    .. 
                 )| {
-                    let state: String = proxy
-                        .call("GetUnitFileState", &name)
-                        .unwrap_or_else(|_| "unknown".into());
-
                     let service_state =
-                        ServiceState::new(load_state, active_state, sub_state, state);
+                        ServiceState::new(load_state, active_state, sub_state, "...".to_string());
 
                     Service::new(name, description, service_state)
                 },
@@ -103,14 +118,14 @@ impl ServiceRepository for SystemdServiceAdapter {
         Ok(services)
     }
 
-    fn list_service_files(&self, filter: bool) -> Result<Vec<Service>, Box<dyn std::error::Error>> {
+    #[allow(dead_code)]
+    fn list_service_files(&self) -> Result<Vec<Service>, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
 
         let units: Vec<(String, String)> = proxy.call("ListUnitFiles", &())?;
 
         let services = units
             .into_par_iter()
-            .filter(|(name, _)| !filter || name.ends_with(".service"))
             .map(|(name, state)| {
                 let service_state = ServiceState::new(
                     String::new(),
@@ -130,7 +145,7 @@ impl ServiceRepository for SystemdServiceAdapter {
         let mut cmd = std::process::Command::new("journalctl");
 
         cmd.arg("-e")
-            .arg(format!("--unit={}", name))
+            .arg(format!("--unit={name}"))
             .arg("--no-pager");
 
         if matches!(self.connection_type, ConnectionType::Session){
@@ -188,7 +203,7 @@ impl ServiceRepository for SystemdServiceAdapter {
             let service = Service::new(unit.0.clone(), unit.1.clone(), service_state);
             Ok(service)
         }else {
-            Err(format!("Unit '{}' not found", name).into())
+            Err(format!("Unit '{name}' not found").into())
         }
     }
 

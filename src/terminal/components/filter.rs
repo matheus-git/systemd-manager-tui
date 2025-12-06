@@ -82,7 +82,7 @@ impl Filter {
         self.sender
             .send(AppEvent::Action(Actions::UpdateIgnoreListKeys(false)))
             .unwrap();
-        self.input_mode = InputMode::Normal
+        self.input_mode = InputMode::Normal;
     }
 
     pub fn on_key_event(&mut self, key: KeyEvent) {

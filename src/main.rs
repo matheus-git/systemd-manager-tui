@@ -34,10 +34,10 @@ fn main() -> color_eyre::Result<()> {
     let mut app = App::new(
         event_tx,
         event_rx,
-        Rc::new(RefCell::new(table_services)),
-        Rc::new(RefCell::new(filter)),
-        Rc::new(RefCell::new(service_log)),
-        Rc::new(RefCell::new(details)),
+        table_services,
+        filter,
+        service_log,
+        details,
         usecase,
     );
     app.init();
