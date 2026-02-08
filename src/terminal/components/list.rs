@@ -76,7 +76,7 @@ fn generate_table<'a>(rows: &'a [Row<'a>], ignore_key_events: bool) -> Table<'a>
     .header(
         Row::new(["Name", "Active", "State", "Load", "Description"]).style(
             Style::default()
-                .fg(Color::White)
+                .fg(Color::Gray)
                 .add_modifier(Modifier::BOLD),
         ),
     )

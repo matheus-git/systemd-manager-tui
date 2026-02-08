@@ -106,7 +106,7 @@ impl ServiceDetails {
             KeyCode::Char('e') => {
                 self.sender.send(AppEvent::Action(Actions::EditCurrentService)).unwrap();
             }
-            KeyCode::Char('q') => {
+            KeyCode::Char('q') | KeyCode::Esc => {
                 self.exit();
             }
             _ => {}
@@ -122,7 +122,7 @@ impl ServiceDetails {
                     .fg(Color::LightMagenta)
                     .add_modifier(Modifier::BOLD),
             )]),
-            Line::from("Switch tabs: ←/→ | Go back: q | Edit: e"),
+            Line::from("Switch tabs: ←/→ | Edit: e | Go back: q/Esc"),
         ];
 
         help_text

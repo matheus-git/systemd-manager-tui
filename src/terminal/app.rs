@@ -325,7 +325,7 @@ impl App {
     #[allow(clippy::unused_self)]
     fn draw_help_popup(&self, frame: &mut Frame, area: Rect) {
         let popup_width = std::cmp::min(80, area.width.saturating_sub(4));
-        let popup_height = std::cmp::min(25, area.height.saturating_sub(4));
+        let popup_height = std::cmp::min(34, area.height.saturating_sub(4));
 
         let popup_x = (area.width.saturating_sub(popup_width)) / 2;
         let popup_y = (area.height.saturating_sub(popup_height)) / 2;
@@ -350,13 +350,22 @@ impl App {
             Line::from("←/h - Previous tab    →/l - Next tab"),
             Line::from("PageUp/PageDown - Jump 10 items"),
             Line::from(""),
+            Line::from(vec![Span::styled("Filter:", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
+            Line::from("Ctrl+u - Delete until the start of the input "),
+            Line::from("Ctrl+k - Delete until the end of the input "),
+            Line::from("Alt+b - Go backwards a word "),
+            Line::from("Alt+f - Go fowards a word "),
+            Line::from("Ctrl+e - Go to the end of the input "),
+            Line::from("Ctrl+a - Go to the end of input  "),
+            Line::from("Ctrl+w - Delete a word backwards "),
+            Line::from(""),
             Line::from(vec![Span::styled("Service Control:", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
             Line::from("s - Start service    x - Stop service"),
             Line::from("r - Restart service"),
             Line::from("e - Enable service    d - Disable service"),
             Line::from("m - Mask/Unmask service"),
             Line::from(""),
-            Line::from(vec![Span::styled("View & Filter:", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
+            Line::from(vec![Span::styled("View & Filter list:", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
             Line::from("f - Toggle all/services filter"),
             Line::from("a - Cycle filter (all→active→inactive→failed)"),
             Line::from("u - Refresh service list"),

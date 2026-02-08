@@ -183,7 +183,7 @@ impl ServiceLog {
                 self.toogle_auto_refresh();
                 self.auto_refresh_thread();
             }
-            KeyCode::Char('q') => {
+            KeyCode::Char('q') | KeyCode::Esc => {
                 self.reset();
                 self.exit();
             }
@@ -206,7 +206,7 @@ impl ServiceLog {
                     .add_modifier(Modifier::BOLD),
             )]),
             Line::from(format!(
-                "Scroll: ↑/↓ | Switch tabs: ←/→ | {auto_refresh_label}: a | Go back: q",
+                "Scroll: ↑/↓ | Switch tabs: ←/→ | {auto_refresh_label}: a | Go back: q/Esc",
             )),
         ];
 

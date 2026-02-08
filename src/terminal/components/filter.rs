@@ -1,3 +1,4 @@
+use crossterm::event::KeyModifiers;
 use ratatui::{
     crossterm::event::{KeyCode, KeyEvent, KeyEventKind},
     layout::{Constraint, Layout, Position, Rect},
@@ -71,6 +72,81 @@ impl Filter {
         }
     }
 
+    fn delete_prev_word(&mut self) {
+        if self.character_index == 0 {
+            return;
+        }
+
+        let chars: Vec<char> = self.input.chars().collect();
+        let mut idx = self.character_index;
+
+        while idx > 0 && chars[idx - 1].is_whitespace() {
+            idx -= 1;
+        }
+
+        while idx > 0 && !chars[idx - 1].is_whitespace() {
+            idx -= 1;
+        }
+
+        let before = chars.iter().take(idx);
+        let after = chars.iter().skip(self.character_index);
+
+        self.input = before.chain(after).collect();
+        self.character_index = idx;
+    }
+
+    fn delete_from_cursor(&mut self) {
+        if self.character_index >= self.input.chars().count() {
+            return;
+        }
+
+        let before_cursor = self
+            .input
+            .chars()
+            .take(self.character_index);
+
+        self.input = before_cursor.collect();
+    }
+
+    fn move_cursor_prev_word(&mut self) {
+        if self.character_index == 0 {
+            return;
+        }
+
+        let chars: Vec<char> = self.input.chars().collect();
+        let mut idx = self.character_index;
+
+        while idx > 0 && chars[idx - 1].is_whitespace() {
+            idx -= 1;
+        }
+
+        while idx > 0 && !chars[idx - 1].is_whitespace() {
+            idx -= 1;
+        }
+
+        self.character_index = idx;
+    }
+
+    fn move_cursor_next_word(&mut self) {
+        let len = self.input.chars().count();
+        if self.character_index >= len {
+            return;
+        }
+
+        let chars: Vec<char> = self.input.chars().collect();
+        let mut idx = self.character_index;
+
+        while idx < len && !chars[idx].is_whitespace() {
+            idx += 1;
+        }
+
+        while idx < len && chars[idx].is_whitespace() {
+            idx += 1;
+        }
+
+        self.character_index = idx;
+    }
+
     fn clamp_cursor(&self, new_cursor_pos: usize) -> usize {
         new_cursor_pos.clamp(0, self.input.chars().count())
     }
@@ -94,6 +170,7 @@ impl Filter {
                         .unwrap();
                     self.input_mode = InputMode::Editing;
                 }
+
                 KeyCode::Esc => {
                     self.input = String::new();
                     self.sender
@@ -108,6 +185,28 @@ impl Filter {
             InputMode::Editing if key.kind == KeyEventKind::Press => {
                 match key.code {
                     KeyCode::Enter => self.submit_message(),
+                    KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        self.input = String::new();
+                        self.character_index = 0;
+                    },
+                    KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::ALT) => {
+                        self.move_cursor_next_word();
+                    },
+                    KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::ALT) => {
+                        self.move_cursor_prev_word();
+                    },
+                    KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        self.delete_from_cursor();
+                    },
+                    KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        self.delete_prev_word();
+                    },
+                    KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        self.character_index = 0;
+                    },
+                    KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        self.character_index = self.input.len();
+                    },
                     KeyCode::Char(to_insert) => self.enter_char(to_insert),
                     KeyCode::Backspace => self.delete_char(),
                     KeyCode::Left => self.move_cursor_left(),
