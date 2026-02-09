@@ -72,6 +72,20 @@ impl Filter {
         }
     }
 
+    fn delete_to_start(&mut self) {
+        if self.character_index == 0 {
+            return;
+        }
+
+        let after_cursor = self
+            .input
+            .chars()
+            .skip(self.character_index);
+
+        self.input = after_cursor.collect();
+        self.character_index = 0;
+    }
+
     fn delete_prev_word(&mut self) {
         if self.character_index == 0 {
             return;
@@ -186,13 +200,18 @@ impl Filter {
                 match key.code {
                     KeyCode::Enter => self.submit_message(),
                     KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-                        self.input = String::new();
-                        self.character_index = 0;
+                        self.delete_to_start();
                     },
                     KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::ALT) => {
                         self.move_cursor_next_word();
                     },
+                    KeyCode::Right if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        self.move_cursor_next_word();
+                    },
                     KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::ALT) => {
+                        self.move_cursor_prev_word();
+                    },
+                    KeyCode::Left if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         self.move_cursor_prev_word();
                     },
                     KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => {
@@ -201,10 +220,19 @@ impl Filter {
                     KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         self.delete_prev_word();
                     },
+                    KeyCode::Backspace if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        self.delete_prev_word();
+                    },
                     KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         self.character_index = 0;
                     },
+                    KeyCode::Home => {
+                        self.character_index = 0;
+                    },
                     KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        self.character_index = self.input.len();
+                    },
+                    KeyCode::End => {
                         self.character_index = self.input.len();
                     },
                     KeyCode::Char(to_insert) => self.enter_char(to_insert),
