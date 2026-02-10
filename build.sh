@@ -26,16 +26,11 @@ cargo build --release
 #echo -e "${YELLOW_BOLD}\nFinal release build using PGO${RESET}"
 #RUSTFLAGS="-Cprofile-use=$MERGED_PROFILE -Cllvm-args=-pgo-warn-missing-function" cargo build --release
 
-if ! command -v cross &> /dev/null; then
-    echo -e "${YELLOW_BOLD}\nInstalling cross${RESET}"
-    cargo install cross
-fi
-
 echo -e "${YELLOW_BOLD}\ncross build --release --target x86_64-unknown-linux-musl${RESET}"
-cross build --release --target x86_64-unknown-linux-musl
+cargo zigbuild --release --target x86_64-unknown-linux-musl
 
 echo -e "${YELLOW_BOLD}\ncross build --release --target aarch64-unknown-linux-musl${RESET}"
-cross build --release --target aarch64-unknown-linux-musl
+cargo zigbuild --release --target aarch64-unknown-linux-musl
 
 if ! command -v cargo-deb &> /dev/null; then
     echo -e "${YELLOW_BOLD}\nInstalling cargo-deb${RESET}"
@@ -43,7 +38,7 @@ if ! command -v cargo-deb &> /dev/null; then
 fi 
 
 echo -e "${YELLOW_BOLD}\ncargo deb${RESET}"
-cargo deb --target x86_64-unknown-linux-musl --no-build
+cargo deb --target x86_64-unknown-linux-musl --no-build 
 
 echo -e "${YELLOW_BOLD}\ncargo deb --target aarch64-unknown-linux-musl${RESET}"
 cargo deb --target aarch64-unknown-linux-musl --no-build
