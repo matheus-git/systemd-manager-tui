@@ -18,6 +18,7 @@ debug = false
 opt-level = 3
 codegen-units = 1
 lto = true
+strip = true
 
 [dependencies]
 chrono = "0.4"
@@ -43,5 +44,8 @@ copyright = "MIT @ Matheus-git"
 name = "systemd-manager-tui"
 summary = "TUI for managing systemd services"
 license = "MIT"
-assets = []
 arch = "aarch64"
+
+assets = [
+    { source = "target/aarch64-unknown-linux-musl/release/systemd-manager-tui", dest = "/usr/bin/systemd-manager-tui", mode = "755" }
+]
