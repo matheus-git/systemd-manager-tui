@@ -1,5 +1,5 @@
 use zbus::blocking::{Connection, Proxy};
-use zbus::zvariant::OwnedObjectPath;
+use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 use zbus::Error;
 use std::time::Duration;
 use std::process::Command;
@@ -303,5 +303,22 @@ impl ServiceRepository for SystemdServiceAdapter {
         let proxy = self.manager_proxy()?;
         proxy.call::<&str, (), ()>("Reload", &())?;
         Ok(())
+    }
+
+    fn get_active_enter_timestamp(&self, name: &str) -> Result<u64, Box<dyn std::error::Error>> {
+        let proxy = self.manager_proxy()?;
+        let unit_path: OwnedObjectPath = proxy.call("LoadUnit", &name)?;
+        let unit_proxy = Proxy::new(
+            &self.connection,
+            "org.freedesktop.systemd1",
+            unit_path.as_ref(),
+            "org.freedesktop.DBus.Properties",
+        )?;
+        let variant: OwnedValue = unit_proxy.call(
+            "Get",
+            &("org.freedesktop.systemd1.Unit", "ActiveEnterTimestamp"),
+        )?;
+        let timestamp: u64 = variant.try_into()?;
+        Ok(timestamp)
     }
 }

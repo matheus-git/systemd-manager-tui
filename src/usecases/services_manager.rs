@@ -102,5 +102,9 @@ impl ServicesManager {
     pub fn systemctl_cat(&self, service: &Service) -> Result<String, Box<dyn Error>> {
         self.repository.lock().unwrap().systemctl_cat(service.name())
     }
+
+    pub fn get_active_enter_timestamp(&self, name: &str) -> Result<u64, Box<dyn Error>> {
+        self.repository.lock().unwrap().get_active_enter_timestamp(name)
+    }
 }
 
