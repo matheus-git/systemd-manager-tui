@@ -15,6 +15,7 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::{Duration, Instant};
 use std::collections::HashMap;
 
 use crate::domain::service::Service;
@@ -23,42 +24,60 @@ use rayon::prelude::*;
 
 const PADDING: Padding = Padding::new(1, 1, 1, 1);
 
+fn resolve_file<'a>(service: &'a Service, states: &'a HashMap<String, String>) -> &'a str {
+    if service.state().file() == "..." {
+        if let Some(state) = states.get(service.name()) {
+            state.as_str()
+        } else {
+            service.state().file()
+        }
+    } else {
+        service.state().file()
+    }
+}
+
+fn build_service_row(
+    service: &Service,
+    states: &HashMap<String, String>,
+    runtime_label: Option<&str>,
+) -> Row<'static> {
+    let highlight_style = Style::default()
+        .fg(Color::Cyan)
+        .add_modifier(Modifier::BOLD);
+    let normal_style = Style::default().fg(Color::Gray);
+
+    let active_cell = if let Some(label) = runtime_label {
+        Cell::from(label.to_string()).style(Style::default().fg(Color::Green))
+    } else {
+        let state_style = match service.state().active() {
+            "active" => Style::default().fg(Color::Green),
+            "activating" => Style::default().fg(Color::Yellow),
+            _ => Style::default().fg(Color::Red),
+        };
+        let sub = service.state().sub();
+        let active = if sub.is_empty() {
+            service.state().active().to_string()
+        } else {
+            format!("{} ({})", service.state().active(), sub)
+        };
+        Cell::from(active).style(state_style)
+    };
+
+    let file = resolve_file(service, states);
+
+    Row::new(vec![
+        Cell::from(service.name().to_string()).style(highlight_style),
+        active_cell,
+        Cell::from(file.to_string()).style(normal_style),
+        Cell::from(service.state().load().to_string()).style(normal_style),
+        Cell::from(service.description().to_string()).style(normal_style),
+    ])
+}
+
 fn generate_rows(services: &[Service], states: &HashMap<String, String>) -> Vec<Row<'static>> {
     services
         .par_iter()
-        .map(|service| {
-            let highlight_style = Style::default()
-                .fg(Color::Cyan)
-                .add_modifier(Modifier::BOLD);
-            let normal_style = Style::default().fg(Color::Gray);
-
-            let state_style = match service.state().active() {
-                "active" => Style::default().fg(Color::Green),
-                "activating" => Style::default().fg(Color::Yellow),
-                _ => Style::default().fg(Color::Red),
-            };
-
-            let sub = service.state().sub();
-            let active = if sub.is_empty() {
-                service.state().active().to_string()
-            } else {
-                format!("{} ({})", service.state().active(), sub)
-            };
-
-            let file = if let Some(state) = states.get(service.name()) && service.state().file() == "..." {
-                state
-            } else {
-                service.state().file()  
-            };
-
-            Row::new(vec![
-                Cell::from(service.name().to_string()).style(highlight_style),
-                Cell::from(active).style(state_style),
-                Cell::from(file.to_string()).style(normal_style),
-                Cell::from(service.state().load().to_string()).style(normal_style),
-                Cell::from(service.description().to_string()).style(normal_style),
-            ])
-        })
+        .map(|service| build_service_row(service, states, None))
         .collect()
 }
 
@@ -160,7 +179,10 @@ pub struct TableServices {
     filter_all: bool,
     active_filter_state: ActiveFilterState,
     event_rx: Arc<Mutex<Receiver<QueryUnitFile>>>,
-    event_tx: Arc<Sender<QueryUnitFile>>
+    event_tx: Arc<Sender<QueryUnitFile>>,
+    active_enter_timestamp: Option<u64>,
+    selected_service_name: Option<String>,
+    last_timestamp_fetch: Option<Instant>,
 }
 
 impl TableServices {
@@ -183,7 +205,10 @@ impl TableServices {
             filter_all,
             active_filter_state: ActiveFilterState::All,
             event_rx: Arc::new(Mutex::new(event_rx)),
-            event_tx: Arc::new(event_tx)
+            event_tx: Arc::new(event_tx),
+            active_enter_timestamp: None,
+            selected_service_name: None,
+            last_timestamp_fetch: None,
         }
     }
 
@@ -220,14 +245,88 @@ impl TableServices {
     }
 
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
+        self.refresh_selected_timestamp();
+        let runtime_label = self.format_runtime();
+
         let states: HashMap<String, String> = if let Ok(states) = self.states.try_lock() {
             states.clone()
         } else {
             HashMap::new()
         };
-        let rows = generate_rows(&self.filtered_services, &states);
-        let table = generate_table(&rows, self.ignore_key_events); 
+        let mut rows = generate_rows(&self.filtered_services, &states);
+
+        if let (Some(label), Some(idx)) = (runtime_label.as_deref(), self.table_state.selected()) {
+            if let Some(service) = self.filtered_services.get(idx) {
+                if service.state().active() == "active" {
+                    rows[idx] = build_service_row(service, &states, Some(label));
+                }
+            }
+        }
+
+        let table = generate_table(&rows, self.ignore_key_events);
         frame.render_stateful_widget(&table, area, &mut self.table_state);
+    }
+
+    pub fn has_active_runtime(&self) -> bool {
+        self.active_enter_timestamp.is_some()
+    }
+
+    pub fn invalidate_timestamp(&mut self) {
+        self.selected_service_name = None;
+        self.active_enter_timestamp = None;
+        self.last_timestamp_fetch = None;
+    }
+
+    fn refresh_selected_timestamp(&mut self) {
+        let selected = self.get_selected_service();
+        let current_name = selected.as_ref().map(|s| s.name().to_string());
+
+        let selection_changed = current_name != self.selected_service_name;
+        let stale = self.last_timestamp_fetch
+            .map(|t| t.elapsed() >= Duration::from_secs(30))
+            .unwrap_or(true);
+
+        if !selection_changed && !stale {
+            return;
+        }
+
+        self.active_enter_timestamp = selected.as_ref()
+            .filter(|s| s.state().active() == "active")
+            .and_then(|s| {
+                self.usecase
+                    .borrow()
+                    .get_active_enter_timestamp(s.name())
+                    .ok()
+                    .filter(|&ts| ts > 0)
+            });
+        self.selected_service_name = current_name;
+        self.last_timestamp_fetch = Some(Instant::now());
+    }
+
+    fn format_runtime(&self) -> Option<String> {
+        let ts = self.active_enter_timestamp?;
+        let now_micros = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_micros() as u64;
+        if now_micros <= ts {
+            return Some("0s".to_string());
+        }
+        let secs = (now_micros - ts) / 1_000_000;
+        let days = secs / 86400;
+        let hours = (secs % 86400) / 3600;
+        let mins = (secs % 3600) / 60;
+        let s = secs % 60;
+        let prefix = "Uptime:";
+        Some(if days > 0 {
+            format!("{prefix} {days}d {hours}h")
+        } else if hours > 0 {
+            format!("{prefix} {hours}h {mins}m")
+        } else if mins > 0 {
+            format!("{prefix} {mins}m {s}s")
+        } else {
+            format!("{prefix} {s}s")
+        })
     }
 
     pub fn set_usecase(&mut self, usecase: Rc<RefCell<ServicesManager>>) {
@@ -243,10 +342,11 @@ impl TableServices {
     }
 
     pub fn get_selected_service(&self) -> Option<Service> {
-        if let Some(selected_index) = self.table_state.selected()
-            && let Some(service) = self.filtered_services.get(selected_index) {
+        if let Some(selected_index) = self.table_state.selected() {
+            if let Some(service) = self.filtered_services.get(selected_index) {
                 return Some(service.clone());
             }
+        }
         None
     }
 
@@ -264,13 +364,14 @@ impl TableServices {
             self.table_state.select(Some(0));
         }
         // If the selected index is out of bounds, reset to first item or None
-        else if let Some(selected) = self.table_state.selected()
-            && selected >= self.filtered_services.len() {
+        else if let Some(selected) = self.table_state.selected() {
+            if selected >= self.filtered_services.len() {
                 if self.filtered_services.is_empty() {
                     self.table_state.select(None);
                 } else {
                     self.table_state.select(Some(0));
                 }
+            }
         }
     }
 
