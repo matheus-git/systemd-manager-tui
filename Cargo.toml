@@ -1,6 +1,6 @@
 [package]
 name = "systemd-manager-tui"
-version = "1.2.1"
+version = "1.2.2"
 description = "TUI for managing systemd services"
 authors = ["Matheus-git <mathiew0@gmail.com>"]
 license = "MIT"
@@ -45,8 +45,8 @@ copyright = "MIT @ Matheus-git"
 name = "systemd-manager-tui"
 summary = "TUI for managing systemd services"
 license = "MIT"
-arch = "aarch64"
+arch = "x86_64"
 
 assets = [
-    { source = "target/aarch64-unknown-linux-musl/release/systemd-manager-tui", dest = "/usr/bin/systemd-manager-tui", mode = "755" }
+    { source = "target/x86_64-unknown-linux-musl/release/systemd-manager-tui", dest = "/usr/bin/systemd-manager-tui", mode = "755" }
 ]
