@@ -8,7 +8,7 @@ This tool allows you to manage systemd services with ease. You can view logs, li
 
 It's possible to navigate between system and user units, and choose to list only services (in runtime) or ALL units. 
 
-## Screenshots
+## Quick Preview
 
 ![screenshot_list](https://raw.githubusercontent.com/matheus-git/systemd-manager-tui/main/assets/systemd-manager-tui.gif)
 View [screenshots](https://github.com/matheus-git/systemd-manager-tui/blob/main/docs/screenshots.md)
