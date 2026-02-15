@@ -52,6 +52,7 @@ fn build_service_row(
         let state_style = match service.state().active() {
             "active" => Style::default().fg(Color::Green),
             "activating" => Style::default().fg(Color::Yellow),
+            "inactive" => Style::default().fg(Color::DarkGray),
             _ => Style::default().fg(Color::Red),
         };
         let sub = service.state().sub();
