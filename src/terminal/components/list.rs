@@ -317,14 +317,15 @@ impl TableServices {
         let hours = (secs % 86400) / 3600;
         let mins = (secs % 3600) / 60;
         let s = secs % 60;
+        let prefix = "Uptime:";
         Some(if days > 0 {
-            format!("{days}d {hours}h {mins}m {s}s")
+            format!("{prefix} {days}d {hours}h")
         } else if hours > 0 {
-            format!("{hours}h {mins}m {s}s")
+            format!("{prefix} {hours}h {mins}m")
         } else if mins > 0 {
-            format!("{mins}m {s}s")
+            format!("{prefix} {mins}m {s}s")
         } else {
-            format!("{s}s")
+            format!("{prefix} {s}s")
         })
     }
 
