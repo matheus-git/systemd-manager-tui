@@ -175,7 +175,7 @@ impl App {
                         if self.show_help {
                             self.show_help = false;
                         } else {
-                            self.on_key_event(key);
+                            self.on_key_event(key, &mut terminal)?;
                             self.service_log.on_key_event(key);
                         }
                     }
@@ -189,7 +189,7 @@ impl App {
                                 self.table_service.set_selected_index(0);
                             }
                         } else {
-                            self.on_key_event(key);
+                            self.on_key_event(key, &mut terminal)?;
                             self.on_key_horizontal_event(key, self.filter.input_mode == InputMode::Editing);
                             self.table_service.on_key_event(key);
                             self.filter.on_key_event(key);
@@ -199,7 +199,7 @@ impl App {
                         if self.show_help {
                             self.show_help = false;
                         } else {
-                            self.on_key_event(key);
+                            self.on_key_event(key, &mut terminal)?;
                             self.details.on_key_event(key);
                         }
                     }
@@ -339,7 +339,7 @@ impl App {
     #[allow(clippy::unused_self)]
     fn draw_help_popup(&self, frame: &mut Frame, area: Rect) {
         let popup_width = std::cmp::min(80, area.width.saturating_sub(4));
-        let popup_height = std::cmp::min(34, area.height.saturating_sub(4));
+        let popup_height = std::cmp::min(38, area.height.saturating_sub(4));
 
         let popup_x = (area.width.saturating_sub(popup_width)) / 2;
         let popup_y = (area.height.saturating_sub(popup_height)) / 2;
@@ -387,6 +387,10 @@ impl App {
             Line::from(vec![Span::styled("Information:", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
             Line::from("v - View service logs"),
             Line::from("c - View unit file details"),
+            Line::from(""),
+            Line::from(vec![Span::styled("Application:", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
+            Line::from("Ctrl+z - Suspend"),
+            Line::from("Ctrl+c - Quit"),
             Line::from(""),
             Line::from(vec![Span::styled(
                 "Press ? or any key to close",
@@ -598,7 +602,7 @@ impl App {
         frame.render_widget(help_block, help_area);
     }
 
-    fn on_key_event(&mut self, key: KeyEvent) {
+    fn on_key_event(&mut self, key: KeyEvent, terminal: &mut DefaultTerminal) -> Result<()> {
          if let KeyEvent {
                  modifiers: KeyModifiers::CONTROL,
                  code: KeyCode::Char('c' | 'C'),
@@ -606,7 +610,32 @@ impl App {
              } = key {
              self.quit();
          }
+         if let KeyEvent {
+                 modifiers: KeyModifiers::CONTROL,
+                 code: KeyCode::Char('z'),
+                 ..
+             } = key {
+             self.suspend_tui(terminal)?;
+         }
+        Ok(())
     }
+
+    fn suspend_tui(&mut self, 
+        terminal: &mut DefaultTerminal,
+    ) -> Result<()> {
+        disable_raw_mode()?;
+        execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+        terminal.show_cursor()?;
+
+        unsafe {
+            libc::raise(libc::SIGTSTP);
+        }
+
+        self.resume_tui(terminal)?;
+
+        Ok(())
+    }
+
     fn on_key_horizontal_event(&mut self, key: KeyEvent, is_filtering: bool) {
         let left_keys = [KeyCode::Left, KeyCode::Char('h')];
         let right_keys = [KeyCode::Right, KeyCode::Char('l')];
