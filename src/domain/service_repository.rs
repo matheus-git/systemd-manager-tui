@@ -20,4 +20,5 @@ pub trait ServiceRepository: Send + Sync {
     fn reload_daemon(&self) -> Result<(), Box<dyn std::error::Error>>;
     fn change_connection(&mut self, connection_type: ConnectionType) -> Result<(), zbus::Error>;
     fn systemctl_cat(&self, name: &str) -> Result<String, Box<dyn Error>>;
+    fn get_active_enter_timestamp(&self, name: &str) -> Result<u64, Box<dyn Error>>;
 }

@@ -133,12 +133,14 @@ impl App {
                     continue;
                 }
 
-                if event::poll(Duration::from_millis(100)).unwrap_or(false) 
-                    && let Ok(Event::Key(key_event)) = event::read() 
-                        && key_event.kind == KeyEventKind::Press
+                if event::poll(Duration::from_millis(100)).unwrap_or(false) {
+                    if let Ok(Event::Key(key_event)) = event::read() {
+                        if key_event.kind == KeyEventKind::Press
                             && event_tx.send(AppEvent::Key(key_event)).is_err()
-                {
-                    break;
+                        {
+                            break;
+                        }
+                    }
                 }
             }
         });
@@ -154,7 +156,20 @@ impl App {
                 Status::Details => self.draw_details_status(&mut terminal)?,
             }
 
-            match self.event_rx.recv()? {
+            let use_timeout = self.status == Status::List
+                && self.table_service.has_active_runtime();
+
+            let event = if use_timeout {
+                match self.event_rx.recv_timeout(Duration::from_secs(1)) {
+                    Ok(ev) => ev,
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                }
+            } else {
+                self.event_rx.recv()?
+            };
+
+            match event {
                 AppEvent::Key(key) => match self.status {
                     Status::Log => {
                         if self.show_help {
@@ -191,6 +206,7 @@ impl App {
                 },
                 AppEvent::Action(Actions::ServiceAction(action)) => {
                     self.table_service.act_on_selected_service(&action);
+                    self.table_service.invalidate_timestamp();
                 }
                 AppEvent::Action(Actions::UpdateIgnoreListKeys(bool)) => {
                     self.table_service.set_ignore_key_events(bool);
@@ -203,12 +219,10 @@ impl App {
                     self.service_log.update(data.0, data.1);
                 }
                 AppEvent::Action(Actions::RefreshLog) => {
-                    if self.status == Status::Log
-                        && let Some(service) =
-                            self.table_service.get_selected_service()
-                    {
-                        self.service_log
-                            .fetch_log_and_dispatch(&service);
+                    if self.status == Status::Log {
+                        if let Some(service) = self.table_service.get_selected_service() {
+                            self.service_log.fetch_log_and_dispatch(&service);
+                        }
                     }
                 }
                 AppEvent::Action(Actions::GoLog) => {
@@ -235,12 +249,12 @@ impl App {
                 }
                 AppEvent::Action(Actions::EditCurrentService) => {
                     if let Some(service) = &self.table_service.get_selected_service() {
-                        self.edit_unit(&mut terminal, service.name())?;    
+                        self.edit_unit(&mut terminal, service.name())?;
                         self.event_tx.send(AppEvent::Action(Actions::RefreshDetails))?;
                     }
                 }
                 AppEvent::Error(error_msg) => {
-                    self.error_popup(&mut terminal, &error_msg)?;    
+                    self.error_popup(&mut terminal, &error_msg)?;
                 }
                 AppEvent::Action(Actions::ShowHelp) => {
                     self.show_help = !self.show_help;
@@ -503,7 +517,7 @@ impl App {
             .areas(area);
 
             let filter_state = &self.table_service.get_active_filter_state();
-            
+
             let system_tab = if self.selected_tab_index == 0 && *filter_state != ActiveFilterState::All {
                 Line::from(vec![
                     Span::raw("System units"),
@@ -515,7 +529,7 @@ impl App {
             } else {
                 Line::from("System units")
             };
-            
+
             let session_tab = if self.selected_tab_index == 1 && *filter_state != ActiveFilterState::All{
                 Line::from(vec![
                     Span::raw("Session units"),
@@ -527,7 +541,7 @@ impl App {
             } else {
                 Line::from("Session units")
             };
-            
+
             let tabs = Tabs::new(vec![system_tab, session_tab])
                 .select(self.selected_tab_index)
                 .highlight_style(Style::default().fg(Color::Yellow));
@@ -539,7 +553,7 @@ impl App {
             let table_service = &mut self.table_service;
             self.filter.draw(frame, filter_box);
             table_service.render(frame, list_box);
-            
+
             // Show help popup if needed
             if self.show_help {
                 self.draw_help_popup(frame, area);
@@ -623,6 +637,8 @@ impl App {
         }
     }
     fn update_connection_and_reset(&mut self) {
+        self.table_service.invalidate_timestamp();
+
         let conn_type = match self.selected_tab_index {
             0 => ConnectionType::System,
             _ => ConnectionType::Session,
