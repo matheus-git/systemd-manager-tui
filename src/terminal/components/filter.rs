@@ -178,11 +178,14 @@ impl Filter {
     pub fn on_key_event(&mut self, key: KeyEvent) {
         match self.input_mode {
             InputMode::Normal => match key.code {
-                KeyCode::Char('i') => {
+                KeyCode::Char('i') | KeyCode::Char('/') => {
                     self.sender
                         .send(AppEvent::Action(Actions::UpdateIgnoreListKeys(true)))
                         .unwrap();
                     self.input_mode = InputMode::Editing;
+                    if self.input.len() == 0 {
+                        self.character_index = 0;
+                    }
                 }
 
                 KeyCode::Esc => {
@@ -261,7 +264,7 @@ impl Filter {
 
         let (msg, style) = match self.input_mode {
             InputMode::Normal => (
-                vec!["Press ".into(), "i".bold(), " to start filtering.".into()],
+                vec!["Press ".into(), "i".bold(), " or ".into(), "/".bold(), " to start filtering.".into()],
                 Style::default(),
             ),
             InputMode::Editing => (
@@ -284,7 +287,7 @@ impl Filter {
                 InputMode::Normal => Style::default(),
                 InputMode::Editing => Style::default().fg(Color::Yellow),
             })
-            .block(Block::bordered().title("Input"));
+            .block(Block::bordered().title("Filter"));
         frame.render_widget(input, input_area);
         match self.input_mode {
             InputMode::Normal => {}
