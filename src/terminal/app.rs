@@ -51,7 +51,8 @@ pub enum Actions {
     EditCurrentService,
     ServiceAction(ServiceAction),
     ShowHelp,
-    Redraw
+    Redraw,
+    UpdateTimestamp(String, Option<u64>),
 }
 
 pub enum AppEvent {
@@ -233,6 +234,9 @@ impl App {
                 AppEvent::Action(Actions::ResetList) => {
                     self.table_service.set_usecase(self.usecases.clone());
                 },
+                AppEvent::Action(Actions::UpdateTimestamp(name, ts)) => {
+                    self.table_service.update_timestamp(name, ts);
+                }
                 AppEvent::Action(Actions::UpdateDetails | Actions::Redraw) => {}
                 AppEvent::Action(Actions::RefreshDetails) => {
                     if self.status == Status::Details {

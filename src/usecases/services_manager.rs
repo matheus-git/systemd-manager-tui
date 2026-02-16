@@ -103,8 +103,8 @@ impl ServicesManager {
         self.repository.lock().unwrap().systemctl_cat(service.name())
     }
 
-    pub fn get_active_enter_timestamp(&self, name: &str) -> Result<u64, Box<dyn Error>> {
-        self.repository.lock().unwrap().get_active_enter_timestamp(name)
+    pub fn repository_handle(&self) -> Arc<Mutex<Box<dyn ServiceRepository>>> {
+        Arc::clone(&self.repository)
     }
 }
 
