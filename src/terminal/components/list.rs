@@ -184,11 +184,14 @@ pub struct TableServices {
     active_enter_timestamp: Option<u64>,
     selected_service_name: Option<String>,
     last_timestamp_fetch: Option<Instant>,
+    timestamp_request_tx: Sender<String>,
+    timestamp_request_rx: Option<Receiver<String>>,
 }
 
 impl TableServices {
     pub fn new(sender: Sender<AppEvent>,  usecase: Rc<RefCell<ServicesManager>>) -> Self {
         let (event_tx, event_rx) = mpsc::channel::<QueryUnitFile>();
+        let (timestamp_request_tx, timestamp_request_rx) = mpsc::channel::<String>();
         let filter_all = false;
 
         let mut table_state = TableState::default();
@@ -210,6 +213,8 @@ impl TableServices {
             active_enter_timestamp: None,
             selected_service_name: None,
             last_timestamp_fetch: None,
+            timestamp_request_tx,
+            timestamp_request_rx: Some(timestamp_request_rx),
         }
     }
 
@@ -223,6 +228,7 @@ impl TableServices {
         self.filtered_services.clone_from(&services);
         self.services = services;
         self.spawn_query_listener();
+        self.spawn_timestamp_worker();
     }
 
     fn spawn_query_listener(&self) {
@@ -278,6 +284,30 @@ impl TableServices {
         self.last_timestamp_fetch = None;
     }
 
+    fn spawn_timestamp_worker(&mut self) {
+        let rx = self.timestamp_request_rx.take().expect("timestamp receiver already taken");
+        let repo = self.usecase.borrow().repository_handle();
+        let sender = self.sender.clone();
+
+        thread::spawn(move || {
+            loop {
+                let mut name = match rx.recv() {
+                    Ok(n) => n,
+                    Err(_) => break,
+                };
+                // Drain stale requests, keep only the latest
+                while let Ok(n) = rx.try_recv() {
+                    name = n;
+                }
+                let ts = repo.lock().unwrap()
+                    .get_active_enter_timestamp(&name)
+                    .ok()
+                    .filter(|&t| t > 0);
+                let _ = sender.send(AppEvent::Action(Actions::UpdateTimestamp(name, ts)));
+            }
+        });
+    }
+
     fn refresh_selected_timestamp(&mut self) {
         let selected = self.get_selected_service();
         let current_name = selected.as_ref().map(|s| s.name().to_string());
@@ -291,17 +321,23 @@ impl TableServices {
             return;
         }
 
-        self.active_enter_timestamp = selected.as_ref()
-            .filter(|s| s.state().active() == "active")
-            .and_then(|s| {
-                self.usecase
-                    .borrow()
-                    .get_active_enter_timestamp(s.name())
-                    .ok()
-                    .filter(|&ts| ts > 0)
-            });
+        if selection_changed {
+            self.active_enter_timestamp = None;
+        }
+
         self.selected_service_name = current_name;
         self.last_timestamp_fetch = Some(Instant::now());
+
+        if let Some(s) = selected.as_ref().filter(|s| s.state().active() == "active") {
+            let _ = self.timestamp_request_tx.send(s.name().to_string());
+        }
+    }
+
+    pub fn update_timestamp(&mut self, name: String, ts: Option<u64>) {
+        if self.selected_service_name.as_deref() == Some(name.as_str()) {
+            self.active_enter_timestamp = ts;
+            self.last_timestamp_fetch = Some(Instant::now());
+        }
     }
 
     fn format_runtime(&self) -> Option<String> {
