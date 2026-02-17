@@ -24,8 +24,10 @@ use rayon::prelude::*;
 
 const PADDING: Padding = Padding::new(1, 1, 1, 1);
 
+pub const LOADING_PLACEHOLDER: &str = "Loading";
+
 fn resolve_file<'a>(service: &'a Service, states: &'a HashMap<String, String>) -> &'a str {
-    if service.state().file() == "..." {
+    if service.state().file() == LOADING_PLACEHOLDER {
         if let Some(state) = states.get(service.name()) {
             state.as_str()
         } else {
@@ -41,6 +43,8 @@ fn build_service_row(
     states: &HashMap<String, String>,
     runtime_label: Option<&str>,
 ) -> Row<'static> {
+    let file = resolve_file(service, states);
+
     let highlight_style = Style::default()
         .fg(Color::Cyan)
         .add_modifier(Modifier::BOLD);
@@ -64,12 +68,20 @@ fn build_service_row(
         Cell::from(active).style(state_style)
     };
 
-    let file = resolve_file(service, states);
+    let file_style = if file == LOADING_PLACEHOLDER {
+        Style::default()
+            .fg(Color::Gray)
+            .add_modifier(Modifier::ITALIC | Modifier::DIM)
+    }else {
+        normal_style
+    };
+
+
 
     Row::new(vec![
         Cell::from(service.name().to_string()).style(highlight_style),
         active_cell,
-        Cell::from(file.to_string()).style(normal_style),
+        Cell::from(file.to_string()).style(file_style),
         Cell::from(service.state().load().to_string()).style(normal_style),
         Cell::from(service.description().to_string()).style(normal_style),
     ])

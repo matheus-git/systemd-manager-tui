@@ -10,6 +10,7 @@ use crate::domain::service_repository::ServiceRepository;
 use crate::domain::service_state::ServiceState;
 use rayon::prelude::*;
 use std::collections::HashMap;
+use crate::terminal::components::list::LOADING_PLACEHOLDER;
 
 const SLEEP_DURATION: u64 = 300;
 
@@ -111,7 +112,7 @@ impl ServiceRepository for SystemdServiceAdapter {
                         .. 
                     )| {
                         let service_state =
-                            ServiceState::new(load_state, active_state, sub_state, "...".to_string());
+                            ServiceState::new(load_state, active_state, sub_state, LOADING_PLACEHOLDER.to_string());
 
                         Service::new(name, description, service_state)
                     },
@@ -131,7 +132,7 @@ impl ServiceRepository for SystemdServiceAdapter {
                         .. 
                     )| {
                         let service_state =
-                            ServiceState::new(load_state, active_state, sub_state, "...".to_string());
+                            ServiceState::new(load_state, active_state, sub_state, LOADING_PLACEHOLDER.to_string());
 
                         Service::new(name, description, service_state)
                     },
