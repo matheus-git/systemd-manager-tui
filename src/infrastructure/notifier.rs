@@ -8,7 +8,12 @@ use std::thread;
 
 pub fn start_notifier() {
     thread::spawn(|| {
-        let notifier = match Notifier::new(Connection::system().unwrap()) {
+        let connection = match Connection::system() {
+            Ok(connection) => connection,
+            Err(_e) => return
+        };
+
+        let notifier = match Notifier::new(connection) {
             Ok(notifier) => notifier,
             Err(_e) => {
                 return;
@@ -20,7 +25,12 @@ pub fn start_notifier() {
     });
 
     thread::spawn(|| {
-        let notifier = match Notifier::new(Connection::session().unwrap()) {
+         let connection = match Connection::session() {
+            Ok(connection) => connection,
+            Err(_e) => return
+        };
+        
+        let notifier = match Notifier::new(connection) {
             Ok(notifier) => notifier,
             Err(_e) => {
                 return;
