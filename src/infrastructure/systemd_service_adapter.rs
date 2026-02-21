@@ -39,13 +39,15 @@ pub struct SystemdServiceAdapter {
 
 impl SystemdServiceAdapter {
     pub fn new(connection_type: ConnectionType) -> Result<Self, Error> {
-        let connection = 
-            match connection_type {
-                ConnectionType::Session => Connection::session()?,
-                ConnectionType::System => Connection::system()?
-            };
+        let connection = match connection_type {
+            ConnectionType::Session => Connection::session()?,
+            ConnectionType::System => Connection::system()?
+        };
 
-        Ok(Self {connection, connection_type})
+        Ok(Self {
+            connection, 
+            connection_type
+        })
     }
 
     fn manager_proxy(&self) -> Result<Proxy<'static>, Box<dyn std::error::Error>> {
@@ -57,7 +59,8 @@ impl SystemdServiceAdapter {
         )?;
         Ok(proxy)
     }
-}
+
+    }
 
 impl ServiceRepository for SystemdServiceAdapter {
     fn change_connection(&mut self, connection_type: ConnectionType) -> Result<(), Error> {
@@ -143,7 +146,6 @@ impl ServiceRepository for SystemdServiceAdapter {
         Ok(services)
     }
 
-    #[allow(dead_code)]
     fn list_service_files(&self) -> Result<Vec<Service>, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
 
@@ -322,4 +324,6 @@ impl ServiceRepository for SystemdServiceAdapter {
         let timestamp: u64 = variant.try_into()?;
         Ok(timestamp)
     }
+
+
 }
