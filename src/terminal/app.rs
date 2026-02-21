@@ -134,15 +134,13 @@ impl App {
                     continue;
                 }
 
-                if event::poll(Duration::from_millis(100)).unwrap_or(false) {
-                    if let Ok(Event::Key(key_event)) = event::read() {
-                        if key_event.kind == KeyEventKind::Press
+                if event::poll(Duration::from_millis(100)).unwrap_or(false) 
+                    && let Ok(Event::Key(key_event)) = event::read() 
+                        && key_event.kind == KeyEventKind::Press
                             && event_tx.send(AppEvent::Key(key_event)).is_err()
                         {
                             break;
                         }
-                    }
-                }
             }
         });
     }
@@ -220,10 +218,9 @@ impl App {
                     self.service_log.update(data.0, data.1);
                 }
                 AppEvent::Action(Actions::RefreshLog) => {
-                    if self.status == Status::Log {
-                        if let Some(service) = self.table_service.get_selected_service() {
+                    if self.status == Status::Log 
+                        && let Some(service) = self.table_service.get_selected_service() {
                             self.service_log.fetch_log_and_dispatch(&service);
-                        }
                     }
                 }
                 AppEvent::Action(Actions::GoLog) => {

@@ -76,7 +76,7 @@ impl ServicesManager {
              }
         }
 
-        all.sort_by(|a, b| a.name().to_ascii_lowercase().cmp(&b.name().to_ascii_lowercase()));
+        all.sort_by_key(|a| a.name().to_ascii_lowercase());
 
         let repo = Arc::clone(&self.repository);
         thread::spawn(move || {

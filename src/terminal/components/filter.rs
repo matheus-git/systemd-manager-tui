@@ -183,7 +183,7 @@ impl Filter {
                         .send(AppEvent::Action(Actions::UpdateIgnoreListKeys(true)))
                         .unwrap();
                     self.input_mode = InputMode::Editing;
-                    if self.input.len() == 0 {
+                    if self.input.is_empty() {
                         self.character_index = 0;
                     }
                 }

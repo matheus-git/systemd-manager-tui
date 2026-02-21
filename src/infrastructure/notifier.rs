@@ -74,15 +74,12 @@ impl Notifier {
                 continue;
             }
 
-            if let Some(state_val) = changed.get("ActiveState") {
-                if let Ok(state) = <&str>::try_from(state_val) {
-                    if state == "failed" {
-                        if let Some(path) = msg.header().path() {
+            if let Some(state_val) = changed.get("ActiveState")
+                && let Ok(state) = <&str>::try_from(state_val) 
+                    && state == "failed" 
+                        && let Some(path) = msg.header().path() {
                             let name = decode_unit_path(path.as_str());
                             self.send_notification(&format!("{} {}", name, state))?;
-                        }
-                    }
-                }
             }
         }
     }
@@ -123,14 +120,12 @@ fn decode_unit_path(path: &str) -> String {
     let mut i = 0;
 
     while i < bytes.len() {
-        if bytes[i] == b'_' && i + 2 < bytes.len() {
-            if let Ok(hex) = std::str::from_utf8(&bytes[i + 1..i + 3]) {
-                if let Ok(val) = u8::from_str_radix(hex, 16) {
+        if bytes[i] == b'_' && i + 2 < bytes.len() 
+            && let Ok(hex) = std::str::from_utf8(&bytes[i + 1..i + 3]) 
+                && let Ok(val) = u8::from_str_radix(hex, 16) {
                     out.push(val as char);
                     i += 3;
                     continue;
-                }
-            }
         }
 
         out.push(bytes[i] as char);

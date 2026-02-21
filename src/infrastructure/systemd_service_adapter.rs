@@ -100,10 +100,8 @@ impl ServiceRepository for SystemdServiceAdapter {
 
         let units: Vec<SystemdUnit> = proxy.call("ListUnits", &())?;
 
-        let services: Vec<Service>;
-        
-        if filter {
-            services = units
+        let services: Vec<Service> = if filter {
+            units
                 .into_par_iter()
                 .map(
                     |(
@@ -120,9 +118,9 @@ impl ServiceRepository for SystemdServiceAdapter {
                         Service::new(name, description, service_state)
                     },
                 )
-                .collect::<Vec<_>>();
+                .collect::<Vec<_>>()
         }else {
-            services = units
+            units
                 .into_par_iter()
                 .filter(|(name, ..)| name.ends_with(".service"))
                 .map(
@@ -140,8 +138,8 @@ impl ServiceRepository for SystemdServiceAdapter {
                         Service::new(name, description, service_state)
                     },
                 )
-                .collect::<Vec<_>>();
-        }
+                .collect::<Vec<_>>()
+        };
 
         Ok(services)
     }

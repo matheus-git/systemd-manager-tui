@@ -231,12 +231,7 @@ impl TableServices {
     }
 
     pub fn init(&mut self) {
-        let services = if let Ok(svcs) = self.usecase.borrow().list_services(self.filter_all, self.event_tx.clone()) {
-                svcs
-         } else {
-                vec![]
-        };
-
+        let services = self.usecase.borrow().list_services(self.filter_all, self.event_tx.clone()).unwrap_or_default();
         self.filtered_services.clone_from(&services);
         self.services = services;
         self.spawn_query_listener();
@@ -274,12 +269,10 @@ impl TableServices {
         };
         let mut rows = generate_rows(&self.filtered_services, &states);
 
-        if let (Some(label), Some(idx)) = (runtime_label.as_deref(), self.table_state.selected()) {
-            if let Some(service) = self.filtered_services.get(idx) {
-                if service.state().active() == "active" {
+        if let (Some(label), Some(idx)) = (runtime_label.as_deref(), self.table_state.selected())
+            && let Some(service) = self.filtered_services.get(idx) 
+                && service.state().active() == "active" {
                     rows[idx] = build_service_row(service, &states, Some(label));
-                }
-            }
         }
 
         let table = generate_table(&rows, self.ignore_key_events);
@@ -302,11 +295,8 @@ impl TableServices {
         let sender = self.sender.clone();
 
         thread::spawn(move || {
-            loop {
-                let mut name = match rx.recv() {
-                    Ok(n) => n,
-                    Err(_) => break,
-                };
+            while let Ok(n) = rx.recv() {
+                let mut name = n;
                 // Drain stale requests, keep only the latest
                 while let Ok(n) = rx.try_recv() {
                     name = n;
@@ -391,10 +381,10 @@ impl TableServices {
     }
 
     pub fn get_selected_service(&self) -> Option<Service> {
-        if let Some(selected_index) = self.table_state.selected() {
-            if let Some(service) = self.filtered_services.get(selected_index) {
+        if let Some(selected_index) = self.table_state.selected() 
+            && let Some(service) = self.filtered_services.get(selected_index) {
                 return Some(service.clone());
-            }
+            
         }
         None
     }
@@ -413,14 +403,14 @@ impl TableServices {
             self.table_state.select(Some(0));
         }
         // If the selected index is out of bounds, reset to first item or None
-        else if let Some(selected) = self.table_state.selected() {
-            if selected >= self.filtered_services.len() {
+        else if let Some(selected) = self.table_state.selected() 
+            && selected >= self.filtered_services.len() {
                 if self.filtered_services.is_empty() {
                     self.table_state.select(None);
                 } else {
                     self.table_state.select(Some(0));
                 }
-            }
+            
         }
     }
 
