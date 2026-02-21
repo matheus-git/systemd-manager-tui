@@ -2,11 +2,11 @@
 
 ![rust](https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white)
 
-A program for managing systemd services through a TUI (Terminal User Interfaces).
+A TUI application for managing systemd services.
 
-This tool allows you to manage systemd services with ease. You can view logs, list services, view properties, edit unit file and control their lifecycle—start, stop, restart, mask, unmask, enable, and disable—using the D-Bus API. It also supports Vim-like navigation.
+This tool allows you to manage systemd services with ease. You can view logs, list services, view properties, edit unit files, and control their lifecycle: start, stop, restart, mask, unmask, enable, and disable using the D-Bus API. It also supports Vim-like navigation. It is possible to navigate between system and user units and choose to list only running services or all units.
 
-It's possible to navigate between system and user units, and choose to list only services (in runtime) or ALL units. 
+Additionally, it runs a background notifier that monitors systemd events and sends desktop notifications whenever a unit enters a failed state, helping you quickly detect service failures without constantly watching the interface.
 
 ## Quick Preview
 
