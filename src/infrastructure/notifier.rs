@@ -6,7 +6,7 @@ use zbus::Error;
 use std::collections::HashMap;
 use std::thread;
 
-pub fn start_watchers() {
+pub fn start_notifier() {
     thread::spawn(|| {
         let notifier = match Notifier::new(Connection::system().unwrap()) {
             Ok(notifier) => notifier,

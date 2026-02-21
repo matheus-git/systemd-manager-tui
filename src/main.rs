@@ -3,7 +3,7 @@ mod infrastructure;
 mod terminal;
 mod usecases;
 use infrastructure::systemd_service_adapter::{ConnectionType, SystemdServiceAdapter};
-use infrastructure::notifier::start_watchers;
+use infrastructure::notifier::start_notifier;
 use terminal::app::App;
 use usecases::services_manager::ServicesManager;
 
@@ -24,7 +24,7 @@ fn main() -> color_eyre::Result<()> {
     
     let (event_tx, event_rx) = mpsc::channel::<AppEvent>();
 
-    start_watchers();
+    start_notifier();
     let systemd_adapter = SystemdServiceAdapter::new(ConnectionType::System)?;
     let usecase = Rc::new(RefCell::new(ServicesManager::new(Box::new(
         systemd_adapter
