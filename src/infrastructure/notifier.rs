@@ -5,6 +5,9 @@ use zbus::zvariant::{Value, OwnedValue};
 use zbus::Error;
 use std::collections::HashMap;
 use std::thread;
+use std::time::Duration;
+
+const SLEEP_DURATION: u64 = 300;
 
 pub fn start_notifier() {
     thread::spawn(|| {
@@ -70,7 +73,10 @@ impl Notifier {
         loop {
             let msg = match iter.next() {
                 Some(Ok(m)) => m,
-                _ => continue,
+                _ => {
+                    thread::sleep(Duration::from_millis(SLEEP_DURATION));
+                    continue
+                },
             };
 
             let (interface, changed, _invalidated): (
