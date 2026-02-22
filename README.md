@@ -6,8 +6,6 @@ A TUI application for managing systemd services.
 
 This tool allows you to manage systemd services with ease. You can view logs, list services, view properties, edit unit files, and control their lifecycle: start, stop, restart, mask, unmask, enable, and disable using the D-Bus API. It also supports Vim-like navigation. It is possible to navigate between system and user units and choose to list only running services or all units.
 
-Additionally, it runs a background notifier that monitors systemd events and sends desktop notifications whenever a unit enters a failed state, helping you quickly detect service failures without constantly watching the interface.
-
 ## Quick Preview
 
 ![screenshot_list](https://raw.githubusercontent.com/matheus-git/systemd-manager-tui/main/assets/systemd-manager-tui.gif)
