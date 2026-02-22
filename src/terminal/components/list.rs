@@ -595,12 +595,29 @@ impl TableServices {
             let usecase = binding_usecase.borrow();
             match action {
                 ServiceAction::ToggleMask => {
-                    match service.state().file() {
-                        "masked" | "masked-runtime" => self.handle_service_result(usecase.unmask_service(&service)),
-                        _ => self.handle_service_result(usecase.mask_service(&service)),
+                    let state_opt = match self.states.lock() {
+                        Ok(guard) => guard
+                            .get(service.name())
+                            .cloned(),
+                        Err(e) => {
+                            self.sender.send(AppEvent::Error(e.to_string())).unwrap();
+                            return;
+                        }
+                    };
+
+                    if let Some(state) = state_opt {
+                        match state.as_str() {
+                            "masked" | "masked-runtime" => {
+                                self.handle_service_result(usecase.unmask_service(&service));
+                            }
+                            _ => {
+                                self.handle_service_result(usecase.mask_service(&service));
+                            }
+                        }
+
+                        self.fetch_services();
+                        self.fetch_and_refresh(&self.old_filter_text.clone());
                     }
-                    self.fetch_services();
-                    self.fetch_and_refresh(&self.old_filter_text.clone());
                 },
                 ServiceAction::Start => self.handle_service_result(usecase.start_service(&service)),
                 ServiceAction::Stop => self.handle_service_result(usecase.stop_service(&service)),
