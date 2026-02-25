@@ -233,7 +233,11 @@ impl ServiceRepository for SystemdServiceAdapter {
 
     fn start_service(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
-        let reply: Option<OwnedObjectPath> = proxy.call_with_flags("StartUnit", MethodFlags::AllowInteractiveAuth.into(),  &(name, "replace"))?;
+        let reply: Option<OwnedObjectPath> = proxy.call_with_flags(
+            "StartUnit", 
+            MethodFlags::AllowInteractiveAuth.into(),  
+            &(name, "replace")
+        )?;
         reply.ok_or("No reply from StartUnit")?;
         let mut service = self.get_unit(name)?;
         while service.state().active().ends_with("ing") {
@@ -245,7 +249,11 @@ impl ServiceRepository for SystemdServiceAdapter {
 
     fn stop_service(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
-        let reply: Option<OwnedObjectPath> = proxy.call_with_flags("StopUnit", MethodFlags::AllowInteractiveAuth.into(), &(name.to_string(), "replace"))?;
+        let reply: Option<OwnedObjectPath> = proxy.call_with_flags(
+            "StopUnit", 
+            MethodFlags::AllowInteractiveAuth.into(), 
+            &(name.to_string(), "replace")
+        )?;
         reply.ok_or("No reply from StopUnit")?;
         let mut service = self.get_unit(name)?;
         while service.state().active().ends_with("ing") {
@@ -257,7 +265,11 @@ impl ServiceRepository for SystemdServiceAdapter {
 
     fn restart_service(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
-        let reply: Option<OwnedObjectPath> = proxy.call_with_flags("RestartUnit", MethodFlags::AllowInteractiveAuth.into(), &(name, "replace"))?;
+        let reply: Option<OwnedObjectPath> = proxy.call_with_flags(
+            "RestartUnit", 
+            MethodFlags::AllowInteractiveAuth.into(), 
+            &(name, "replace")
+        )?;
         reply.ok_or("No reply from Start")?;
         let mut service = self.get_unit(name)?;
         while service.state().active().ends_with("ing") {
@@ -269,6 +281,7 @@ impl ServiceRepository for SystemdServiceAdapter {
 
     fn enable_service(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
+        #[allow(clippy::type_complexity)]
         let reply: Option<(bool, Vec<(String, String, String)>)> =
             proxy.call_with_flags(
                 "EnableUnitFiles",
@@ -294,7 +307,11 @@ impl ServiceRepository for SystemdServiceAdapter {
     fn mask_service(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
         let reply: Option<Vec<(String, String, String)>> =
-            proxy.call_with_flags("MaskUnitFiles", MethodFlags::AllowInteractiveAuth.into(), &(vec![name], false, true))?;
+            proxy.call_with_flags(
+                "MaskUnitFiles", 
+                MethodFlags::AllowInteractiveAuth.into(), 
+                &(vec![name], false, true)
+            )?;
         reply.ok_or("No reply from MaskUnitFiles")?;
         self.get_unit(name)
     }
@@ -302,7 +319,11 @@ impl ServiceRepository for SystemdServiceAdapter {
     fn unmask_service(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
         let reply: Option<Vec<(String, String, String)>> =
-            proxy.call_with_flags("UnmaskUnitFiles", MethodFlags::AllowInteractiveAuth.into(), &(vec![name], false))?;
+            proxy.call_with_flags(
+                "UnmaskUnitFiles", 
+                MethodFlags::AllowInteractiveAuth.into(), 
+                &(vec![name], false)
+            )?;
         reply.ok_or("No reply from UnmaskUnitFiles")?;
         self.get_unit(name)
     }

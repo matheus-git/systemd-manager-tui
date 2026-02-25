@@ -85,7 +85,6 @@ impl Notifier {
                 Vec<String>,
             ) = msg.body().deserialize()?;
 
-
             if interface != "org.freedesktop.systemd1.Unit" {
                 continue;
             }
