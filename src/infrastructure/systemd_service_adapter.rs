@@ -13,6 +13,8 @@ use rayon::prelude::*;
 use std::collections::HashMap;
 use crate::terminal::components::list::LOADING_PLACEHOLDER;
 
+const SLEEP_DURATION: u64 = 100;
+
 type SystemdUnit = (
     String,
     String,
@@ -239,6 +241,7 @@ impl ServiceRepository for SystemdServiceAdapter {
             &(name, "replace")
         )?;
         reply.ok_or("No reply from StartUnit")?;
+        thread::sleep(Duration::from_millis(SLEEP_DURATION));
         let mut service = self.get_unit(name)?;
         while service.state().active().ends_with("ing") {
             service = self.get_unit(name)?;
@@ -255,6 +258,7 @@ impl ServiceRepository for SystemdServiceAdapter {
             &(name.to_string(), "replace")
         )?;
         reply.ok_or("No reply from StopUnit")?;
+        thread::sleep(Duration::from_millis(SLEEP_DURATION));
         let mut service = self.get_unit(name)?;
         while service.state().active().ends_with("ing") {
             service = self.get_unit(name)?;
@@ -271,6 +275,7 @@ impl ServiceRepository for SystemdServiceAdapter {
             &(name, "replace")
         )?;
         reply.ok_or("No reply from Start")?;
+        thread::sleep(Duration::from_millis(SLEEP_DURATION));
         let mut service = self.get_unit(name)?;
         while service.state().active().ends_with("ing") {
             service = self.get_unit(name)?;
@@ -289,6 +294,7 @@ impl ServiceRepository for SystemdServiceAdapter {
                 &(vec![name], false, false),
             )?;
         reply.ok_or("No reply from EnableUnitFiles")?;
+        thread::sleep(Duration::from_millis(SLEEP_DURATION));
         self.get_unit(name)
     }
 
@@ -301,6 +307,7 @@ impl ServiceRepository for SystemdServiceAdapter {
                 &(vec![name], false),
             )?;
         reply.ok_or("No reply from DisableUnitFiles")?;
+        thread::sleep(Duration::from_millis(SLEEP_DURATION));
         self.get_unit(name)
     }
 
@@ -313,6 +320,7 @@ impl ServiceRepository for SystemdServiceAdapter {
                 &(vec![name], false, true)
             )?;
         reply.ok_or("No reply from MaskUnitFiles")?;
+        thread::sleep(Duration::from_millis(SLEEP_DURATION));
         self.get_unit(name)
     }
 
@@ -325,12 +333,14 @@ impl ServiceRepository for SystemdServiceAdapter {
                 &(vec![name], false)
             )?;
         reply.ok_or("No reply from UnmaskUnitFiles")?;
+        thread::sleep(Duration::from_millis(SLEEP_DURATION));
         self.get_unit(name)
     }
 
     fn reload_daemon(&self) -> Result<(), Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
         proxy.call_with_flags::<&str, (), ()>("Reload", MethodFlags::AllowInteractiveAuth.into(), &())?;
+        thread::sleep(Duration::from_millis(SLEEP_DURATION));
         Ok(())
     }
 
