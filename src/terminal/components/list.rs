@@ -27,15 +27,13 @@ const PADDING: Padding = Padding::new(1, 1, 1, 1);
 pub const LOADING_PLACEHOLDER: &str = "Loading";
 
 fn resolve_file<'a>(service: &'a Service, states: Option<&'a HashMap<String, String>>) -> &'a str {
-    if let Some(states) = states && service.state().file() == LOADING_PLACEHOLDER {
-        if let Some(state) = states.get(service.name()) {
-            state.as_str()
-        } else {
-            service.state().file()
-        }
-    } else {
-        service.state().file()
+    if service.state().file() != LOADING_PLACEHOLDER {
+        return service.state().file()
     }
+    states
+        .and_then(|states| states.get(service.name()))
+        .map(|service_state| service_state.as_str())
+        .unwrap_or_else(|| service.state().file())
 }
 
 fn build_service_row(
@@ -231,7 +229,8 @@ impl TableServices {
     }
 
     pub fn init(&mut self) {
-        let services = self.usecase.borrow().list_services(self.filter_all, self.event_tx.clone()).unwrap_or_default();
+        let services = self.usecase.borrow().list_services(self.filter_all, self.event_tx.clone())
+            .unwrap_or_default();
         self.filtered_services.clone_from(&services);
         self.services = services;
         self.spawn_query_listener();
@@ -411,11 +410,8 @@ impl TableServices {
     }
 
     fn fetch_services(&mut self) {
-        if let Ok(services) = self.usecase.borrow().list_services(self.filter_all, self.event_tx.clone()) {
-            self.services = services;
-        } else {
-            self.services = vec![];
-        }
+        self.services = self.usecase.borrow().list_services(self.filter_all, self.event_tx.clone())
+            .unwrap_or_default()
     }
 
     fn fetch_and_refresh(&mut self, filter_text: &str) {
@@ -638,11 +634,10 @@ impl TableServices {
             Ok(service) => {
                 let services = &mut self.services;
 
-                if let Some(pos) = services.iter().position(|s| s.name() == service.name()) {
-                    services[pos] = service;
-                } else {
-                    services.push(service);
-                }
+                match services.iter().position(|s| s.name() == service.name()) {
+                    Some(pos) => services[pos] = service,
+                    None => services.push(service),
+                };
 
                 self.refresh(&self.old_filter_text.clone());
             }
