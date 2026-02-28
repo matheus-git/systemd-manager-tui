@@ -381,12 +381,8 @@ impl TableServices {
     }
 
     pub fn get_selected_service(&self) -> Option<Service> {
-        if let Some(selected_index) = self.table_state.selected() 
-            && let Some(service) = self.filtered_services.get(selected_index) {
-                return Some(service.clone());
-            
-        }
-        None
+        self.table_state.selected()
+            .and_then(|idx| self.filtered_services.get(idx).cloned())
     }
 
     pub fn set_selected_index(&mut self, index: usize) {
