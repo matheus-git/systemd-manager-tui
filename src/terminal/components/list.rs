@@ -26,8 +26,8 @@ const PADDING: Padding = Padding::new(1, 1, 1, 1);
 
 pub const LOADING_PLACEHOLDER: &str = "Loading";
 
-fn resolve_file<'a>(service: &'a Service, states: &'a HashMap<String, String>) -> &'a str {
-    if service.state().file() == LOADING_PLACEHOLDER {
+fn resolve_file<'a>(service: &'a Service, states: Option<&'a HashMap<String, String>>) -> &'a str {
+    if let Some(states) = states && service.state().file() == LOADING_PLACEHOLDER {
         if let Some(state) = states.get(service.name()) {
             state.as_str()
         } else {
@@ -40,8 +40,8 @@ fn resolve_file<'a>(service: &'a Service, states: &'a HashMap<String, String>) -
 
 fn build_service_row(
     service: &Service,
-    states: &HashMap<String, String>,
-    runtime_label: Option<&str>,
+    states: Option<&HashMap<String, String>>,
+    runtime_label: Option<(&str, &str)>,
 ) -> Row<'static> {
     let file = resolve_file(service, states);
 
@@ -50,7 +50,7 @@ fn build_service_row(
         .add_modifier(Modifier::BOLD);
     let normal_style = Style::default().fg(Color::Gray);
 
-    let active_cell = if let Some(label) = runtime_label {
+    let active_cell = if let Some((service_name, label)) = runtime_label && service_name == service.name() {
         Cell::from(label.to_string()).style(Style::default().fg(Color::Green))
     } else {
         let state_style = match service.state().active() {
@@ -87,10 +87,10 @@ fn build_service_row(
     ])
 }
 
-fn generate_rows(services: &[Service], states: &HashMap<String, String>) -> Vec<Row<'static>> {
+fn generate_rows(services: &[Service], states: Option<&HashMap<String, String>>, service_uptime: Option<(&str, &str)>) -> Vec<Row<'static>> {
     services
         .par_iter()
-        .map(|service| build_service_row(service, states, None))
+        .map(|service| build_service_row(service, states, service_uptime))
         .collect()
 }
 
@@ -262,18 +262,18 @@ impl TableServices {
         self.refresh_selected_timestamp();
         let runtime_label = self.format_runtime();
 
-        let states: HashMap<String, String> = if let Ok(states) = self.states.try_lock() {
-            states.clone()
-        } else {
-            HashMap::new()
-        };
-        let mut rows = generate_rows(&self.filtered_services, &states);
+        let service_uptime: Option<(&str, &str)> = runtime_label.as_deref()
+            .and_then(|label| {
+                let service = self.table_state.selected()
+                    .and_then(|idx| self.filtered_services.get(idx))
+                    .filter(|s| s.state().active() == "active");
+                service.map(|service| (service.name(), label))
+            });
 
-        if let (Some(label), Some(idx)) = (runtime_label.as_deref(), self.table_state.selected())
-            && let Some(service) = self.filtered_services.get(idx) 
-                && service.state().active() == "active" {
-                    rows[idx] = build_service_row(service, &states, Some(label));
-        }
+        let rows = self.states.try_lock()
+            .ok()
+            .map(|states| generate_rows(&self.filtered_services, Some(&states), service_uptime))
+            .unwrap_or_else(|| generate_rows(&self.filtered_services, None, service_uptime));
 
         let table = generate_table(&rows, self.ignore_key_events);
         frame.render_stateful_widget(&table, area, &mut self.table_state);
