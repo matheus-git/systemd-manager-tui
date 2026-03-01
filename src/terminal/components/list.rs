@@ -411,7 +411,7 @@ impl TableServices {
 
     fn fetch_services(&mut self) {
         self.services = self.usecase.borrow().list_services(self.filter_all, self.event_tx.clone())
-            .unwrap_or_default()
+            .unwrap_or_default();
     }
 
     fn fetch_and_refresh(&mut self, filter_text: &str) {
@@ -431,10 +431,7 @@ impl TableServices {
                 let active_matches = match self.active_filter_state {
                     ActiveFilterState::All => true,
                     ActiveFilterState::Active => service.state().active() == "active",
-                    ActiveFilterState::Inactive => {
-                        service.state().active() != "active"
-                            && service.state().active() != "failed"
-                    }
+                    ActiveFilterState::Inactive => service.state().active() == "inactive",
                     ActiveFilterState::Failed => service.state().active() == "failed",
                 };
 
