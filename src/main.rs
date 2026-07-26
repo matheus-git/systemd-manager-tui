@@ -18,9 +18,38 @@ use terminal::components::filter::Filter;
 use terminal::components::list::TableServices;
 use terminal::components::log::ServiceLog;
 
+use clap::Parser;
+
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    #[arg(short, long)]
+    unit: Option<String>,
+}
+
+#[derive(Clone)]
+pub struct Config {
+    pub unit: String,
+}
+
+impl From<Args> for Config {
+    fn from(args: Args) -> Self {
+        Self {
+            unit: args.unit.unwrap_or_default(),
+        }
+    }
+}
+
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
     let terminal = ratatui::init();
+    let args: Config = match Args::try_parse() {
+        Ok(args) => args.into(),
+        Err(err) => {
+            ratatui::restore();
+            err.exit(); 
+        }
+    };
     
     let (event_tx, event_rx) = mpsc::channel::<AppEvent>();
 
@@ -30,7 +59,7 @@ fn main() -> color_eyre::Result<()> {
         systemd_adapter
     ))));
     let table_services = TableServices::new(event_tx.clone(), usecase.clone());
-    let filter = Filter::new(event_tx.clone());
+    let filter = Filter::new(event_tx.clone(), args.unit.clone());
     let service_log = ServiceLog::new(event_tx.clone(), usecase.clone());
     let details = ServiceDetails::new(event_tx.clone(), usecase.clone());
 
@@ -43,7 +72,7 @@ fn main() -> color_eyre::Result<()> {
         details,
         usecase,
     );
-    app.init();
+    app.init(args);
     let result = app.run(terminal);
     ratatui::restore();
     result
