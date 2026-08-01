@@ -235,7 +235,7 @@ impl TableServices {
             .unwrap_or_default();
         self.spawn_query_listener();
         self.spawn_timestamp_worker();
-        self.refresh(&config.unit);
+        self.refresh(&config.filter);
     }
 
     fn spawn_query_listener(&self) {

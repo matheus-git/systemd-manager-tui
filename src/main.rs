@@ -23,19 +23,20 @@ use clap::Parser;
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
+    /// Filter text applied on startup
     #[arg(short, long)]
-    unit: Option<String>,
+    filter: Option<String>,
 }
 
 #[derive(Clone)]
 pub struct Config {
-    pub unit: String,
+    pub filter: String,
 }
 
 impl From<Args> for Config {
     fn from(args: Args) -> Self {
         Self {
-            unit: args.unit.unwrap_or_default(),
+            filter: args.filter.unwrap_or_default(),
         }
     }
 }
@@ -59,7 +60,7 @@ fn main() -> color_eyre::Result<()> {
         systemd_adapter
     ))));
     let table_services = TableServices::new(event_tx.clone(), usecase.clone());
-    let filter = Filter::new(event_tx.clone(), args.unit.clone());
+    let filter = Filter::new(event_tx.clone(), args.filter.clone());
     let service_log = ServiceLog::new(event_tx.clone(), usecase.clone());
     let details = ServiceDetails::new(event_tx.clone(), usecase.clone());
 

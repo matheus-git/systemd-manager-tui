@@ -121,7 +121,7 @@ impl App {
 
     pub fn init(&mut self, config: Config) {
         self.table_service.init(&config);
-        self.event_tx.send(AppEvent::Action(Actions::Filter(config.unit))).unwrap();
+        self.event_tx.send(AppEvent::Action(Actions::Filter(config.filter))).unwrap();
         self.spawn_key_event_listener();
     }
 
