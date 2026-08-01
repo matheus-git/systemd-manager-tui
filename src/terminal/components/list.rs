@@ -20,6 +20,8 @@ use std::collections::HashMap;
 
 use crate::domain::service::Service;
 use crate::terminal::app::{Actions, AppEvent};
+use crate::Config;
+
 use rayon::prelude::*;
 
 const PADDING: Padding = Padding::new(1, 1, 1, 1);
@@ -228,13 +230,12 @@ impl TableServices {
         }
     }
 
-    pub fn init(&mut self) {
-        let services = self.usecase.borrow().list_services(self.filter_all, self.event_tx.clone())
+    pub fn init(&mut self, config: &Config) {
+        self.services = self.usecase.borrow().list_services(self.filter_all, self.event_tx.clone())
             .unwrap_or_default();
-        self.filtered_services.clone_from(&services);
-        self.services = services;
         self.spawn_query_listener();
         self.spawn_timestamp_worker();
+        self.refresh(&config.filter);
     }
 
     fn spawn_query_listener(&self) {

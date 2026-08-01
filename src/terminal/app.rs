@@ -23,6 +23,7 @@ use rayon::prelude::*;
 use crate::infrastructure::systemd_service_adapter::ConnectionType;
 use crate::terminal::components::list::ActiveFilterState;
 use crate::usecases::services_manager::ServicesManager;
+use crate::Config;
 
 use super::components::details::ServiceDetails;
 use super::components::filter::{Filter, InputMode};
@@ -118,8 +119,9 @@ impl App {
         }
     }
 
-    pub fn init(&mut self) {
-        self.table_service.init();
+    pub fn init(&mut self, config: Config) {
+        self.table_service.init(&config);
+        self.event_tx.send(AppEvent::Action(Actions::Filter(config.filter))).unwrap();
         self.spawn_key_event_listener();
     }
 

@@ -25,12 +25,13 @@ pub enum InputMode {
 }
 
 impl Filter {
-    pub const fn new(sender: Sender<AppEvent>) -> Self {
+    pub const fn new(sender: Sender<AppEvent>, input: String) -> Self {
+        let character_index = input.len();
         Self {
             sender,
-            input: String::new(),
+            input,
             input_mode: InputMode::Normal,
-            character_index: 0,
+            character_index,
         }
     }
 
