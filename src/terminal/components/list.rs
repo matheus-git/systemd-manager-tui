@@ -2,9 +2,9 @@ use crate::usecases::services_manager::ServicesManager;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span};
+use ratatui::text::{Line, Span, Text};
 use ratatui::{
-    layout::Constraint,
+    layout::{Constraint, Alignment},
     widgets::{Block, Borders, Cell, Row, Table, TableState, Padding},
     Frame,
 };
@@ -39,6 +39,7 @@ fn resolve_file<'a>(service: &'a Service, states: Option<&'a HashMap<String, Str
 }
 
 fn build_service_row(
+    index: usize,
     service: &Service,
     states: Option<&HashMap<String, String>>,
     runtime_label: Option<(&str, &str)>,
@@ -76,9 +77,8 @@ fn build_service_row(
         normal_style
     };
 
-
-
     Row::new(vec![
+        Cell::from(Text::from(format!("{index}.")).alignment(Alignment::Right)).style(Style::default().add_modifier(Modifier::DIM | Modifier::ITALIC )),
         Cell::from(service.name().to_string()).style(highlight_style),
         active_cell,
         Cell::from(file.to_string()).style(file_style),
@@ -90,7 +90,8 @@ fn build_service_row(
 fn generate_rows(services: &[Service], states: Option<&HashMap<String, String>>, service_uptime: Option<(&str, &str)>) -> Vec<Row<'static>> {
     services
         .par_iter()
-        .map(|service| build_service_row(service, states, service_uptime))
+        .enumerate()
+        .map(|(index, service)| build_service_row(index + 1, service, states, service_uptime))
         .collect()
 }
 
@@ -98,6 +99,7 @@ fn generate_table<'a>(rows: &'a [Row<'a>], ignore_key_events: bool) -> Table<'a>
     let mut table = Table::new(
         rows.to_owned(),
         [
+            Constraint::Length(4),
             Constraint::Percentage(20),
             Constraint::Length(20),
             Constraint::Length(10),
@@ -106,7 +108,7 @@ fn generate_table<'a>(rows: &'a [Row<'a>], ignore_key_events: bool) -> Table<'a>
         ],
     )
     .header(
-        Row::new(["Name", "Active", "State", "Load", "Description"]).style(
+        Row::new(["", "Name", "Active", "State", "Load", "Description"]).style(
             Style::default()
                 .fg(Color::Gray)
                 .add_modifier(Modifier::BOLD),
