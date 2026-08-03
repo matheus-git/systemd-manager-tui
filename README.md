@@ -12,6 +12,13 @@ This tool allows you to manage systemd services with ease. You can view logs, li
 
 View [screenshots](https://github.com/matheus-git/systemd-manager-tui/blob/main/docs/screenshots.md)
 
+## Usage
+
+```bash
+systemd-manager-tui
+systemd-manager-tui --filter docker
+```
+
 ## Install
 
 After installation, you can create an `alias` to make it easier to use.
