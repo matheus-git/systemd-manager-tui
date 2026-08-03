@@ -16,6 +16,8 @@ View [screenshots](https://github.com/matheus-git/systemd-manager-tui/blob/main/
 
 ```bash
 systemd-manager-tui
+
+# With a filter
 systemd-manager-tui --filter docker
 ```
 
