@@ -694,3 +694,22 @@ impl App {
         self.running = false;
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::get_user_friendly_error;
+
+    #[test]
+    fn translates_known_dbus_errors() {
+        let message = get_user_friendly_error(
+            "org.freedesktop.DBus.Error.AccessDenied: rejected",
+        );
+
+        assert!(message.contains("Access denied"));
+    }
+
+    #[test]
+    fn preserves_unknown_errors() {
+        assert_eq!(get_user_friendly_error("custom failure"), "custom failure");
+    }
+}

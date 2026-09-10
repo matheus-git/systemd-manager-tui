@@ -522,6 +522,11 @@ impl TableServices {
     }
 
     fn select_page_down(&mut self) {
+        if self.filtered_services.is_empty() {
+            self.table_state.select(None);
+            return;
+        }
+
         let jump = 10;
         if let Some(selected_index) = self.table_state.selected() {
             let new_index = selected_index + jump;
@@ -537,6 +542,11 @@ impl TableServices {
     }
 
     fn select_page_up(&mut self) {
+        if self.filtered_services.is_empty() {
+            self.table_state.select(None);
+            return;
+        }
+
         let jump = 10;
         if let Some(selected_index) = self.table_state.selected() {
             let selected_index = isize::try_from(selected_index).expect("Failed to convert selected index to isize");
@@ -554,6 +564,11 @@ impl TableServices {
     }
 
     fn select_next(&mut self) {
+        if self.filtered_services.is_empty() {
+            self.table_state.select(None);
+            return;
+        }
+
         if let Some(selected_index) = self.table_state.selected() {
             let next_index = if !self.filtered_services.is_empty() && selected_index == self.filtered_services.len() - 1 {
                 0
@@ -567,6 +582,11 @@ impl TableServices {
     }
 
     fn select_previous(&mut self) {
+        if self.filtered_services.is_empty() {
+            self.table_state.select(None);
+            return;
+        }
+
         if let Some(selected_index) = self.table_state.selected() {
             let prev_index = if selected_index == 0 {
                 self.filtered_services.len() - 1
@@ -669,5 +689,125 @@ impl TableServices {
         }
 
         help_text
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::domain::service_repository::ServiceRepository;
+    use crate::domain::service_state::ServiceState;
+    use crate::infrastructure::systemd_service_adapter::ConnectionType;
+    use std::collections::HashMap;
+    use std::sync::mpsc;
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+
+    struct EmptyRepository;
+
+    impl ServiceRepository for EmptyRepository {
+        fn list_services(&self, _: bool) -> Result<Vec<Service>, Box<dyn Error>> { Ok(vec![]) }
+        fn unit_files_state(&self, _: Vec<Service>) -> Result<HashMap<String, String>, Box<dyn Error>> { Ok(HashMap::new()) }
+        fn list_service_files(&self) -> Result<Vec<Service>, Box<dyn Error>> { Ok(vec![]) }
+        fn get_unit(&self, _: &str) -> Result<Service, Box<dyn Error>> { Err("not found".into()) }
+        fn get_service_log(&self, _: &str) -> Result<String, Box<dyn Error>> { Ok(String::new()) }
+        fn start_service(&self, _: &str) -> Result<Service, Box<dyn Error>> { Err("unsupported".into()) }
+        fn stop_service(&self, _: &str) -> Result<Service, Box<dyn Error>> { Err("unsupported".into()) }
+        fn restart_service(&self, _: &str) -> Result<Service, Box<dyn Error>> { Err("unsupported".into()) }
+        fn enable_service(&self, _: &str) -> Result<Service, Box<dyn Error>> { Err("unsupported".into()) }
+        fn disable_service(&self, _: &str) -> Result<Service, Box<dyn Error>> { Err("unsupported".into()) }
+        fn mask_service(&self, _: &str) -> Result<Service, Box<dyn Error>> { Err("unsupported".into()) }
+        fn unmask_service(&self, _: &str) -> Result<Service, Box<dyn Error>> { Err("unsupported".into()) }
+        fn reload_daemon(&self) -> Result<(), Box<dyn Error>> { Ok(()) }
+        fn change_connection(&mut self, _: ConnectionType) -> Result<(), zbus::Error> { Ok(()) }
+        fn systemctl_cat(&self, _: &str) -> Result<String, Box<dyn Error>> { Ok(String::new()) }
+        fn get_active_enter_timestamp(&self, _: &str) -> Result<u64, Box<dyn Error>> { Ok(0) }
+    }
+
+    fn table() -> TableServices {
+        let (sender, _receiver) = mpsc::channel();
+        let manager = ServicesManager::new(Box::new(EmptyRepository));
+        TableServices::new(sender, Rc::new(RefCell::new(manager)))
+    }
+
+    fn service(name: &str, active: &str) -> Service {
+        Service::new(
+            name.to_string(),
+            String::new(),
+            ServiceState::new("loaded".into(), active.into(), "running".into(), "enabled".into()),
+        )
+    }
+
+    #[test]
+    fn navigation_on_empty_list_clears_selection() {
+        let mut table = table();
+
+        table.select_next();
+        table.select_previous();
+        table.select_page_down();
+        table.select_page_up();
+
+        assert_eq!(table.table_state.selected(), None);
+    }
+
+    #[test]
+    fn navigation_wraps_in_both_directions() {
+        let mut table = table();
+        table.filtered_services = vec![service("a.service", "active"), service("b.service", "inactive")];
+        table.table_state.select(Some(1));
+
+        table.select_next();
+        assert_eq!(table.table_state.selected(), Some(0));
+
+        table.select_previous();
+        assert_eq!(table.table_state.selected(), Some(1));
+    }
+
+    #[test]
+    fn filter_combines_name_and_active_state() {
+        let mut table = table();
+        table.active_filter_state = ActiveFilterState::Active;
+        let services = vec![
+            service("alpha.service", "active"),
+            service("beta.service", "active"),
+            service("alpha.timer", "inactive"),
+        ];
+
+        let filtered = table.filter("alpha", &services);
+
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].name(), "alpha.service");
+    }
+
+    #[test]
+    fn file_state_resolution_prefers_loaded_state_map() {
+        let loading = Service::new(
+            "demo.service".into(),
+            String::new(),
+            ServiceState::new("loaded".into(), "active".into(), "running".into(), LOADING_PLACEHOLDER.into()),
+        );
+        let states = HashMap::from([("demo.service".to_string(), "enabled".to_string())]);
+
+        assert_eq!(resolve_file(&loading, Some(&states)), "enabled");
+    }
+
+    #[test]
+    fn renders_service_table_to_test_backend() {
+        let mut table = table();
+        table.filtered_services = vec![service("demo.service", "active")];
+        table.table_state.select(Some(0));
+        let backend = TestBackend::new(90, 6);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|frame| table.render(frame, frame.area())).unwrap();
+
+        let rendered = terminal.backend().buffer().content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(rendered.contains("Name"));
+        assert!(rendered.contains("demo.service"));
+        assert!(rendered.contains("active (running)"));
+        assert!(rendered.contains("enabled"));
     }
 }

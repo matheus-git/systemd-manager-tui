@@ -12,6 +12,136 @@ pub struct ServicesManager {
     repository: Arc<Mutex<Box<dyn ServiceRepository>>>,
 }
 
+#[cfg(test)]
+#[allow(clippy::items_after_test_module)]
+mod tests {
+    use super::*;
+    use crate::test_support::{service, FakeRepository};
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    #[test]
+    fn lists_sorts_and_deduplicates_runtime_and_file_units() {
+        let fake = FakeRepository::with_services(
+            vec![
+                service("zeta.service", "active", "enabled"),
+                service("alpha.service", "active", "enabled"),
+            ],
+            vec![
+                service("alpha.service", "inactive", "disabled"),
+                service("beta.service", "inactive", "disabled"),
+            ],
+        );
+        let manager = ServicesManager::new(Box::new(fake));
+        let (sender, receiver) = mpsc::channel();
+
+        let services = manager.list_services(true, Arc::new(sender)).unwrap();
+
+        let names: Vec<_> = services.iter().map(Service::name).collect();
+        assert_eq!(names, ["alpha.service", "beta.service", "zeta.service"]);
+        assert!(matches!(
+            receiver.recv_timeout(Duration::from_secs(1)),
+            Ok(QueryUnitFile::Finished(_))
+        ));
+    }
+
+    #[test]
+    fn service_only_listing_does_not_add_unit_files() {
+        let fake = FakeRepository::with_services(
+            vec![service("runtime.service", "active", "enabled")],
+            vec![service("file-only.service", "inactive", "disabled")],
+        );
+        let manager = ServicesManager::new(Box::new(fake));
+        let (sender, _receiver) = mpsc::channel();
+
+        let services = manager.list_services(false, Arc::new(sender)).unwrap();
+
+        assert_eq!(services.len(), 1);
+        assert_eq!(services[0].name(), "runtime.service");
+    }
+
+    #[test]
+    fn enable_and_disable_reload_the_daemon() {
+        let fake = FakeRepository::default();
+        let observer = fake.clone();
+        let manager = ServicesManager::new(Box::new(fake));
+        let unit = service("demo.service", "inactive", "disabled");
+
+        manager.enable_service(&unit).unwrap();
+        manager.disable_service(&unit).unwrap();
+
+        assert_eq!(
+            observer.calls(),
+            [
+                "enable:demo.service",
+                "reload:",
+                "disable:demo.service",
+                "reload:",
+            ]
+        );
+    }
+
+    #[test]
+    fn delegates_all_lifecycle_operations() {
+        let fake = FakeRepository::default();
+        let observer = fake.clone();
+        let manager = ServicesManager::new(Box::new(fake));
+        let unit = service("demo.service", "inactive", "disabled");
+
+        manager.start_service(&unit).unwrap();
+        manager.stop_service(&unit).unwrap();
+        manager.restart_service(&unit).unwrap();
+        manager.mask_service(&unit).unwrap();
+        manager.unmask_service(&unit).unwrap();
+
+        assert_eq!(
+            observer.calls(),
+            [
+                "start:demo.service",
+                "stop:demo.service",
+                "restart:demo.service",
+                "mask:demo.service",
+                "unmask:demo.service",
+            ]
+        );
+    }
+
+    #[test]
+    fn propagates_repository_errors_without_reloading() {
+        let fake = FakeRepository::default();
+        fake.fail("enable");
+        let observer = fake.clone();
+        let manager = ServicesManager::new(Box::new(fake));
+        let unit = service("broken.service", "inactive", "disabled");
+
+        let error = manager.enable_service(&unit).unwrap_err();
+
+        assert_eq!(error.to_string(), "enable failed");
+        assert_eq!(observer.calls(), ["enable:broken.service"]);
+    }
+
+    #[test]
+    fn delegates_log_unit_file_timestamp_and_connection() {
+        let fake = FakeRepository::with_content("journal output", "[Service]\nExecStart=/bin/true", 42);
+        let observer = fake.clone();
+        let mut manager = ServicesManager::new(Box::new(fake));
+        let unit = service("demo.service", "active", "enabled");
+
+        assert_eq!(manager.get_log(&unit).unwrap(), "journal output");
+        assert!(manager.systemctl_cat(&unit).unwrap().contains("ExecStart"));
+        manager.change_repository_connection(ConnectionType::Session).unwrap();
+        assert_eq!(
+            manager.repository_handle().lock().unwrap().get_active_enter_timestamp(unit.name()).unwrap(),
+            42
+        );
+
+        assert_eq!(
+            observer.calls(),
+            ["log:demo.service", "cat:demo.service", "connection:session", "timestamp:demo.service"]
+        );
+    }
+}
+
 impl ServicesManager {
     pub fn new(repository: Box<dyn ServiceRepository>) -> Self {
         Self { repository: Arc::new(Mutex::new(repository)) }
@@ -107,4 +237,3 @@ impl ServicesManager {
         Arc::clone(&self.repository)
     }
 }
-
