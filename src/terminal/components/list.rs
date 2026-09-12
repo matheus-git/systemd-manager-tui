@@ -620,14 +620,9 @@ impl TableServices {
 
         let jump = 10;
         if let Some(selected_index) = self.table_state.selected() {
-            let selected_index = isize::try_from(selected_index).expect("Failed to convert selected index to isize");
-            let new_index = selected_index - jump as isize;
-            let wrapped_index = if new_index < 0 {
-                let len = isize::try_from(self.filtered_services.len()).expect("Failed to convert table length to isize");
-                usize::try_from(len + new_index % len).expect("Failed to convert calculated circular index to usize")
-            } else {
-                usize::try_from(new_index).expect("Failed to convert new_index to usize")
-            };
+            let len = self.filtered_services.len();
+            let selected_index = selected_index % len;
+            let wrapped_index = (selected_index + len - (jump % len)) % len;
             self.table_state.select(Some(wrapped_index));
         } else {
             self.table_state.select(Some(0));
@@ -797,6 +792,26 @@ mod tests {
 
         table.select_previous();
         assert_eq!(table.table_state.selected(), Some(1));
+    }
+
+    #[test]
+    fn page_up_always_wraps_to_a_valid_index() {
+        for (len, expected_index) in [(1, 0), (2, 0), (5, 0), (10, 0), (11, 1)] {
+            let mut table = table();
+            table.filtered_services = (0..len)
+                .map(|index| service(&format!("{index}.service"), "active"))
+                .collect();
+            table.table_state.select(Some(0));
+
+            table.select_page_up();
+
+            assert_eq!(
+                table.table_state.selected(),
+                Some(expected_index),
+                "unexpected PageUp result for a list of {len} services"
+            );
+            assert!(expected_index < len);
+        }
     }
 
     #[test]
