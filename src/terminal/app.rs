@@ -51,6 +51,7 @@ enum AppEffect {
     RefreshServices {
         filter_all: bool,
         filter_text: String,
+        connection_request_id: Option<u64>,
     },
     ChangeConnection(ConnectionRequest),
 }
@@ -79,7 +80,7 @@ pub enum Actions {
     LogLoaded(Result<(String, String), String>),
     DetailsLoaded(Service, Result<String, String>),
     ServiceActionFinished(Result<Service, String>),
-    ServicesLoaded(Result<Vec<Service>, String>, String),
+    ServicesLoaded(Result<Vec<Service>, String>, String, Option<u64>),
     ConnectionChanged(u64, ConnectionType, Result<(), String>),
 }
 
@@ -122,6 +123,7 @@ pub struct App {
     connection_tx: Sender<ConnectionRequest>,
     latest_connection_request_id: u64,
     active_connection: ConnectionType,
+    connection_pending: bool,
 }
 
 impl App {
@@ -173,6 +175,7 @@ impl App {
             connection_tx,
             latest_connection_request_id: 0,
             active_connection: ConnectionType::System,
+            connection_pending: false,
         }
     }
 
@@ -289,6 +292,8 @@ impl App {
                                 key,
                                 self.filter.input_mode == InputMode::Editing,
                             ) {
+                                self.connection_pending = true;
+                                self.table_service.begin_connection_change();
                                 effects.push(AppEffect::ChangeConnection(
                                     self.next_connection_request(connection_type),
                                 ));
@@ -307,6 +312,9 @@ impl App {
                 }
             }
                 AppEvent::Action(Actions::ServiceAction(action)) => {
+                    if self.connection_pending {
+                        return Ok(effects);
+                    }
                     match action {
                         ServiceAction::ToggleFilter => {
                             self.table_service.toggle_unit_listing();
@@ -358,19 +366,37 @@ impl App {
                     self.table_service.apply_service_result(result);
                     self.table_service.invalidate_timestamp();
                 }
-                AppEvent::Action(Actions::ServicesLoaded(result, filter_text)) => match result {
-                    Ok(services) => self.table_service.apply_services(services, &filter_text),
-                    Err(error) => {
-                        self.table_service.set_ignore_key_events(false);
-                        self.error_message = Some(error);
+                AppEvent::Action(Actions::ServicesLoaded(
+                    result,
+                    filter_text,
+                    connection_request_id,
+                )) => {
+                    let belongs_to_current_connection = connection_request_id
+                        .is_none_or(|id| id == self.latest_connection_request_id);
+                    let expected_while_pending = !self.connection_pending
+                        || connection_request_id == Some(self.latest_connection_request_id);
+
+                    if belongs_to_current_connection && expected_while_pending {
+                        self.connection_pending = false;
+                        match result {
+                            Ok(services) => {
+                                self.table_service.apply_services(services, &filter_text)
+                            }
+                            Err(error) => {
+                                self.table_service.set_ignore_key_events(false);
+                                self.error_message = Some(error);
+                            }
+                        }
                     }
-                },
+                }
                 AppEvent::Action(Actions::ConnectionChanged(request_id, target, result)) => {
                     if request_id == self.latest_connection_request_id {
                         match result {
                             Ok(()) => {
                                 self.active_connection = target;
-                                effects.push(self.refresh_services_effect());
+                                effects.push(
+                                    self.refresh_services_effect_for_connection(request_id),
+                                );
                             }
                             Err(error) => {
                                 self.selected_tab_index = match self.active_connection {
@@ -378,6 +404,9 @@ impl App {
                                     ConnectionType::Session => 1,
                                 };
                                 self.error_message = Some(error);
+                                effects.push(
+                                    self.refresh_services_effect_for_connection(request_id),
+                                );
                             }
                         }
                     }
@@ -436,9 +465,15 @@ impl App {
                 AppEffect::RefreshServices {
                     filter_all,
                     filter_text,
+                    connection_request_id,
                 } => {
                     let query_sender = self.table_service.query_sender();
-                    self.spawn_services_worker(filter_all, filter_text, query_sender);
+                    self.spawn_services_worker(
+                        filter_all,
+                        filter_text,
+                        query_sender,
+                        connection_request_id,
+                    );
                 }
                 AppEffect::ChangeConnection(request) => {
                     self.connection_tx.send(request)?;
@@ -503,6 +538,16 @@ impl App {
         AppEffect::RefreshServices {
             filter_all,
             filter_text,
+            connection_request_id: None,
+        }
+    }
+
+    fn refresh_services_effect_for_connection(&self, request_id: u64) -> AppEffect {
+        let (filter_all, filter_text) = self.table_service.refresh_parameters();
+        AppEffect::RefreshServices {
+            filter_all,
+            filter_text,
+            connection_request_id: Some(request_id),
         }
     }
 
@@ -511,6 +556,7 @@ impl App {
         filter_all: bool,
         filter_text: String,
         query_sender: Arc<Sender<QueryUnitFile>>,
+        connection_request_id: Option<u64>,
     ) {
         let manager = self.usecases.borrow().clone();
         let sender = self.event_tx.clone();
@@ -518,7 +564,11 @@ impl App {
             let result = manager
                 .list_services(filter_all, query_sender)
                 .map_err(|error| error.to_string());
-            let _ = sender.send(AppEvent::Action(Actions::ServicesLoaded(result, filter_text)));
+            let _ = sender.send(AppEvent::Action(Actions::ServicesLoaded(
+                result,
+                filter_text,
+                connection_request_id,
+            )));
         });
     }
 
@@ -1162,6 +1212,8 @@ mod tests {
     #[test]
     fn changing_tab_produces_async_connection_effect() {
         let mut app = test_app();
+        app.table_service.services = vec![service("system.service", "active", "enabled")];
+        app.table_service.refresh("");
 
         let effects = app
             .handle_event(AppEvent::Key(KeyEvent::new(
@@ -1171,6 +1223,10 @@ mod tests {
             .unwrap();
 
         assert_eq!(app.selected_tab_index, 1);
+        assert!(app.connection_pending);
+        assert!(app.table_service.services.is_empty());
+        assert!(app.table_service.get_selected_service().is_none());
+        assert!(app.table_service.ignore_key_events);
         assert_eq!(
             effects,
             [AppEffect::ChangeConnection(ConnectionRequest {
@@ -1225,6 +1281,88 @@ mod tests {
         assert!(matches!(
             current_effects.as_slice(),
             [AppEffect::RefreshServices { .. }]
+        ));
+    }
+
+    #[test]
+    fn service_actions_are_ignored_while_connection_is_pending() {
+        let mut app = test_app();
+        app.connection_pending = true;
+        app.table_service.set_ignore_key_events(true);
+
+        let effects = app
+            .handle_event(AppEvent::Action(Actions::ServiceAction(
+                ServiceAction::Start,
+            )))
+            .unwrap();
+
+        assert!(effects.is_empty());
+        assert!(app.connection_pending);
+        assert!(app.table_service.ignore_key_events);
+    }
+
+    #[test]
+    fn pending_connection_accepts_only_its_own_service_list() {
+        let mut app = test_app();
+        app.latest_connection_request_id = 2;
+        app.connection_pending = true;
+        app.table_service.begin_connection_change();
+
+        app.handle_event(AppEvent::Action(Actions::ServicesLoaded(
+            Ok(vec![service("old.service", "active", "enabled")]),
+            String::new(),
+            Some(1),
+        )))
+        .unwrap();
+        app.handle_event(AppEvent::Action(Actions::ServicesLoaded(
+            Ok(vec![service("unrelated.service", "active", "enabled")]),
+            String::new(),
+            None,
+        )))
+        .unwrap();
+
+        assert!(app.connection_pending);
+        assert!(app.table_service.services.is_empty());
+        assert!(app.table_service.ignore_key_events);
+
+        app.handle_event(AppEvent::Action(Actions::ServicesLoaded(
+            Ok(vec![service("current.service", "active", "enabled")]),
+            String::new(),
+            Some(2),
+        )))
+        .unwrap();
+
+        assert!(!app.connection_pending);
+        assert_eq!(app.table_service.services[0].name(), "current.service");
+        assert!(!app.table_service.ignore_key_events);
+    }
+
+    #[test]
+    fn failed_connection_restores_active_tab_and_refreshes_before_unlocking() {
+        let mut app = test_app();
+        app.selected_tab_index = 1;
+        app.latest_connection_request_id = 1;
+        app.connection_pending = true;
+        app.table_service.begin_connection_change();
+
+        let effects = app
+            .handle_event(AppEvent::Action(Actions::ConnectionChanged(
+                1,
+                ConnectionType::Session,
+                Err("connection failed".into()),
+            )))
+            .unwrap();
+
+        assert_eq!(app.selected_tab_index, 0);
+        assert!(app.connection_pending);
+        assert!(app.table_service.ignore_key_events);
+        assert_eq!(app.error_message.as_deref(), Some("connection failed"));
+        assert!(matches!(
+            effects.as_slice(),
+            [AppEffect::RefreshServices {
+                connection_request_id: Some(1),
+                ..
+            }]
         ));
     }
 }

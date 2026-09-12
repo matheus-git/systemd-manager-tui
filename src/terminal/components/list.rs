@@ -417,6 +417,17 @@ impl TableServices {
         self.set_ignore_key_events(false);
     }
 
+    pub fn begin_connection_change(&mut self) {
+        self.services.clear();
+        self.filtered_services.clear();
+        if let Ok(mut states) = self.states.lock() {
+            states.clear();
+        }
+        self.table_state.select(None);
+        self.invalidate_timestamp();
+        self.set_ignore_key_events(true);
+    }
+
     pub fn get_selected_service(&self) -> Option<Service> {
         self.table_state.selected()
             .and_then(|idx| self.filtered_services.get(idx).cloned())
