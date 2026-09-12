@@ -63,6 +63,24 @@ mod tests {
         details.on_key_event(KeyEvent::new(KeyCode::Char('e'), crossterm::event::KeyModifiers::NONE));
         assert!(matches!(receiver.recv().unwrap(), AppEvent::Action(Actions::EditCurrentService)));
     }
+
+    #[test]
+    fn selecting_another_service_clears_previous_content_and_scroll() {
+        let (mut details, _receiver) = details();
+        details.update_unit_file(
+            service("old.service", "active", "enabled"),
+            "[Service]\nExecStart=/old".into(),
+        );
+        details.scroll = 10;
+
+        details.update(service("current.service", "active", "enabled"));
+
+        assert!(details.unit_file.is_empty());
+        assert_eq!(details.scroll, 0);
+        let screen = rendered_text(&mut details, 60, 8);
+        assert!(screen.contains("current.service file"));
+        assert!(!screen.contains("ExecStart=/old"));
+    }
 }
 
 impl ServiceDetails {
@@ -181,6 +199,8 @@ impl ServiceDetails {
 
     pub fn update(&mut self, service: Service) {
         self.service = Some(Arc::new(Mutex::new(service)));
+        self.unit_file.clear();
+        self.scroll = 0;
     }
 
     pub fn update_unit_file(&mut self, service: Service, unit_file: String) {

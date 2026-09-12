@@ -43,8 +43,14 @@ enum Status {
 enum AppEffect {
     Suspend,
     EditUnit(String),
-    FetchLog(Service),
-    FetchDetails(Service),
+    FetchLog {
+        request_id: u64,
+        service: Service,
+    },
+    FetchDetails {
+        request_id: u64,
+        service: Service,
+    },
     RunServiceAction {
         service: Service,
         action: ServiceAction,
@@ -78,8 +84,8 @@ pub enum Actions {
     ServiceAction(ServiceAction),
     ShowHelp,
     UpdateTimestamp(String, Option<u64>),
-    LogLoaded(Result<(String, String), String>),
-    DetailsLoaded(Service, Result<String, String>),
+    LogLoaded(u64, Result<(String, String), String>),
+    DetailsLoaded(u64, Service, Result<String, String>),
     ServiceActionFinished(Result<Service, String>),
     ServicesLoaded(u64, Result<Vec<Service>, String>, String, Option<u64>),
     UnitFileStatesLoaded(
@@ -131,6 +137,8 @@ pub struct App {
     active_connection: ConnectionType,
     connection_pending: bool,
     latest_services_request_id: u64,
+    latest_log_request_id: u64,
+    latest_details_request_id: u64,
 }
 
 impl App {
@@ -184,6 +192,8 @@ impl App {
             active_connection: ConnectionType::System,
             connection_pending: false,
             latest_services_request_id: 0,
+            latest_log_request_id: 0,
+            latest_details_request_id: 0,
         }
     }
 
@@ -350,7 +360,7 @@ impl App {
                 AppEvent::Action(Actions::RefreshLog) => {
                     if self.status == Status::Log 
                         && let Some(service) = self.table_service.get_selected_service() {
-                            effects.push(AppEffect::FetchLog(service));
+                            effects.push(self.fetch_log_effect(service));
                     }
                 }
                 AppEvent::Action(Actions::GoLog) => {
@@ -362,14 +372,37 @@ impl App {
                     self.table_service.update_timestamp(name, ts);
                 }
                 AppEvent::Action(Actions::UpdateDetails) => {}
-                AppEvent::Action(Actions::LogLoaded(result)) => match result {
-                    Ok((name, log)) => self.service_log.update(name, log),
-                    Err(error) => self.error_message = Some(error),
-                },
-                AppEvent::Action(Actions::DetailsLoaded(service, result)) => match result {
-                    Ok(unit_file) => self.details.update_unit_file(service, unit_file),
-                    Err(error) => self.error_message = Some(error),
-                },
+                AppEvent::Action(Actions::LogLoaded(request_id, result)) => {
+                    if request_id == self.latest_log_request_id && self.status == Status::Log {
+                        match result {
+                            Ok((name, log))
+                                if self
+                                    .table_service
+                                    .get_selected_service()
+                                    .is_some_and(|service| service.name() == name) =>
+                            {
+                                self.service_log.update(name, log);
+                            }
+                            Ok(_) => {}
+                            Err(error) => self.error_message = Some(error),
+                        }
+                    }
+                }
+                AppEvent::Action(Actions::DetailsLoaded(request_id, service, result)) => {
+                    let is_current_service = self
+                        .table_service
+                        .get_selected_service()
+                        .is_some_and(|selected| selected.name() == service.name());
+                    if request_id == self.latest_details_request_id
+                        && self.status == Status::Details
+                        && is_current_service
+                    {
+                        match result {
+                            Ok(unit_file) => self.details.update_unit_file(service, unit_file),
+                            Err(error) => self.error_message = Some(error),
+                        }
+                    }
+                }
                 AppEvent::Action(Actions::ServiceActionFinished(result)) => {
                     self.table_service.apply_service_result(result);
                     self.table_service.invalidate_timestamp();
@@ -451,13 +484,13 @@ impl App {
                     if self.status == Status::Details
                         && let Some(service) = self.table_service.get_selected_service()
                     {
-                        effects.push(AppEffect::FetchDetails(service));
+                        effects.push(self.fetch_details_effect(service));
                     }
                 }
                 AppEvent::Action(Actions::GoDetails) => {
                     if let Some(service) = self.table_service.get_selected_service() {
                         self.details.update(service.clone());
-                        effects.push(AppEffect::FetchDetails(service));
+                        effects.push(self.fetch_details_effect(service));
                     }
                     self.status = Status::Details;
                 }
@@ -489,11 +522,17 @@ impl App {
                     self.edit_unit(terminal, &unit_name)?;
                     self.event_tx.send(AppEvent::Action(Actions::RefreshDetails))?;
                 }
-                AppEffect::FetchLog(service) => {
-                    self.spawn_log_worker(service);
+                AppEffect::FetchLog {
+                    request_id,
+                    service,
+                } => {
+                    self.spawn_log_worker(request_id, service);
                 }
-                AppEffect::FetchDetails(service) => {
-                    self.spawn_details_worker(service);
+                AppEffect::FetchDetails {
+                    request_id,
+                    service,
+                } => {
+                    self.spawn_details_worker(request_id, service);
                 }
                 AppEffect::RunServiceAction { service, action } => {
                     self.spawn_service_action_worker(service, action);
@@ -522,7 +561,7 @@ impl App {
         Ok(())
     }
 
-    fn spawn_log_worker(&self, service: Service) {
+    fn spawn_log_worker(&self, request_id: u64, service: Service) {
         let manager = self.usecases.borrow().clone();
         let sender = self.event_tx.clone();
         thread::spawn(move || {
@@ -531,18 +570,22 @@ impl App {
                 .get_log(&service)
                 .map(|log| (name, log))
                 .map_err(|error| error.to_string());
-            let _ = sender.send(AppEvent::Action(Actions::LogLoaded(result)));
+            let _ = sender.send(AppEvent::Action(Actions::LogLoaded(request_id, result)));
         });
     }
 
-    fn spawn_details_worker(&self, service: Service) {
+    fn spawn_details_worker(&self, request_id: u64, service: Service) {
         let manager = self.usecases.borrow().clone();
         let sender = self.event_tx.clone();
         thread::spawn(move || {
             let result = manager
                 .systemctl_cat(&service)
                 .map_err(|error| error.to_string());
-            let _ = sender.send(AppEvent::Action(Actions::DetailsLoaded(service, result)));
+            let _ = sender.send(AppEvent::Action(Actions::DetailsLoaded(
+                request_id,
+                service,
+                result,
+            )));
         });
     }
 
@@ -635,6 +678,22 @@ impl App {
     fn next_services_request_id(&mut self) -> u64 {
         self.latest_services_request_id = self.latest_services_request_id.wrapping_add(1);
         self.latest_services_request_id
+    }
+
+    fn fetch_log_effect(&mut self, service: Service) -> AppEffect {
+        self.latest_log_request_id = self.latest_log_request_id.wrapping_add(1);
+        AppEffect::FetchLog {
+            request_id: self.latest_log_request_id,
+            service,
+        }
+    }
+
+    fn fetch_details_effect(&mut self, service: Service) -> AppEffect {
+        self.latest_details_request_id = self.latest_details_request_id.wrapping_add(1);
+        AppEffect::FetchDetails {
+            request_id: self.latest_details_request_id,
+            service,
+        }
     }
 
     #[allow(clippy::unused_self)]
@@ -1203,8 +1262,12 @@ mod tests {
         let fake = FakeRepository::with_content("journal output", "", 0);
         let mut app = test_app_with_repository(fake);
         let unit = service("demo.service", "active", "enabled");
+        app.status = Status::Log;
+        app.latest_log_request_id = 1;
+        app.table_service.services = vec![unit.clone()];
+        app.table_service.refresh("");
 
-        app.spawn_log_worker(unit);
+        app.spawn_log_worker(1, unit);
         let event = app.event_rx.recv_timeout(Duration::from_secs(1)).unwrap();
         app.handle_event(event).unwrap();
 
@@ -1223,8 +1286,13 @@ mod tests {
         let fake = FakeRepository::with_content("", "[Service]\nExecStart=/bin/true", 0);
         let mut app = test_app_with_repository(fake);
         let unit = service("demo.service", "active", "enabled");
+        app.status = Status::Details;
+        app.latest_details_request_id = 1;
+        app.table_service.services = vec![unit.clone()];
+        app.table_service.refresh("");
+        app.details.update(unit.clone());
 
-        app.spawn_details_worker(unit);
+        app.spawn_details_worker(1, unit);
         let event = app.event_rx.recv_timeout(Duration::from_secs(1)).unwrap();
         app.handle_event(event).unwrap();
 
@@ -1234,6 +1302,75 @@ mod tests {
             .draw(|frame| app.details.render(frame, frame.area()))
             .unwrap();
         assert!(terminal.backend().to_string().contains("ExecStart"));
+    }
+
+    #[test]
+    fn stale_log_result_cannot_replace_current_service_log() {
+        let mut app = test_app();
+        let old_service = service("old.service", "active", "enabled");
+        let current_service = service("current.service", "active", "enabled");
+        app.table_service.services = vec![old_service, current_service];
+        app.table_service.refresh("");
+        app.table_service.set_selected_index(1);
+        app.status = Status::Log;
+        app.latest_log_request_id = 2;
+
+        app.handle_event(AppEvent::Action(Actions::LogLoaded(
+            2,
+            Ok(("current.service".into(), "current output".into())),
+        )))
+        .unwrap();
+        app.handle_event(AppEvent::Action(Actions::LogLoaded(
+            1,
+            Ok(("old.service".into(), "stale output".into())),
+        )))
+        .unwrap();
+
+        let backend = TestBackend::new(60, 8);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| app.service_log.render(frame, frame.area()))
+            .unwrap();
+        let screen = terminal.backend().to_string();
+        assert!(screen.contains("current.service log"));
+        assert!(screen.contains("current output"));
+        assert!(!screen.contains("stale output"));
+    }
+
+    #[test]
+    fn stale_details_result_cannot_replace_current_unit_file() {
+        let mut app = test_app();
+        let old_service = service("old.service", "active", "enabled");
+        let current_service = service("current.service", "active", "enabled");
+        app.table_service.services = vec![old_service.clone(), current_service.clone()];
+        app.table_service.refresh("");
+        app.table_service.set_selected_index(1);
+        app.status = Status::Details;
+        app.latest_details_request_id = 2;
+        app.details.update(current_service.clone());
+
+        app.handle_event(AppEvent::Action(Actions::DetailsLoaded(
+            2,
+            current_service,
+            Ok("[Service]\nExecStart=/current".into()),
+        )))
+        .unwrap();
+        app.handle_event(AppEvent::Action(Actions::DetailsLoaded(
+            1,
+            old_service,
+            Ok("[Service]\nExecStart=/stale".into()),
+        )))
+        .unwrap();
+
+        let backend = TestBackend::new(60, 8);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| app.details.render(frame, frame.area()))
+            .unwrap();
+        let screen = terminal.backend().to_string();
+        assert!(screen.contains("current.service file"));
+        assert!(screen.contains("ExecStart=/current"));
+        assert!(!screen.contains("ExecStart=/stale"));
     }
 
     #[test]
