@@ -36,13 +36,13 @@ mod tests {
         let manager = ServicesManager::new(Box::new(fake));
         let (sender, receiver) = mpsc::channel();
 
-        let services = manager.list_services(true, Arc::new(sender)).unwrap();
+        let services = manager.list_services(true, Arc::new(sender), 1, None).unwrap();
 
         let names: Vec<_> = services.iter().map(Service::name).collect();
         assert_eq!(names, ["alpha.service", "beta.service", "zeta.service"]);
         assert!(matches!(
             receiver.recv_timeout(Duration::from_secs(1)),
-            Ok(QueryUnitFile::Finished(_))
+            Ok(QueryUnitFile::Finished { request_id: 1, .. })
         ));
     }
 
@@ -55,7 +55,7 @@ mod tests {
         let manager = ServicesManager::new(Box::new(fake));
         let (sender, _receiver) = mpsc::channel();
 
-        let services = manager.list_services(false, Arc::new(sender)).unwrap();
+        let services = manager.list_services(false, Arc::new(sender), 1, None).unwrap();
 
         assert_eq!(services.len(), 1);
         assert_eq!(services[0].name(), "runtime.service");
@@ -71,11 +71,11 @@ mod tests {
         let manager = ServicesManager::new(Box::new(fake));
         let (sender, receiver) = mpsc::channel();
 
-        manager.list_services(false, Arc::new(sender)).unwrap();
+        manager.list_services(false, Arc::new(sender), 1, None).unwrap();
 
         assert!(matches!(
             receiver.recv_timeout(Duration::from_secs(1)),
-            Ok(QueryUnitFile::Error(error)) if error == "states failed"
+            Ok(QueryUnitFile::Error { request_id: 1, error, .. }) if error == "states failed"
         ));
     }
 
@@ -203,7 +203,13 @@ impl ServicesManager {
         Ok(service)
     }
 
-    pub fn list_services(&self, filter: bool, tx: Arc<Sender<QueryUnitFile>>) -> Result<Vec<Service>, Box<dyn Error>> {
+    pub fn list_services(
+        &self,
+        filter: bool,
+        tx: Arc<Sender<QueryUnitFile>>,
+        request_id: u64,
+        connection_request_id: Option<u64>,
+    ) -> Result<Vec<Service>, Box<dyn Error>> {
         let mut all = Vec::new();
 
         let mut services_runtime = self.repository.lock().unwrap().list_services(filter)?;
@@ -237,8 +243,16 @@ impl ServicesManager {
                     repo.unit_files_state(services).map_err(|error| error.to_string())
                 });
             let message = match result {
-                Ok(states) => QueryUnitFile::Finished(states),
-                Err(error) => QueryUnitFile::Error(error),
+                Ok(states) => QueryUnitFile::Finished {
+                    request_id,
+                    connection_request_id,
+                    states,
+                },
+                Err(error) => QueryUnitFile::Error {
+                    request_id,
+                    connection_request_id,
+                    error,
+                },
             };
             let _ = tx.send(message);
         });

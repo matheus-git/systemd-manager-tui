@@ -178,8 +178,16 @@ pub enum ServiceAction {
 }
 
 pub enum QueryUnitFile {
-    Finished(HashMap<String, String>),
-    Error(String),
+    Finished {
+        request_id: u64,
+        connection_request_id: Option<u64>,
+        states: HashMap<String, String>,
+    },
+    Error {
+        request_id: u64,
+        connection_request_id: Option<u64>,
+        error: String,
+    },
 }
  
 pub struct TableServices {
@@ -233,7 +241,12 @@ impl TableServices {
     }
 
     pub fn init(&mut self, config: &Config) {
-        self.services = self.usecase.borrow().list_services(self.filter_all, self.event_tx.clone())
+        self.services = self.usecase.borrow().list_services(
+            self.filter_all,
+            self.event_tx.clone(),
+            0,
+            None,
+        )
             .unwrap_or_default();
         self.spawn_query_listener();
         self.spawn_timestamp_worker();
@@ -243,7 +256,6 @@ impl TableServices {
     fn spawn_query_listener(&self) {
         let event_rx = self.event_rx.clone();
         let sender = self.sender.clone();
-        let states = self.states.clone();
 
         thread::spawn(move || {
             loop {
@@ -255,20 +267,35 @@ impl TableServices {
                     }
                 };
                 match message {
-                    Ok(QueryUnitFile::Finished(new_states)) => {
-                        match states.lock() {
-                            Ok(mut states) => *states = new_states,
-                            Err(error) => {
-                                let _ = sender.send(AppEvent::Error(error.to_string()));
-                                break;
-                            }
-                        }
-                        if sender.send(AppEvent::Action(Actions::Redraw)).is_err() {
+                    Ok(QueryUnitFile::Finished {
+                        request_id,
+                        connection_request_id,
+                        states,
+                    }) => {
+                        if sender
+                            .send(AppEvent::Action(Actions::UnitFileStatesLoaded(
+                                request_id,
+                                connection_request_id,
+                                Ok(states),
+                            )))
+                            .is_err()
+                        {
                             break;
                         }
                     }
-                    Ok(QueryUnitFile::Error(error)) => {
-                        if sender.send(AppEvent::Error(error)).is_err() {
+                    Ok(QueryUnitFile::Error {
+                        request_id,
+                        connection_request_id,
+                        error,
+                    }) => {
+                        if sender
+                            .send(AppEvent::Action(Actions::UnitFileStatesLoaded(
+                                request_id,
+                                connection_request_id,
+                                Err(error),
+                            )))
+                            .is_err()
+                        {
                             break;
                         }
                     }
@@ -415,6 +442,12 @@ impl TableServices {
         self.services = services;
         self.refresh(filter_text);
         self.set_ignore_key_events(false);
+    }
+
+    pub fn apply_unit_file_states(&mut self, new_states: HashMap<String, String>) {
+        if let Ok(mut states) = self.states.lock() {
+            *states = new_states;
+        }
     }
 
     pub fn begin_connection_change(&mut self) {

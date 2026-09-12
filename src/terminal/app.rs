@@ -17,6 +17,7 @@ use std::time::Duration;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 use rayon::prelude::*;
 
@@ -49,6 +50,7 @@ enum AppEffect {
         action: ServiceAction,
     },
     RefreshServices {
+        request_id: u64,
         filter_all: bool,
         filter_text: String,
         connection_request_id: Option<u64>,
@@ -75,12 +77,16 @@ pub enum Actions {
     EditCurrentService,
     ServiceAction(ServiceAction),
     ShowHelp,
-    Redraw,
     UpdateTimestamp(String, Option<u64>),
     LogLoaded(Result<(String, String), String>),
     DetailsLoaded(Service, Result<String, String>),
     ServiceActionFinished(Result<Service, String>),
-    ServicesLoaded(Result<Vec<Service>, String>, String, Option<u64>),
+    ServicesLoaded(u64, Result<Vec<Service>, String>, String, Option<u64>),
+    UnitFileStatesLoaded(
+        u64,
+        Option<u64>,
+        Result<HashMap<String, String>, String>,
+    ),
     ConnectionChanged(u64, ConnectionType, Result<(), String>),
 }
 
@@ -124,6 +130,7 @@ pub struct App {
     latest_connection_request_id: u64,
     active_connection: ConnectionType,
     connection_pending: bool,
+    latest_services_request_id: u64,
 }
 
 impl App {
@@ -176,6 +183,7 @@ impl App {
             latest_connection_request_id: 0,
             active_connection: ConnectionType::System,
             connection_pending: false,
+            latest_services_request_id: 0,
         }
     }
 
@@ -353,7 +361,7 @@ impl App {
                 AppEvent::Action(Actions::UpdateTimestamp(name, ts)) => {
                     self.table_service.update_timestamp(name, ts);
                 }
-                AppEvent::Action(Actions::UpdateDetails | Actions::Redraw) => {}
+                AppEvent::Action(Actions::UpdateDetails) => {}
                 AppEvent::Action(Actions::LogLoaded(result)) => match result {
                     Ok((name, log)) => self.service_log.update(name, log),
                     Err(error) => self.error_message = Some(error),
@@ -367,16 +375,22 @@ impl App {
                     self.table_service.invalidate_timestamp();
                 }
                 AppEvent::Action(Actions::ServicesLoaded(
+                    request_id,
                     result,
                     filter_text,
                     connection_request_id,
                 )) => {
+                    let belongs_to_latest_refresh =
+                        request_id == self.latest_services_request_id;
                     let belongs_to_current_connection = connection_request_id
                         .is_none_or(|id| id == self.latest_connection_request_id);
                     let expected_while_pending = !self.connection_pending
                         || connection_request_id == Some(self.latest_connection_request_id);
 
-                    if belongs_to_current_connection && expected_while_pending {
+                    if belongs_to_latest_refresh
+                        && belongs_to_current_connection
+                        && expected_while_pending
+                    {
                         self.connection_pending = false;
                         match result {
                             Ok(services) => {
@@ -386,6 +400,28 @@ impl App {
                                 self.table_service.set_ignore_key_events(false);
                                 self.error_message = Some(error);
                             }
+                        }
+                    }
+                }
+                AppEvent::Action(Actions::UnitFileStatesLoaded(
+                    request_id,
+                    connection_request_id,
+                    result,
+                )) => {
+                    let belongs_to_latest_refresh =
+                        request_id == self.latest_services_request_id;
+                    let belongs_to_current_connection = connection_request_id
+                        .is_none_or(|id| id == self.latest_connection_request_id);
+                    let expected_while_pending = !self.connection_pending
+                        || connection_request_id == Some(self.latest_connection_request_id);
+
+                    if belongs_to_latest_refresh
+                        && belongs_to_current_connection
+                        && expected_while_pending
+                    {
+                        match result {
+                            Ok(states) => self.table_service.apply_unit_file_states(states),
+                            Err(error) => self.error_message = Some(error),
                         }
                     }
                 }
@@ -463,6 +499,7 @@ impl App {
                     self.spawn_service_action_worker(service, action);
                 }
                 AppEffect::RefreshServices {
+                    request_id,
                     filter_all,
                     filter_text,
                     connection_request_id,
@@ -472,6 +509,7 @@ impl App {
                         filter_all,
                         filter_text,
                         query_sender,
+                        request_id,
                         connection_request_id,
                     );
                 }
@@ -533,21 +571,28 @@ impl App {
         });
     }
 
-    fn refresh_services_effect(&self) -> AppEffect {
+    fn refresh_services_effect(&mut self) -> AppEffect {
+        let request_id = self.next_services_request_id();
         let (filter_all, filter_text) = self.table_service.refresh_parameters();
         AppEffect::RefreshServices {
+            request_id,
             filter_all,
             filter_text,
             connection_request_id: None,
         }
     }
 
-    fn refresh_services_effect_for_connection(&self, request_id: u64) -> AppEffect {
+    fn refresh_services_effect_for_connection(
+        &mut self,
+        connection_request_id: u64,
+    ) -> AppEffect {
+        let request_id = self.next_services_request_id();
         let (filter_all, filter_text) = self.table_service.refresh_parameters();
         AppEffect::RefreshServices {
+            request_id,
             filter_all,
             filter_text,
-            connection_request_id: Some(request_id),
+            connection_request_id: Some(connection_request_id),
         }
     }
 
@@ -556,15 +601,22 @@ impl App {
         filter_all: bool,
         filter_text: String,
         query_sender: Arc<Sender<QueryUnitFile>>,
+        request_id: u64,
         connection_request_id: Option<u64>,
     ) {
         let manager = self.usecases.borrow().clone();
         let sender = self.event_tx.clone();
         thread::spawn(move || {
             let result = manager
-                .list_services(filter_all, query_sender)
+                .list_services(
+                    filter_all,
+                    query_sender,
+                    request_id,
+                    connection_request_id,
+                )
                 .map_err(|error| error.to_string());
             let _ = sender.send(AppEvent::Action(Actions::ServicesLoaded(
+                request_id,
                 result,
                 filter_text,
                 connection_request_id,
@@ -578,6 +630,11 @@ impl App {
             id: self.latest_connection_request_id,
             target,
         }
+    }
+
+    fn next_services_request_id(&mut self) -> u64 {
+        self.latest_services_request_id = self.latest_services_request_id.wrapping_add(1);
+        self.latest_services_request_id
     }
 
     #[allow(clippy::unused_self)]
@@ -1305,16 +1362,19 @@ mod tests {
     fn pending_connection_accepts_only_its_own_service_list() {
         let mut app = test_app();
         app.latest_connection_request_id = 2;
+        app.latest_services_request_id = 2;
         app.connection_pending = true;
         app.table_service.begin_connection_change();
 
         app.handle_event(AppEvent::Action(Actions::ServicesLoaded(
+            1,
             Ok(vec![service("old.service", "active", "enabled")]),
             String::new(),
             Some(1),
         )))
         .unwrap();
         app.handle_event(AppEvent::Action(Actions::ServicesLoaded(
+            1,
             Ok(vec![service("unrelated.service", "active", "enabled")]),
             String::new(),
             None,
@@ -1326,6 +1386,7 @@ mod tests {
         assert!(app.table_service.ignore_key_events);
 
         app.handle_event(AppEvent::Action(Actions::ServicesLoaded(
+            2,
             Ok(vec![service("current.service", "active", "enabled")]),
             String::new(),
             Some(2),
@@ -1335,6 +1396,58 @@ mod tests {
         assert!(!app.connection_pending);
         assert_eq!(app.table_service.services[0].name(), "current.service");
         assert!(!app.table_service.ignore_key_events);
+    }
+
+    #[test]
+    fn stale_refresh_cannot_overwrite_newer_service_list() {
+        let mut app = test_app();
+        app.latest_services_request_id = 2;
+
+        app.handle_event(AppEvent::Action(Actions::ServicesLoaded(
+            2,
+            Ok(vec![service("new.service", "active", "enabled")]),
+            "new".into(),
+            None,
+        )))
+        .unwrap();
+        app.handle_event(AppEvent::Action(Actions::ServicesLoaded(
+            1,
+            Ok(vec![service("old.service", "active", "enabled")]),
+            "old".into(),
+            None,
+        )))
+        .unwrap();
+
+        assert_eq!(app.table_service.services[0].name(), "new.service");
+        assert_eq!(app.table_service.refresh_parameters().1, "new");
+    }
+
+    #[test]
+    fn stale_unit_file_states_cannot_overwrite_newer_states() {
+        let mut app = test_app();
+        let unit = service("demo.service", "active", "disabled");
+        app.latest_services_request_id = 2;
+
+        app.handle_event(AppEvent::Action(Actions::UnitFileStatesLoaded(
+            2,
+            None,
+            Ok(HashMap::from([(
+                "demo.service".to_string(),
+                "enabled".to_string(),
+            )])),
+        )))
+        .unwrap();
+        app.handle_event(AppEvent::Action(Actions::UnitFileStatesLoaded(
+            1,
+            None,
+            Ok(HashMap::from([(
+                "demo.service".to_string(),
+                "masked".to_string(),
+            )])),
+        )))
+        .unwrap();
+
+        assert_eq!(app.table_service.file_state_for(&unit), "enabled");
     }
 
     #[test]
