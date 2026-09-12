@@ -52,6 +52,8 @@ enum AppEffect {
         service: Service,
     },
     RunServiceAction {
+        request_id: u64,
+        connection_request_id: u64,
         service: Service,
         action: ServiceAction,
     },
@@ -86,7 +88,7 @@ pub enum Actions {
     UpdateTimestamp(String, Option<u64>),
     LogLoaded(u64, Result<(String, String), String>),
     DetailsLoaded(u64, Service, Result<String, String>),
-    ServiceActionFinished(Result<Service, String>),
+    ServiceActionFinished(u64, u64, Result<Service, String>),
     ServicesLoaded(u64, Result<Vec<Service>, String>, String, Option<u64>),
     UnitFileStatesLoaded(
         u64,
@@ -139,6 +141,8 @@ pub struct App {
     latest_services_request_id: u64,
     latest_log_request_id: u64,
     latest_details_request_id: u64,
+    latest_service_action_request_id: u64,
+    pending_service_action_request_id: Option<u64>,
 }
 
 impl App {
@@ -194,6 +198,8 @@ impl App {
             latest_services_request_id: 0,
             latest_log_request_id: 0,
             latest_details_request_id: 0,
+            latest_service_action_request_id: 0,
+            pending_service_action_request_id: None,
         }
     }
 
@@ -306,10 +312,15 @@ impl App {
                                 self.table_service.set_selected_index(0);
                             }
                         } else {
-                            if let Some(connection_type) = self.on_key_horizontal_event(
-                                key,
-                                self.filter.input_mode == InputMode::Editing,
-                            ) {
+                            let connection_type = (!self.has_pending_service_action())
+                                .then(|| {
+                                    self.on_key_horizontal_event(
+                                        key,
+                                        self.filter.input_mode == InputMode::Editing,
+                                    )
+                                })
+                                .flatten();
+                            if let Some(connection_type) = connection_type {
                                 self.connection_pending = true;
                                 self.table_service.begin_connection_change();
                                 effects.push(AppEffect::ChangeConnection(
@@ -343,7 +354,15 @@ impl App {
                         }
                         _ => {
                             if let Some(service) = self.table_service.get_selected_service() {
-                                effects.push(AppEffect::RunServiceAction { service, action });
+                                let request_id = self.next_service_action_request_id();
+                                self.pending_service_action_request_id = Some(request_id);
+                                self.table_service.set_ignore_key_events(true);
+                                effects.push(AppEffect::RunServiceAction {
+                                    request_id,
+                                    connection_request_id: self.latest_connection_request_id,
+                                    service,
+                                    action,
+                                });
                             } else {
                                 self.table_service.set_ignore_key_events(false);
                             }
@@ -403,9 +422,24 @@ impl App {
                         }
                     }
                 }
-                AppEvent::Action(Actions::ServiceActionFinished(result)) => {
-                    self.table_service.apply_service_result(result);
-                    self.table_service.invalidate_timestamp();
+                AppEvent::Action(Actions::ServiceActionFinished(
+                    request_id,
+                    connection_request_id,
+                    result,
+                )) => {
+                    let belongs_to_pending_action =
+                        self.pending_service_action_request_id == Some(request_id);
+                    if belongs_to_pending_action {
+                        self.pending_service_action_request_id = None;
+                    }
+
+                    if belongs_to_pending_action
+                        && connection_request_id == self.latest_connection_request_id
+                        && !self.connection_pending
+                    {
+                        self.table_service.apply_service_result(result);
+                        self.table_service.invalidate_timestamp();
+                    }
                 }
                 AppEvent::Action(Actions::ServicesLoaded(
                     request_id,
@@ -534,8 +568,18 @@ impl App {
                 } => {
                     self.spawn_details_worker(request_id, service);
                 }
-                AppEffect::RunServiceAction { service, action } => {
-                    self.spawn_service_action_worker(service, action);
+                AppEffect::RunServiceAction {
+                    request_id,
+                    connection_request_id,
+                    service,
+                    action,
+                } => {
+                    self.spawn_service_action_worker(
+                        request_id,
+                        connection_request_id,
+                        service,
+                        action,
+                    );
                 }
                 AppEffect::RefreshServices {
                     request_id,
@@ -589,7 +633,13 @@ impl App {
         });
     }
 
-    fn spawn_service_action_worker(&self, service: Service, action: ServiceAction) {
+    fn spawn_service_action_worker(
+        &self,
+        request_id: u64,
+        connection_request_id: u64,
+        service: Service,
+        action: ServiceAction,
+    ) {
         let manager = self.usecases.borrow().clone();
         let sender = self.event_tx.clone();
         let file_state = self.table_service.file_state_for(&service);
@@ -610,7 +660,11 @@ impl App {
             }
             .map_err(|error| error.to_string());
 
-            let _ = sender.send(AppEvent::Action(Actions::ServiceActionFinished(result)));
+            let _ = sender.send(AppEvent::Action(Actions::ServiceActionFinished(
+                request_id,
+                connection_request_id,
+                result,
+            )));
         });
     }
 
@@ -678,6 +732,16 @@ impl App {
     fn next_services_request_id(&mut self) -> u64 {
         self.latest_services_request_id = self.latest_services_request_id.wrapping_add(1);
         self.latest_services_request_id
+    }
+
+    fn next_service_action_request_id(&mut self) -> u64 {
+        self.latest_service_action_request_id =
+            self.latest_service_action_request_id.wrapping_add(1);
+        self.latest_service_action_request_id
+    }
+
+    fn has_pending_service_action(&self) -> bool {
+        self.pending_service_action_request_id.is_some()
     }
 
     fn fetch_log_effect(&mut self, service: Service) -> AppEffect {
@@ -1381,13 +1445,67 @@ mod tests {
         let unit = service("demo.service", "inactive", "disabled");
         app.table_service.services = vec![unit.clone()];
         app.table_service.refresh("");
+        app.pending_service_action_request_id = Some(1);
 
-        app.spawn_service_action_worker(unit, ServiceAction::Start);
+        app.spawn_service_action_worker(1, 0, unit, ServiceAction::Start);
         let event = app.event_rx.recv_timeout(Duration::from_secs(1)).unwrap();
         app.handle_event(event).unwrap();
 
         assert_eq!(observer.calls(), ["start:demo.service"]);
         assert_eq!(app.table_service.services[0].state().active(), "active");
+        assert!(!app.has_pending_service_action());
+    }
+
+    #[test]
+    fn pending_service_action_blocks_connection_change() {
+        let mut app = test_app();
+        app.table_service.services = vec![service("demo.service", "inactive", "disabled")];
+        app.table_service.refresh("");
+
+        let action_effects = app
+            .handle_event(AppEvent::Action(Actions::ServiceAction(
+                ServiceAction::Start,
+            )))
+            .unwrap();
+        let connection_effects = app
+            .handle_event(AppEvent::Key(KeyEvent::new(
+                KeyCode::Right,
+                KeyModifiers::NONE,
+            )))
+            .unwrap();
+
+        assert!(matches!(
+            action_effects.as_slice(),
+            [AppEffect::RunServiceAction {
+                request_id: 1,
+                connection_request_id: 0,
+                ..
+            }]
+        ));
+        assert!(app.has_pending_service_action());
+        assert!(connection_effects.is_empty());
+        assert_eq!(app.selected_tab_index, 0);
+        assert_eq!(app.latest_connection_request_id, 0);
+    }
+
+    #[test]
+    fn stale_service_action_result_cannot_repopulate_a_changed_connection() {
+        let mut app = test_app();
+        app.pending_service_action_request_id = Some(1);
+        app.latest_connection_request_id = 2;
+        app.connection_pending = true;
+        app.table_service.begin_connection_change();
+
+        app.handle_event(AppEvent::Action(Actions::ServiceActionFinished(
+            1,
+            1,
+            Ok(service("old.service", "active", "enabled")),
+        )))
+        .unwrap();
+
+        assert!(!app.has_pending_service_action());
+        assert!(app.table_service.services.is_empty());
+        assert!(app.table_service.ignore_key_events);
     }
 
     #[test]
