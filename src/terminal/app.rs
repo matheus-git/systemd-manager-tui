@@ -791,7 +791,7 @@ impl App {
         });
         let [message_area, input_area, help_area] = Layout::vertical([
             Constraint::Length(1),
-            Constraint::Length(1),
+            Constraint::Length(2),
             Constraint::Length(1),
         ])
         .areas(inner);
@@ -1074,6 +1074,20 @@ mod tests {
             details,
             manager,
         )
+    }
+
+    fn key(code: KeyCode) -> AppEvent {
+        AppEvent::Key(KeyEvent::new(code, KeyModifiers::NONE))
+    }
+
+    fn submit_instance(app: &mut App, input: &str) -> Vec<AppEffect> {
+        for character in input.chars() {
+            assert!(app
+                .handle_event(key(KeyCode::Char(character)))
+                .unwrap()
+                .is_empty());
+        }
+        app.handle_event(key(KeyCode::Enter)).unwrap()
     }
 
     #[test]
@@ -1371,10 +1385,14 @@ mod tests {
     #[test]
     fn instance_prompt_is_rendered_by_test_backend() {
         let mut app = test_app();
-        app.instance_prompt = Some(InstancePrompt::new(
+        let mut prompt = InstancePrompt::new(
             service("worker@.service", "inactive", "disabled"),
             ServiceAction::Start,
-        ));
+        );
+        for character in "queue-1".chars() {
+            prompt.insert(character);
+        }
+        app.instance_prompt = Some(prompt);
         let backend = TestBackend::new(80, 20);
         let mut terminal = Terminal::new(backend).unwrap();
 
@@ -1385,6 +1403,7 @@ mod tests {
         let screen = terminal.backend().to_string();
         assert!(screen.contains("Service instance"));
         assert!(screen.contains("Enter an instance to start worker@.service"));
+        assert!(screen.contains("queue-1"));
         assert!(screen.contains("Enter: confirm | Esc: cancel"));
     }
 
@@ -1404,6 +1423,103 @@ mod tests {
     }
 
     #[test]
+    fn keyboard_flow_instantiates_starts_and_updates_the_table() {
+        let fake = FakeRepository::default();
+        let observer = fake.clone();
+        let mut app = test_app_with_repository(fake);
+        app.table_service.services = vec![service("worker@.service", "inactive", "disabled")];
+        app.table_service.refresh("");
+
+        assert!(app.handle_event(key(KeyCode::Char('s'))).unwrap().is_empty());
+        let action_event = app.event_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert!(app.handle_event(action_event).unwrap().is_empty());
+        assert!(app.instance_prompt.is_some());
+
+        let effects = submit_instance(&mut app, "queue one");
+        let [AppEffect::RunServiceAction { service, action }] = effects.as_slice() else {
+            panic!("expected a service action effect");
+        };
+        assert_eq!(service.name(), r"worker@queue\x20one.service");
+        assert_eq!(*action, ServiceAction::Start);
+
+        app.spawn_service_action_worker(service.clone(), *action);
+        let finished_event = app.event_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        app.handle_event(finished_event).unwrap();
+
+        assert_eq!(observer.calls(), [r"start:worker@queue\x20one.service"]);
+        assert!(app
+            .table_service
+            .services
+            .iter()
+            .any(|service| service.name() == r"worker@queue\x20one.service"));
+        assert!(!app.table_service.ignore_key_events);
+    }
+
+    #[test]
+    fn every_lifecycle_action_keeps_its_semantics_after_instantiation() {
+        let cases = [
+            (ServiceAction::Start, "start:worker@blue.service"),
+            (ServiceAction::Stop, "stop:worker@blue.service"),
+            (ServiceAction::Restart, "restart:worker@blue.service"),
+            (ServiceAction::Enable, "enable:worker@blue.service"),
+            (ServiceAction::Disable, "disable:worker@blue.service"),
+            (ServiceAction::ToggleMask, "mask:worker@blue.service"),
+        ];
+
+        for (action, expected_call) in cases {
+            let fake = FakeRepository::default();
+            let observer = fake.clone();
+            let mut app = test_app_with_repository(fake);
+            app.table_service.services = vec![service("worker@.service", "inactive", "disabled")];
+            app.table_service.refresh("");
+            app.handle_event(AppEvent::Action(Actions::ServiceAction(action)))
+                .unwrap();
+
+            let effects = submit_instance(&mut app, "blue");
+            let [AppEffect::RunServiceAction { service, action: submitted_action }] =
+                effects.as_slice()
+            else {
+                panic!("expected {action:?} to produce a service action effect");
+            };
+            assert_eq!(*submitted_action, action);
+            app.spawn_service_action_worker(service.clone(), *submitted_action);
+            let finished_event = app.event_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+            app.handle_event(finished_event).unwrap();
+
+            let calls = observer.calls();
+            assert_eq!(calls.first().map(String::as_str), Some(expected_call));
+            if matches!(action, ServiceAction::Enable | ServiceAction::Disable) {
+                assert_eq!(calls.get(1).map(String::as_str), Some("reload:"));
+            } else {
+                assert_eq!(calls.len(), 1);
+            }
+        }
+    }
+
+    #[test]
+    fn masked_template_unmasks_the_requested_instance() {
+        let fake = FakeRepository::default();
+        let observer = fake.clone();
+        let mut app = test_app_with_repository(fake);
+        app.table_service.services = vec![service("worker@.service", "inactive", "masked")];
+        app.table_service.refresh("");
+        app.handle_event(AppEvent::Action(Actions::ServiceAction(
+            ServiceAction::ToggleMask,
+        )))
+        .unwrap();
+
+        let effects = submit_instance(&mut app, "blue");
+        let [AppEffect::RunServiceAction { service, action }] = effects.as_slice() else {
+            panic!("expected a service action effect");
+        };
+        app.spawn_service_action_worker(service.clone(), *action);
+        let finished_event = app.event_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        app.handle_event(finished_event).unwrap();
+
+        assert_eq!(observer.calls(), ["unmask:worker@blue.service"]);
+    }
+
+    #[test]
     fn instance_prompt_edits_unicode_by_character() {
         let template = service("worker@.service", "inactive", "disabled");
         let mut prompt = InstancePrompt::new(template, ServiceAction::Start);
@@ -1416,6 +1532,32 @@ mod tests {
 
         assert_eq!(prompt.input, "a中");
         assert_eq!(prompt.cursor, 1);
+    }
+
+    #[test]
+    fn instance_prompt_navigation_edits_at_the_cursor() {
+        let mut app = test_app();
+        app.instance_prompt = Some(InstancePrompt::new(
+            service("worker@.service", "inactive", "disabled"),
+            ServiceAction::Start,
+        ));
+
+        submit_instance_text_without_submitting(&mut app, "ac");
+        app.handle_event(key(KeyCode::Left)).unwrap();
+        app.handle_event(key(KeyCode::Char('b'))).unwrap();
+        app.handle_event(key(KeyCode::Home)).unwrap();
+        app.handle_event(key(KeyCode::Right)).unwrap();
+        app.handle_event(key(KeyCode::Backspace)).unwrap();
+
+        let prompt = app.instance_prompt.as_ref().unwrap();
+        assert_eq!(prompt.input, "bc");
+        assert_eq!(prompt.cursor, 0);
+    }
+
+    fn submit_instance_text_without_submitting(app: &mut App, input: &str) {
+        for character in input.chars() {
+            app.handle_event(key(KeyCode::Char(character))).unwrap();
+        }
     }
 
     #[test]
