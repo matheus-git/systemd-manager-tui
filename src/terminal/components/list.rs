@@ -178,7 +178,8 @@ pub enum ServiceAction {
 }
 
 pub enum QueryUnitFile {
-    Finished(HashMap<String, String>)
+    Finished(HashMap<String, String>),
+    Error(String),
 }
  
 pub struct TableServices {
@@ -246,14 +247,32 @@ impl TableServices {
 
         thread::spawn(move || {
             loop {
-                let rx = event_rx.lock().unwrap();
-                if let Ok(msg) = rx.recv() {
-                    match msg {
-                        QueryUnitFile::Finished(s) => {
-                            *states.lock().unwrap() = s;
-                            sender.send(AppEvent::Action(Actions::Redraw)).expect("Error");
+                let message = match event_rx.lock() {
+                    Ok(receiver) => receiver.recv(),
+                    Err(error) => {
+                        let _ = sender.send(AppEvent::Error(error.to_string()));
+                        break;
+                    }
+                };
+                match message {
+                    Ok(QueryUnitFile::Finished(new_states)) => {
+                        match states.lock() {
+                            Ok(mut states) => *states = new_states,
+                            Err(error) => {
+                                let _ = sender.send(AppEvent::Error(error.to_string()));
+                                break;
+                            }
+                        }
+                        if sender.send(AppEvent::Action(Actions::Redraw)).is_err() {
+                            break;
                         }
                     }
+                    Ok(QueryUnitFile::Error(error)) => {
+                        if sender.send(AppEvent::Error(error)).is_err() {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
                 }
             }
         });
@@ -302,10 +321,16 @@ impl TableServices {
                 while let Ok(n) = rx.try_recv() {
                     name = n;
                 }
-                let ts = repo.lock().unwrap()
-                    .get_active_enter_timestamp(&name)
-                    .ok()
-                    .filter(|&t| t > 0);
+                let ts = match repo.lock() {
+                    Ok(repo) => repo
+                        .get_active_enter_timestamp(&name)
+                        .ok()
+                        .filter(|&t| t > 0),
+                    Err(error) => {
+                        let _ = sender.send(AppEvent::Error(error.to_string()));
+                        break;
+                    }
+                };
                 let _ = sender.send(AppEvent::Action(Actions::UpdateTimestamp(name, ts)));
             }
         });

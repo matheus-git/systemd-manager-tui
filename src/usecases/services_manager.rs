@@ -62,6 +62,24 @@ mod tests {
     }
 
     #[test]
+    fn background_state_errors_are_returned_to_the_caller() {
+        let fake = FakeRepository::with_services(
+            vec![service("demo.service", "active", "enabled")],
+            vec![],
+        );
+        fake.fail("states");
+        let manager = ServicesManager::new(Box::new(fake));
+        let (sender, receiver) = mpsc::channel();
+
+        manager.list_services(false, Arc::new(sender)).unwrap();
+
+        assert!(matches!(
+            receiver.recv_timeout(Duration::from_secs(1)),
+            Ok(QueryUnitFile::Error(error)) if error == "states failed"
+        ));
+    }
+
+    #[test]
     fn enable_and_disable_reload_the_daemon() {
         let fake = FakeRepository::default();
         let observer = fake.clone();
@@ -211,11 +229,18 @@ impl ServicesManager {
 
         let repo = Arc::clone(&self.repository);
         thread::spawn(move || {
-            let repo = repo.lock().unwrap();
-            let services_runtime = repo.list_services(filter).expect("");
-            if let Ok(states) = repo.unit_files_state(services_runtime) {
-                let _ = tx.send(QueryUnitFile::Finished(states));
-            }
+            let result = repo
+                .lock()
+                .map_err(|error| error.to_string())
+                .and_then(|repo| {
+                    let services = repo.list_services(filter).map_err(|error| error.to_string())?;
+                    repo.unit_files_state(services).map_err(|error| error.to_string())
+                });
+            let message = match result {
+                Ok(states) => QueryUnitFile::Finished(states),
+                Err(error) => QueryUnitFile::Error(error),
+            };
+            let _ = tx.send(message);
         });
 
         Ok(all)
