@@ -4,7 +4,7 @@ mod terminal;
 mod usecases;
 #[cfg(test)]
 mod test_support;
-use infrastructure::systemd_service_adapter::{ConnectionType, SystemdServiceAdapter};
+use infrastructure::systemd_service_adapter::{ConnectionType, PollingConfig, SystemdServiceAdapter};
 use infrastructure::notifier::start_notifier;
 use terminal::app::App;
 use usecases::services_manager::ServicesManager;
@@ -12,6 +12,7 @@ use usecases::services_manager::ServicesManager;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::mpsc;
+use std::time::Duration;
 
 use terminal::app::AppEvent;
 
@@ -28,17 +29,23 @@ struct Args {
     /// Filter text applied on startup
     #[arg(short, long)]
     filter: Option<String>,
+
+    /// Maximum time to wait for a systemd job to finish
+    #[arg(long, default_value_t = 30)]
+    operation_timeout_seconds: u64,
 }
 
 #[derive(Clone)]
 pub struct Config {
     pub filter: String,
+    pub operation_timeout_seconds: u64,
 }
 
 impl From<Args> for Config {
     fn from(args: Args) -> Self {
         Self {
             filter: args.filter.unwrap_or_default(),
+            operation_timeout_seconds: args.operation_timeout_seconds,
         }
     }
 }
@@ -57,7 +64,14 @@ fn main() -> color_eyre::Result<()> {
     let (event_tx, event_rx) = mpsc::channel::<AppEvent>();
 
     start_notifier();
-    let systemd_adapter = SystemdServiceAdapter::new(ConnectionType::System)?;
+    let polling = PollingConfig::new(
+        Duration::from_secs(args.operation_timeout_seconds),
+        Duration::from_millis(100),
+    );
+    let systemd_adapter = SystemdServiceAdapter::with_polling_config(
+        ConnectionType::System,
+        polling,
+    )?;
     let usecase = Rc::new(RefCell::new(ServicesManager::new(Box::new(
         systemd_adapter
     ))));

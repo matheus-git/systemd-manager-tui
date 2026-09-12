@@ -3,6 +3,7 @@ use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 use zbus::Error;
 use zbus::proxy::MethodFlags;
 use std::time::Duration;
+use std::time::Instant;
 use std::process::Command;
 use std::io::{self};
 use std::thread;
@@ -14,6 +15,24 @@ use std::collections::HashMap;
 use crate::terminal::components::list::LOADING_PLACEHOLDER;
 
 const SLEEP_DURATION: u64 = 100;
+
+#[derive(Clone, Copy, Debug)]
+pub struct PollingConfig {
+    timeout: Duration,
+    interval: Duration,
+}
+
+impl PollingConfig {
+    pub const fn new(timeout: Duration, interval: Duration) -> Self {
+        Self { timeout, interval }
+    }
+}
+
+impl Default for PollingConfig {
+    fn default() -> Self {
+        Self::new(Duration::from_secs(30), Duration::from_millis(SLEEP_DURATION))
+    }
+}
 
 type SystemdUnit = (
     String,
@@ -35,11 +54,15 @@ pub enum ConnectionType {
 
 pub struct SystemdServiceAdapter {
     connection: Connection,
-    connection_type: ConnectionType
+    connection_type: ConnectionType,
+    polling: PollingConfig,
 }
 
 impl SystemdServiceAdapter {
-    pub fn new(connection_type: ConnectionType) -> Result<Self, Error> {
+    pub fn with_polling_config(
+        connection_type: ConnectionType,
+        polling: PollingConfig,
+    ) -> Result<Self, Error> {
         let connection = match connection_type {
             ConnectionType::Session => Connection::session()?,
             ConnectionType::System => Connection::system()?
@@ -47,7 +70,8 @@ impl SystemdServiceAdapter {
 
         Ok(Self {
             connection, 
-            connection_type
+            connection_type,
+            polling,
         })
     }
 
@@ -241,13 +265,7 @@ impl ServiceRepository for SystemdServiceAdapter {
             &(name, "replace")
         )?;
         reply.ok_or("No reply from StartUnit")?;
-        thread::sleep(Duration::from_millis(SLEEP_DURATION));
-        let mut service = self.get_unit(name)?;
-        while service.state().active().ends_with("ing") {
-            service = self.get_unit(name)?;
-            thread::sleep(Duration::from_millis(100));
-        }
-        Ok(service)
+        wait_for_stable_service(self.polling, || self.get_unit(name), thread::sleep)
     }
 
     fn stop_service(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
@@ -258,13 +276,7 @@ impl ServiceRepository for SystemdServiceAdapter {
             &(name.to_string(), "replace")
         )?;
         reply.ok_or("No reply from StopUnit")?;
-        thread::sleep(Duration::from_millis(SLEEP_DURATION));
-        let mut service = self.get_unit(name)?;
-        while service.state().active().ends_with("ing") {
-            service = self.get_unit(name)?;
-            thread::sleep(Duration::from_millis(100));
-        }
-        Ok(service)
+        wait_for_stable_service(self.polling, || self.get_unit(name), thread::sleep)
     }
 
     fn restart_service(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
@@ -275,13 +287,7 @@ impl ServiceRepository for SystemdServiceAdapter {
             &(name, "replace")
         )?;
         reply.ok_or("No reply from Start")?;
-        thread::sleep(Duration::from_millis(SLEEP_DURATION));
-        let mut service = self.get_unit(name)?;
-        while service.state().active().ends_with("ing") {
-            service = self.get_unit(name)?;
-            thread::sleep(Duration::from_millis(100));
-        }
-        Ok(service)
+        wait_for_stable_service(self.polling, || self.get_unit(name), thread::sleep)
     }
 
     fn enable_service(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
@@ -362,4 +368,84 @@ impl ServiceRepository for SystemdServiceAdapter {
     }
 
 
+}
+
+fn wait_for_stable_service<Get, Sleep>(
+    polling: PollingConfig,
+    mut get_service: Get,
+    mut sleep: Sleep,
+) -> Result<Service, Box<dyn std::error::Error>>
+where
+    Get: FnMut() -> Result<Service, Box<dyn std::error::Error>>,
+    Sleep: FnMut(Duration),
+{
+    let started = Instant::now();
+    loop {
+        let service = get_service()?;
+        if !service.state().active().ends_with("ing") {
+            return Ok(service);
+        }
+        if started.elapsed() >= polling.timeout {
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                format!("Timed out waiting for '{}' to finish", service.name()),
+            )
+            .into());
+        }
+        sleep(polling.interval);
+    }
+}
+
+#[cfg(test)]
+mod polling_tests {
+    use super::*;
+    use crate::domain::service_state::ServiceState;
+    use std::collections::VecDeque;
+
+    fn service(active: &str) -> Service {
+        Service::new(
+            "demo.service".into(),
+            String::new(),
+            ServiceState::new("loaded".into(), active.into(), String::new(), "enabled".into()),
+        )
+    }
+
+    #[test]
+    fn returns_when_service_reaches_stable_state() {
+        let mut states = VecDeque::from([service("activating"), service("active")]);
+        let mut sleeps = 0;
+
+        let result = wait_for_stable_service(
+            PollingConfig::new(Duration::from_secs(1), Duration::from_millis(1)),
+            || Ok(states.pop_front().unwrap()),
+            |_| sleeps += 1,
+        )
+        .unwrap();
+
+        assert_eq!(result.state().active(), "active");
+        assert_eq!(sleeps, 1);
+    }
+
+    #[test]
+    fn returns_timeout_instead_of_polling_forever() {
+        let result = wait_for_stable_service(
+            PollingConfig::new(Duration::ZERO, Duration::ZERO),
+            || Ok(service("deactivating")),
+            |_| panic!("zero timeout must not sleep"),
+        );
+
+        let error = result.unwrap_err();
+        assert!(error.to_string().contains("Timed out"));
+    }
+
+    #[test]
+    fn propagates_errors_from_state_lookup() {
+        let result = wait_for_stable_service(
+            PollingConfig::default(),
+            || Err("D-Bus unavailable".into()),
+            |_| {},
+        );
+
+        assert_eq!(result.unwrap_err().to_string(), "D-Bus unavailable");
+    }
 }
