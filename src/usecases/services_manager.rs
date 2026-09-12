@@ -8,6 +8,7 @@ use std::sync::mpsc::Sender;
 use std::thread;
 use std::sync::{Arc, Mutex};
 
+#[derive(Clone)]
 pub struct ServicesManager {
     repository: Arc<Mutex<Box<dyn ServiceRepository>>>,
 }

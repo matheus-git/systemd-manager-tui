@@ -57,7 +57,6 @@ pub enum Actions {
     ResetList,
     GoLog,
     GoDetails,
-    Updatelog((String, String)),
     #[allow(dead_code)]
     UpdateDetails,
     Filter(String),
@@ -67,6 +66,9 @@ pub enum Actions {
     ShowHelp,
     Redraw,
     UpdateTimestamp(String, Option<u64>),
+    LogLoaded(Result<(String, String), String>),
+    DetailsLoaded(Service, Result<String, String>),
+    ServiceActionFinished(Result<Service, String>),
 }
 
 pub enum AppEvent {
@@ -271,9 +273,6 @@ impl App {
                     self.table_service.set_selected_index(0);
                     self.table_service.refresh(&input);
                 }
-                AppEvent::Action(Actions::Updatelog(data)) => {
-                    self.service_log.update(data.0, data.1);
-                }
                 AppEvent::Action(Actions::RefreshLog) => {
                     if self.status == Status::Log 
                         && let Some(service) = self.table_service.get_selected_service() {
@@ -292,6 +291,18 @@ impl App {
                     self.table_service.update_timestamp(name, ts);
                 }
                 AppEvent::Action(Actions::UpdateDetails | Actions::Redraw) => {}
+                AppEvent::Action(Actions::LogLoaded(result)) => match result {
+                    Ok((name, log)) => self.service_log.update(name, log),
+                    Err(error) => self.error_message = Some(error),
+                },
+                AppEvent::Action(Actions::DetailsLoaded(service, result)) => match result {
+                    Ok(unit_file) => self.details.update_unit_file(service, unit_file),
+                    Err(error) => self.error_message = Some(error),
+                },
+                AppEvent::Action(Actions::ServiceActionFinished(result)) => {
+                    self.table_service.apply_service_result(result);
+                    self.table_service.invalidate_timestamp();
+                }
                 AppEvent::Action(Actions::RefreshDetails) => {
                     if self.status == Status::Details
                         && let Some(service) = self.table_service.get_selected_service()
@@ -335,20 +346,74 @@ impl App {
                     self.event_tx.send(AppEvent::Action(Actions::RefreshDetails))?;
                 }
                 AppEffect::FetchLog(service) => {
-                    self.service_log.fetch_log_and_dispatch(&service);
+                    self.spawn_log_worker(service);
                 }
                 AppEffect::FetchDetails(service) => {
-                    self.details.update(service);
-                    self.details.fetch_unit_file();
+                    self.spawn_details_worker(service);
                 }
                 AppEffect::RunServiceAction { service, action } => {
-                    self.table_service.act_on_service(service, &action);
-                    self.table_service.invalidate_timestamp();
+                    match action {
+                        ServiceAction::ToggleFilter
+                        | ServiceAction::RefreshAll => {
+                            self.table_service.act_on_service(service, &action);
+                            self.table_service.invalidate_timestamp();
+                        }
+                        _ => self.spawn_service_action_worker(service, action),
+                    }
                 }
             }
         }
 
         Ok(())
+    }
+
+    fn spawn_log_worker(&self, service: Service) {
+        let manager = self.usecases.borrow().clone();
+        let sender = self.event_tx.clone();
+        thread::spawn(move || {
+            let name = service.name().to_string();
+            let result = manager
+                .get_log(&service)
+                .map(|log| (name, log))
+                .map_err(|error| error.to_string());
+            let _ = sender.send(AppEvent::Action(Actions::LogLoaded(result)));
+        });
+    }
+
+    fn spawn_details_worker(&self, service: Service) {
+        let manager = self.usecases.borrow().clone();
+        let sender = self.event_tx.clone();
+        thread::spawn(move || {
+            let result = manager
+                .systemctl_cat(&service)
+                .map_err(|error| error.to_string());
+            let _ = sender.send(AppEvent::Action(Actions::DetailsLoaded(service, result)));
+        });
+    }
+
+    fn spawn_service_action_worker(&self, service: Service, action: ServiceAction) {
+        let manager = self.usecases.borrow().clone();
+        let sender = self.event_tx.clone();
+        let file_state = self.table_service.file_state_for(&service);
+        thread::spawn(move || {
+            let result = match action {
+                ServiceAction::Start => manager.start_service(&service),
+                ServiceAction::Stop => manager.stop_service(&service),
+                ServiceAction::Restart => manager.restart_service(&service),
+                ServiceAction::Enable => manager.enable_service(&service),
+                ServiceAction::Disable => manager.disable_service(&service),
+                ServiceAction::ToggleMask
+                    if matches!(file_state.as_str(), "masked" | "masked-runtime") =>
+                {
+                    manager.unmask_service(&service)
+                }
+                ServiceAction::ToggleMask => manager.mask_service(&service),
+                ServiceAction::ToggleFilter | ServiceAction::RefreshAll => return,
+            }
+            .map_err(|error| error.to_string());
+
+            let _ = sender.send(AppEvent::Action(Actions::ServiceActionFinished(result)));
+        });
     }
 
     #[allow(clippy::unused_self)]
@@ -764,16 +829,21 @@ mod tests {
     use ratatui::backend::TestBackend;
     use ratatui::Terminal;
     use std::sync::mpsc;
+    use std::time::Duration;
 
     fn test_app() -> App {
+        test_app_with_repository(FakeRepository::default())
+    }
+
+    fn test_app_with_repository(repository: FakeRepository) -> App {
         let (event_tx, event_rx) = mpsc::channel();
         let manager = Rc::new(RefCell::new(ServicesManager::new(Box::new(
-            FakeRepository::default(),
+            repository,
         ))));
         let table = TableServices::new(event_tx.clone(), manager.clone());
         let filter = Filter::new(event_tx.clone(), String::new());
-        let log = ServiceLog::new(event_tx.clone(), manager.clone());
-        let details = ServiceDetails::new(event_tx.clone(), manager.clone());
+        let log = ServiceLog::new(event_tx.clone());
+        let details = ServiceDetails::new(event_tx.clone());
 
         App::new(
             event_tx,
@@ -911,5 +981,60 @@ mod tests {
             .unwrap();
 
         assert_eq!(effects, [AppEffect::EditUnit("demo.service".into())]);
+    }
+
+    #[test]
+    fn log_worker_returns_result_through_event_queue() {
+        let fake = FakeRepository::with_content("journal output", "", 0);
+        let mut app = test_app_with_repository(fake);
+        let unit = service("demo.service", "active", "enabled");
+
+        app.spawn_log_worker(unit);
+        let event = app.event_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        app.handle_event(event).unwrap();
+
+        let backend = TestBackend::new(50, 8);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| app.service_log.render(frame, frame.area()))
+            .unwrap();
+        let screen = terminal.backend().to_string();
+        assert!(screen.contains("demo.service log"));
+        assert!(screen.contains("journal output"));
+    }
+
+    #[test]
+    fn details_worker_returns_result_through_event_queue() {
+        let fake = FakeRepository::with_content("", "[Service]\nExecStart=/bin/true", 0);
+        let mut app = test_app_with_repository(fake);
+        let unit = service("demo.service", "active", "enabled");
+
+        app.spawn_details_worker(unit);
+        let event = app.event_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        app.handle_event(event).unwrap();
+
+        let backend = TestBackend::new(50, 8);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal
+            .draw(|frame| app.details.render(frame, frame.area()))
+            .unwrap();
+        assert!(terminal.backend().to_string().contains("ExecStart"));
+    }
+
+    #[test]
+    fn service_worker_executes_operation_and_returns_updated_service() {
+        let fake = FakeRepository::default();
+        let observer = fake.clone();
+        let mut app = test_app_with_repository(fake);
+        let unit = service("demo.service", "inactive", "disabled");
+        app.table_service.services = vec![unit.clone()];
+        app.table_service.refresh("");
+
+        app.spawn_service_action_worker(unit, ServiceAction::Start);
+        let event = app.event_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        app.handle_event(event).unwrap();
+
+        assert_eq!(observer.calls(), ["start:demo.service"]);
+        assert_eq!(app.table_service.services[0].state().active(), "active");
     }
 }

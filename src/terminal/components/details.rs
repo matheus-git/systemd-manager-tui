@@ -7,36 +7,31 @@ use ratatui::{
 };
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
-use std::rc::Rc;
-use std::cell::RefCell;
 
 use crossterm::event::{KeyCode, KeyEvent};
 
 use crate::domain::service::Service;
 use crate::terminal::app::{Actions, AppEvent};
-use crate::usecases::services_manager::ServicesManager;
 
 pub struct ServiceDetails {
     service: Option<Arc<Mutex<Service>>>,
     unit_file: String,
     sender: Sender<AppEvent>,
     scroll: u16,
-    usecase: Rc<RefCell<ServicesManager>>,
 }
 
 #[cfg(test)]
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
-    use crate::test_support::{service, FakeRepository};
+    use crate::test_support::service;
     use ratatui::backend::TestBackend;
     use ratatui::Terminal;
     use std::sync::mpsc;
 
-    fn details_with(repository: FakeRepository) -> (ServiceDetails, mpsc::Receiver<AppEvent>) {
+    fn details() -> (ServiceDetails, mpsc::Receiver<AppEvent>) {
         let (sender, receiver) = mpsc::channel();
-        let manager = ServicesManager::new(Box::new(repository));
-        (ServiceDetails::new(sender, Rc::new(RefCell::new(manager))), receiver)
+        (ServiceDetails::new(sender), receiver)
     }
 
     fn rendered_text(details: &mut ServiceDetails, width: u16, height: u16) -> String {
@@ -47,37 +42,21 @@ mod tests {
     }
 
     #[test]
-    fn fetches_and_renders_a_unit_file() {
-        let fake = FakeRepository::with_content("", "[Unit]\nDescription=Demo\n# comment", 0);
-        let observer = fake.clone();
-        let (mut details, _receiver) = details_with(fake);
+    fn renders_a_loaded_unit_file() {
+        let (mut details, _receiver) = details();
         details.update(service("demo.service", "active", "enabled"));
-
-        details.fetch_unit_file();
+        details.unit_file = "[Unit]\nDescription=Demo\n# comment".into();
         let screen = rendered_text(&mut details, 60, 8);
 
         assert!(screen.contains("demo.service file"));
         assert!(screen.contains("[Unit]"));
         assert!(screen.contains("Description=Demo"));
         assert!(screen.contains("# comment"));
-        assert_eq!(observer.calls(), ["cat:demo.service"]);
-    }
-
-    #[test]
-    fn reports_repository_error_as_app_event() {
-        let fake = FakeRepository::default();
-        fake.fail("cat");
-        let (mut details, receiver) = details_with(fake);
-        details.update(service("broken.service", "active", "enabled"));
-
-        details.fetch_unit_file();
-
-        assert!(matches!(receiver.recv().unwrap(), AppEvent::Error(message) if message == "cat failed"));
     }
 
     #[test]
     fn navigation_updates_scroll_and_emits_actions() {
-        let (mut details, receiver) = details_with(FakeRepository::default());
+        let (mut details, receiver) = details();
         details.on_key_event(KeyEvent::new(KeyCode::PageDown, crossterm::event::KeyModifiers::NONE));
         assert_eq!(details.scroll, 10);
 
@@ -87,13 +66,12 @@ mod tests {
 }
 
 impl ServiceDetails {
-    pub fn new(sender: Sender<AppEvent>,  usecase: Rc<RefCell<ServicesManager>>) -> Self {
+    pub fn new(sender: Sender<AppEvent>) -> Self {
         Self {
             service: None,
             sender,
             unit_file: String::new(),
             scroll: 0,
-            usecase
         }
     }
 
@@ -201,26 +179,12 @@ impl ServiceDetails {
         self.sender.send(AppEvent::Action(Actions::GoList)).unwrap();
     }
 
-    pub fn fetch_unit_file(&mut self) {
-        let maybe_service = self.service.clone();
-
-        if let Some(service_arc) = maybe_service {
-            let service = service_arc.lock().unwrap();
-
-            let result = self.usecase.borrow().systemctl_cat(&service);
-
-            match result {
-                Ok(content) => {
-                    self.unit_file = content;
-                }
-                Err(e) => {
-                    self.sender.send(AppEvent::Error(e.to_string())).unwrap();
-                }
-            }
-        }
-    }
-
     pub fn update(&mut self, service: Service) {
         self.service = Some(Arc::new(Mutex::new(service)));
+    }
+
+    pub fn update_unit_file(&mut self, service: Service, unit_file: String) {
+        self.update(service);
+        self.unit_file = unit_file;
     }
 }

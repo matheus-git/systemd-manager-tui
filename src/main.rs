@@ -63,8 +63,8 @@ fn main() -> color_eyre::Result<()> {
     ))));
     let table_services = TableServices::new(event_tx.clone(), usecase.clone());
     let filter = Filter::new(event_tx.clone(), args.filter.clone());
-    let service_log = ServiceLog::new(event_tx.clone(), usecase.clone());
-    let details = ServiceDetails::new(event_tx.clone(), usecase.clone());
+    let service_log = ServiceLog::new(event_tx.clone());
+    let details = ServiceDetails::new(event_tx.clone());
 
     let mut app = App::new(
         event_tx,

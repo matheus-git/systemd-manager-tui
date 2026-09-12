@@ -646,6 +646,19 @@ impl TableServices {
         self.set_ignore_key_events(false);
     }
 
+    pub fn apply_service_result(&mut self, result: Result<Service, String>) {
+        self.handle_service_result(result.map_err(Into::into));
+        self.set_ignore_key_events(false);
+    }
+
+    pub fn file_state_for(&self, service: &Service) -> String {
+        self.states
+            .lock()
+            .ok()
+            .and_then(|states| states.get(service.name()).cloned())
+            .unwrap_or_else(|| service.state().file().to_string())
+    }
+
     fn handle_service_result(&mut self, result: Result<Service, Box<dyn Error>>) {
         match result {
             Ok(service) => {

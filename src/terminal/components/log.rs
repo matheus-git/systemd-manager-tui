@@ -11,14 +11,10 @@ use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use std::rc::Rc;
-use std::cell::RefCell;
 use textwrap::wrap;
 use rayon::prelude::*;
 
-use crate::domain::service::Service;
 use crate::terminal::app::{Actions, AppEvent};
-use crate::usecases::services_manager::ServicesManager;
 
 fn render_loading(frame: &mut Frame, area: Rect) {
     let block = Block::default().borders(Borders::ALL);
@@ -53,15 +49,13 @@ fn render_loading(frame: &mut Frame, area: Rect) {
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
-    use crate::test_support::{service, FakeRepository};
     use ratatui::backend::TestBackend;
     use ratatui::Terminal;
     use std::sync::mpsc;
 
-    fn log_with(repository: FakeRepository) -> (ServiceLog, mpsc::Receiver<AppEvent>) {
+    fn log() -> (ServiceLog, mpsc::Receiver<AppEvent>) {
         let (sender, receiver) = mpsc::channel();
-        let manager = ServicesManager::new(Box::new(repository));
-        (ServiceLog::new(sender, Rc::new(RefCell::new(manager))), receiver)
+        (ServiceLog::new(sender), receiver)
     }
 
     fn rendered_text(log: &mut ServiceLog, width: u16, height: u16) -> String {
@@ -73,14 +67,14 @@ mod tests {
 
     #[test]
     fn empty_log_renders_loading_state() {
-        let (mut log, _receiver) = log_with(FakeRepository::default());
+        let (mut log, _receiver) = log();
 
         assert!(rendered_text(&mut log, 40, 8).contains("Loading..."));
     }
 
     #[test]
     fn renders_service_name_and_latest_log_lines() {
-        let (mut log, _receiver) = log_with(FakeRepository::default());
+        let (mut log, _receiver) = log();
         log.update("demo.service".into(), "first\nsecond\nthird".into());
 
         let screen = rendered_text(&mut log, 40, 5);
@@ -91,25 +85,8 @@ mod tests {
     }
 
     #[test]
-    fn fetch_dispatches_log_update_event() {
-        let fake = FakeRepository::with_content("journal output", "", 0);
-        let observer = fake.clone();
-        let (mut log, receiver) = log_with(fake);
-        let unit = service("demo.service", "active", "enabled");
-
-        log.fetch_log_and_dispatch(&unit);
-
-        assert!(matches!(
-            receiver.recv().unwrap(),
-            AppEvent::Action(Actions::Updatelog((name, content)))
-                if name == "demo.service" && content == "journal output"
-        ));
-        assert_eq!(observer.calls(), ["log:demo.service"]);
-    }
-
-    #[test]
     fn auto_refresh_changes_border_and_shortcut_label() {
-        let (mut log, _receiver) = log_with(FakeRepository::default());
+        let (mut log, _receiver) = log();
 
         log.set_auto_refresh(true);
 
@@ -140,19 +117,17 @@ pub struct ServiceLog {
     scroll: u16,
     sender: Sender<AppEvent>,
     auto_refresh: Arc<Mutex<bool>>,
-    usecase: Rc<RefCell<ServicesManager>>,
     log: String,
 }
 
 impl ServiceLog {
-    pub fn new(sender: Sender<AppEvent>,  usecase: Rc<RefCell<ServicesManager>>) -> Self {
+    pub fn new(sender: Sender<AppEvent>) -> Self {
         Self {
             border_color: BorderColor::White,
             service_name: String::new(),
             scroll: 0,
             sender,
             auto_refresh: Arc::new(Mutex::new(false)),
-            usecase,
             log: String::new(),
         }
     }
@@ -309,18 +284,6 @@ impl ServiceLog {
                 }
             }
         });
-    }
-
-    pub fn fetch_log_and_dispatch(&mut self, service: &Service) {
-        let event_tx = self.sender.clone();
-        if let Ok(log) = self.usecase.borrow().get_log(service) {
-            event_tx
-                .send(AppEvent::Action(Actions::Updatelog((
-                    service.name().to_string(),
-                    log,
-                ))))
-                .expect("Failed to send Updatelog event");
-        }
     }
 
     pub fn update(&mut self, service_name: String, log: String) {
