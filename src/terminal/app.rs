@@ -11,7 +11,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Tabs, Padding};
 use ratatui::DefaultTerminal;
 use ratatui::Frame;
-use std::sync::mpsc::{Receiver, Sender};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::Duration;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -52,7 +52,13 @@ enum AppEffect {
         filter_all: bool,
         filter_text: String,
     },
-    ChangeConnection(ConnectionType),
+    ChangeConnection(ConnectionRequest),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ConnectionRequest {
+    id: u64,
+    target: ConnectionType,
 }
 
 pub enum Actions {
@@ -74,7 +80,7 @@ pub enum Actions {
     DetailsLoaded(Service, Result<String, String>),
     ServiceActionFinished(Result<Service, String>),
     ServicesLoaded(Result<Vec<Service>, String>, String),
-    ConnectionChanged(Result<(), String>),
+    ConnectionChanged(u64, ConnectionType, Result<(), String>),
 }
 
 pub enum AppEvent {
@@ -113,6 +119,9 @@ pub struct App {
     selected_tab_index: usize,
     show_help: bool,
     error_message: Option<String>,
+    connection_tx: Sender<ConnectionRequest>,
+    latest_connection_request_id: u64,
+    active_connection: ConnectionType,
 }
 
 impl App {
@@ -125,6 +134,28 @@ impl App {
         details: ServiceDetails,
         usecases: Rc<RefCell<ServicesManager>>
     ) -> Self {
+        let (connection_tx, connection_rx) = mpsc::channel::<ConnectionRequest>();
+        let connection_manager = usecases.borrow().clone();
+        let connection_event_tx = event_tx.clone();
+        thread::spawn(move || {
+            while let Ok(request) = connection_rx.recv() {
+                let mut manager = connection_manager.clone();
+                let result = manager
+                    .change_repository_connection(request.target)
+                    .map_err(|error| error.to_string());
+                if connection_event_tx
+                    .send(AppEvent::Action(Actions::ConnectionChanged(
+                        request.id,
+                        request.target,
+                        result,
+                    )))
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        });
+
         Self {
             running: true,
             status: Status::List,
@@ -139,6 +170,9 @@ impl App {
             selected_tab_index: 0,
             show_help: false,
             error_message: None,
+            connection_tx,
+            latest_connection_request_id: 0,
+            active_connection: ConnectionType::System,
         }
     }
 
@@ -255,7 +289,9 @@ impl App {
                                 key,
                                 self.filter.input_mode == InputMode::Editing,
                             ) {
-                                effects.push(AppEffect::ChangeConnection(connection_type));
+                                effects.push(AppEffect::ChangeConnection(
+                                    self.next_connection_request(connection_type),
+                                ));
                             }
                             self.table_service.on_key_event(key);
                             self.filter.on_key_event(key);
@@ -329,13 +365,23 @@ impl App {
                         self.error_message = Some(error);
                     }
                 },
-                AppEvent::Action(Actions::ConnectionChanged(result)) => match result {
-                    Ok(()) => effects.push(self.refresh_services_effect()),
-                    Err(error) => {
-                        self.selected_tab_index = 0;
-                        self.error_message = Some(error);
+                AppEvent::Action(Actions::ConnectionChanged(request_id, target, result)) => {
+                    if request_id == self.latest_connection_request_id {
+                        match result {
+                            Ok(()) => {
+                                self.active_connection = target;
+                                effects.push(self.refresh_services_effect());
+                            }
+                            Err(error) => {
+                                self.selected_tab_index = match self.active_connection {
+                                    ConnectionType::System => 0,
+                                    ConnectionType::Session => 1,
+                                };
+                                self.error_message = Some(error);
+                            }
+                        }
                     }
-                },
+                }
                 AppEvent::Action(Actions::RefreshDetails) => {
                     if self.status == Status::Details
                         && let Some(service) = self.table_service.get_selected_service()
@@ -394,8 +440,8 @@ impl App {
                     let query_sender = self.table_service.query_sender();
                     self.spawn_services_worker(filter_all, filter_text, query_sender);
                 }
-                AppEffect::ChangeConnection(connection_type) => {
-                    self.spawn_connection_worker(connection_type);
+                AppEffect::ChangeConnection(request) => {
+                    self.connection_tx.send(request)?;
                 }
             }
         }
@@ -476,15 +522,12 @@ impl App {
         });
     }
 
-    fn spawn_connection_worker(&self, connection_type: ConnectionType) {
-        let mut manager = self.usecases.borrow().clone();
-        let sender = self.event_tx.clone();
-        thread::spawn(move || {
-            let result = manager
-                .change_repository_connection(connection_type)
-                .map_err(|error| error.to_string());
-            let _ = sender.send(AppEvent::Action(Actions::ConnectionChanged(result)));
-        });
+    fn next_connection_request(&mut self, target: ConnectionType) -> ConnectionRequest {
+        self.latest_connection_request_id = self.latest_connection_request_id.wrapping_add(1);
+        ConnectionRequest {
+            id: self.latest_connection_request_id,
+            target,
+        }
     }
 
     #[allow(clippy::unused_self)]
@@ -1128,6 +1171,60 @@ mod tests {
             .unwrap();
 
         assert_eq!(app.selected_tab_index, 1);
-        assert_eq!(effects, [AppEffect::ChangeConnection(ConnectionType::Session)]);
+        assert_eq!(
+            effects,
+            [AppEffect::ChangeConnection(ConnectionRequest {
+                id: 1,
+                target: ConnectionType::Session,
+            })]
+        );
+    }
+
+    #[test]
+    fn connection_worker_processes_rapid_tab_changes_in_request_order() {
+        let fake = FakeRepository::default();
+        let observer = fake.clone();
+        let mut app = test_app_with_repository(fake);
+
+        let first = app.next_connection_request(ConnectionType::Session);
+        let second = app.next_connection_request(ConnectionType::System);
+        app.connection_tx.send(first).unwrap();
+        app.connection_tx.send(second).unwrap();
+
+        let first_result = app.event_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        let second_result = app.event_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        assert!(app.handle_event(first_result).unwrap().is_empty());
+        assert!(matches!(
+            app.handle_event(second_result).unwrap().as_slice(),
+            [AppEffect::RefreshServices { .. }]
+        ));
+        assert_eq!(observer.calls(), ["connection:session", "connection:system"]);
+    }
+
+    #[test]
+    fn stale_connection_result_cannot_trigger_a_refresh() {
+        let mut app = test_app();
+        app.latest_connection_request_id = 2;
+
+        let stale_effects = app
+            .handle_event(AppEvent::Action(Actions::ConnectionChanged(
+                1,
+                ConnectionType::Session,
+                Ok(()),
+            )))
+            .unwrap();
+        let current_effects = app
+            .handle_event(AppEvent::Action(Actions::ConnectionChanged(
+                2,
+                ConnectionType::System,
+                Ok(()),
+            )))
+            .unwrap();
+
+        assert!(stale_effects.is_empty());
+        assert!(matches!(
+            current_effects.as_slice(),
+            [AppEffect::RefreshServices { .. }]
+        ));
     }
 }
