@@ -47,6 +47,7 @@ type SystemdUnit = (
     OwnedObjectPath,
 );
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ConnectionType {
     Session,
     System

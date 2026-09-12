@@ -394,16 +394,27 @@ impl TableServices {
         })
     }
 
-    pub fn set_usecase(&mut self, usecase: Rc<RefCell<ServicesManager>>) {
-        self.usecase = usecase;
-        self.table_state.select(Some(0));
-        self.services.clear();
-        self.filtered_services.clear();
-        self.fetch_and_refresh(&self.old_filter_text.clone());
-    }
-
     pub fn set_ignore_key_events(&mut self, has_ignore_key_events: bool) {
         self.ignore_key_events = has_ignore_key_events;
+    }
+
+    pub fn toggle_unit_listing(&mut self) {
+        self.table_state.select(Some(0));
+        self.filter_all = !self.filter_all;
+    }
+
+    pub fn refresh_parameters(&self) -> (bool, String) {
+        (self.filter_all, self.old_filter_text.clone())
+    }
+
+    pub fn query_sender(&self) -> Arc<Sender<QueryUnitFile>> {
+        self.event_tx.clone()
+    }
+
+    pub fn apply_services(&mut self, services: Vec<Service>, filter_text: &str) {
+        self.services = services;
+        self.refresh(filter_text);
+        self.set_ignore_key_events(false);
     }
 
     pub fn get_selected_service(&self) -> Option<Service> {
@@ -434,16 +445,6 @@ impl TableServices {
                 }
             
         }
-    }
-
-    fn fetch_services(&mut self) {
-        self.services = self.usecase.borrow().list_services(self.filter_all, self.event_tx.clone())
-            .unwrap_or_default();
-    }
-
-    fn fetch_and_refresh(&mut self, filter_text: &str) {
-        self.fetch_services();
-        self.refresh(filter_text);
     }
 
     fn filter(&self, filter_text: &str, services: &[Service]) -> Vec<Service> {
@@ -623,52 +624,6 @@ impl TableServices {
         } else {
             self.table_state.select(Some(0));
         }
-    }
-
-    pub fn act_on_service(&mut self, service: Service, action: &ServiceAction) {
-            let binding_usecase = self.usecase.clone();
-            let usecase = binding_usecase.borrow();
-            match action {
-                ServiceAction::ToggleMask => {
-                    let state_opt = match self.states.lock() {
-                        Ok(guard) => guard
-                            .get(service.name())
-                            .cloned(),
-                        Err(e) => {
-                            self.sender.send(AppEvent::Error(e.to_string())).unwrap();
-                            return;
-                        }
-                    };
-
-                    if let Some(state) = state_opt {
-                        match state.as_str() {
-                            "masked" | "masked-runtime" => {
-                                self.handle_service_result(usecase.unmask_service(&service));
-                            }
-                            _ => {
-                                self.handle_service_result(usecase.mask_service(&service));
-                            }
-                        }
-
-                        self.fetch_services();
-                        self.fetch_and_refresh(&self.old_filter_text.clone());
-                    }
-                },
-                ServiceAction::Start => self.handle_service_result(usecase.start_service(&service)),
-                ServiceAction::Stop => self.handle_service_result(usecase.stop_service(&service)),
-                ServiceAction::Restart => self.handle_service_result(usecase.restart_service(&service)),
-                ServiceAction::Enable => self.handle_service_result(usecase.enable_service(&service)),
-                ServiceAction::Disable => self.handle_service_result(usecase.disable_service(&service)),
-                ServiceAction::ToggleFilter => {
-                    self.table_state.select(Some(0));
-                    self.filter_all = !self.filter_all;
-                    self.fetch_and_refresh(&self.old_filter_text.clone());
-                },
-                ServiceAction::RefreshAll => {
-                    self.fetch_and_refresh(&self.old_filter_text.clone());
-                },
-            }
-        self.set_ignore_key_events(false);
     }
 
     pub fn apply_service_result(&mut self, result: Result<Service, String>) {

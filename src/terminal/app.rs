@@ -28,7 +28,7 @@ use crate::Config;
 
 use super::components::details::ServiceDetails;
 use super::components::filter::{Filter, InputMode};
-use super::components::list::{TableServices, ServiceAction};
+use super::components::list::{QueryUnitFile, TableServices, ServiceAction};
 use super::components::log::ServiceLog;
 
 #[derive(PartialEq)]
@@ -48,13 +48,17 @@ enum AppEffect {
         service: Service,
         action: ServiceAction,
     },
+    RefreshServices {
+        filter_all: bool,
+        filter_text: String,
+    },
+    ChangeConnection(ConnectionType),
 }
 
 pub enum Actions {
     RefreshLog,
     RefreshDetails,
     GoList,
-    ResetList,
     GoLog,
     GoDetails,
     #[allow(dead_code)]
@@ -69,6 +73,8 @@ pub enum Actions {
     LogLoaded(Result<(String, String), String>),
     DetailsLoaded(Service, Result<String, String>),
     ServiceActionFinished(Result<Service, String>),
+    ServicesLoaded(Result<Vec<Service>, String>, String),
+    ConnectionChanged(Result<(), String>),
 }
 
 pub enum AppEvent {
@@ -245,7 +251,12 @@ impl App {
                                 self.table_service.set_selected_index(0);
                             }
                         } else {
-                            self.on_key_horizontal_event(key, self.filter.input_mode == InputMode::Editing);
+                            if let Some(connection_type) = self.on_key_horizontal_event(
+                                key,
+                                self.filter.input_mode == InputMode::Editing,
+                            ) {
+                                effects.push(AppEffect::ChangeConnection(connection_type));
+                            }
                             self.table_service.on_key_event(key);
                             self.filter.on_key_event(key);
                         }
@@ -260,10 +271,21 @@ impl App {
                 }
             }
                 AppEvent::Action(Actions::ServiceAction(action)) => {
-                    if let Some(service) = self.table_service.get_selected_service() {
-                        effects.push(AppEffect::RunServiceAction { service, action });
-                    } else {
-                        self.table_service.set_ignore_key_events(false);
+                    match action {
+                        ServiceAction::ToggleFilter => {
+                            self.table_service.toggle_unit_listing();
+                            effects.push(self.refresh_services_effect());
+                        }
+                        ServiceAction::RefreshAll => {
+                            effects.push(self.refresh_services_effect());
+                        }
+                        _ => {
+                            if let Some(service) = self.table_service.get_selected_service() {
+                                effects.push(AppEffect::RunServiceAction { service, action });
+                            } else {
+                                self.table_service.set_ignore_key_events(false);
+                            }
+                        }
                     }
                 }
                 AppEvent::Action(Actions::UpdateIgnoreListKeys(bool)) => {
@@ -284,9 +306,6 @@ impl App {
                     self.event_tx.send(AppEvent::Action(Actions::RefreshLog))?;
                 }
                 AppEvent::Action(Actions::GoList) => self.status = Status::List,
-                AppEvent::Action(Actions::ResetList) => {
-                    self.table_service.set_usecase(self.usecases.clone());
-                },
                 AppEvent::Action(Actions::UpdateTimestamp(name, ts)) => {
                     self.table_service.update_timestamp(name, ts);
                 }
@@ -303,6 +322,20 @@ impl App {
                     self.table_service.apply_service_result(result);
                     self.table_service.invalidate_timestamp();
                 }
+                AppEvent::Action(Actions::ServicesLoaded(result, filter_text)) => match result {
+                    Ok(services) => self.table_service.apply_services(services, &filter_text),
+                    Err(error) => {
+                        self.table_service.set_ignore_key_events(false);
+                        self.error_message = Some(error);
+                    }
+                },
+                AppEvent::Action(Actions::ConnectionChanged(result)) => match result {
+                    Ok(()) => effects.push(self.refresh_services_effect()),
+                    Err(error) => {
+                        self.selected_tab_index = 0;
+                        self.error_message = Some(error);
+                    }
+                },
                 AppEvent::Action(Actions::RefreshDetails) => {
                     if self.status == Status::Details
                         && let Some(service) = self.table_service.get_selected_service()
@@ -352,14 +385,17 @@ impl App {
                     self.spawn_details_worker(service);
                 }
                 AppEffect::RunServiceAction { service, action } => {
-                    match action {
-                        ServiceAction::ToggleFilter
-                        | ServiceAction::RefreshAll => {
-                            self.table_service.act_on_service(service, &action);
-                            self.table_service.invalidate_timestamp();
-                        }
-                        _ => self.spawn_service_action_worker(service, action),
-                    }
+                    self.spawn_service_action_worker(service, action);
+                }
+                AppEffect::RefreshServices {
+                    filter_all,
+                    filter_text,
+                } => {
+                    let query_sender = self.table_service.query_sender();
+                    self.spawn_services_worker(filter_all, filter_text, query_sender);
+                }
+                AppEffect::ChangeConnection(connection_type) => {
+                    self.spawn_connection_worker(connection_type);
                 }
             }
         }
@@ -413,6 +449,41 @@ impl App {
             .map_err(|error| error.to_string());
 
             let _ = sender.send(AppEvent::Action(Actions::ServiceActionFinished(result)));
+        });
+    }
+
+    fn refresh_services_effect(&self) -> AppEffect {
+        let (filter_all, filter_text) = self.table_service.refresh_parameters();
+        AppEffect::RefreshServices {
+            filter_all,
+            filter_text,
+        }
+    }
+
+    fn spawn_services_worker(
+        &self,
+        filter_all: bool,
+        filter_text: String,
+        query_sender: Arc<Sender<QueryUnitFile>>,
+    ) {
+        let manager = self.usecases.borrow().clone();
+        let sender = self.event_tx.clone();
+        thread::spawn(move || {
+            let result = manager
+                .list_services(filter_all, query_sender)
+                .map_err(|error| error.to_string());
+            let _ = sender.send(AppEvent::Action(Actions::ServicesLoaded(result, filter_text)));
+        });
+    }
+
+    fn spawn_connection_worker(&self, connection_type: ConnectionType) {
+        let mut manager = self.usecases.borrow().clone();
+        let sender = self.event_tx.clone();
+        thread::spawn(move || {
+            let result = manager
+                .change_repository_connection(connection_type)
+                .map_err(|error| error.to_string());
+            let _ = sender.send(AppEvent::Action(Actions::ConnectionChanged(result)));
         });
     }
 
@@ -766,7 +837,11 @@ impl App {
         Ok(())
     }
 
-    fn on_key_horizontal_event(&mut self, key: KeyEvent, is_filtering: bool) {
+    fn on_key_horizontal_event(
+        &mut self,
+        key: KeyEvent,
+        is_filtering: bool,
+    ) -> Option<ConnectionType> {
         let left_keys = [KeyCode::Left, KeyCode::Char('h')];
         let right_keys = [KeyCode::Right, KeyCode::Char('l')];
         match key {
@@ -781,40 +856,30 @@ impl App {
                         self.selected_tab_index - 1
                     };
 
-                    self.update_connection_and_reset();
+                    self.table_service.invalidate_timestamp();
+                    return Some(if self.selected_tab_index == 0 {
+                        ConnectionType::System
+                    } else {
+                        ConnectionType::Session
+                    });
                 }
             }
 
             KeyEvent { code, .. } if right_keys.contains(&code) => {
                 if !is_filtering && self.status == Status::List {
                     self.selected_tab_index = (self.selected_tab_index + 1) % 2;
-                    self.update_connection_and_reset();
+                    self.table_service.invalidate_timestamp();
+                    return Some(if self.selected_tab_index == 0 {
+                        ConnectionType::System
+                    } else {
+                        ConnectionType::Session
+                    });
                 }
             }
 
             _ => {}
         }
-    }
-    fn update_connection_and_reset(&mut self) {
-        self.table_service.invalidate_timestamp();
-
-        let conn_type = match self.selected_tab_index {
-            0 => ConnectionType::System,
-            _ => ConnectionType::Session,
-        };
-
-        if let Err(_err) = self.usecases
-            .borrow_mut()
-            .change_repository_connection(conn_type)
-        {
-            self.event_tx.send(AppEvent::Error("Failed to change connection type with D-Bus. Try run without sudo".to_string())).expect("Failed to change connection type");
-            self.selected_tab_index = 0;
-            return
-        }
-
-        self.event_tx
-            .send(AppEvent::Action(Actions::ResetList))
-            .expect("Failed to send ResetList event");
+        None
     }
 
     fn quit(&mut self) {
@@ -1036,5 +1101,33 @@ mod tests {
 
         assert_eq!(observer.calls(), ["start:demo.service"]);
         assert_eq!(app.table_service.services[0].state().active(), "active");
+    }
+
+    #[test]
+    fn refresh_action_produces_worker_effect_even_with_empty_list() {
+        let mut app = test_app();
+
+        let effects = app
+            .handle_event(AppEvent::Action(Actions::ServiceAction(
+                ServiceAction::RefreshAll,
+            )))
+            .unwrap();
+
+        assert!(matches!(effects.as_slice(), [AppEffect::RefreshServices { .. }]));
+    }
+
+    #[test]
+    fn changing_tab_produces_async_connection_effect() {
+        let mut app = test_app();
+
+        let effects = app
+            .handle_event(AppEvent::Key(KeyEvent::new(
+                KeyCode::Right,
+                KeyModifiers::NONE,
+            )))
+            .unwrap();
+
+        assert_eq!(app.selected_tab_index, 1);
+        assert_eq!(effects, [AppEffect::ChangeConnection(ConnectionType::Session)]);
     }
 }
