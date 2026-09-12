@@ -177,6 +177,21 @@ pub enum ServiceAction {
     ToggleMask,
 }
 
+impl ServiceAction {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Start => "start",
+            Self::Stop => "stop",
+            Self::Restart => "restart",
+            Self::Enable => "enable",
+            Self::Disable => "disable",
+            Self::ToggleMask => "mask/unmask",
+            Self::RefreshAll => "refresh",
+            Self::ToggleFilter => "toggle filter",
+        }
+    }
+}
+
 pub enum QueryUnitFile {
     Finished(HashMap<String, String>),
     Error(String),

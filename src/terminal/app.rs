@@ -5,7 +5,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, LeaveAlternateScreen, EnterAlternateScreen},
 };
 use std::{io::{self}, process::Command};
-use ratatui::layout::{Alignment, Constraint, Margin, Layout, Rect};
+use ratatui::layout::{Alignment, Constraint, Margin, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Tabs, Padding};
@@ -53,6 +53,50 @@ enum AppEffect {
         filter_text: String,
     },
     ChangeConnection(ConnectionType),
+}
+
+#[derive(Debug, PartialEq)]
+struct InstancePrompt {
+    template: Service,
+    action: ServiceAction,
+    input: String,
+    cursor: usize,
+}
+
+impl InstancePrompt {
+    fn new(template: Service, action: ServiceAction) -> Self {
+        Self {
+            template,
+            action,
+            input: String::new(),
+            cursor: 0,
+        }
+    }
+
+    fn insert(&mut self, character: char) {
+        let byte_index = self
+            .input
+            .char_indices()
+            .nth(self.cursor)
+            .map_or(self.input.len(), |(index, _)| index);
+        self.input.insert(byte_index, character);
+        self.cursor += 1;
+    }
+
+    fn backspace(&mut self) {
+        if self.cursor == 0 {
+            return;
+        }
+        let remove_index = self.cursor - 1;
+        let start = self.input.char_indices().nth(remove_index).unwrap().0;
+        let end = self
+            .input
+            .char_indices()
+            .nth(self.cursor)
+            .map_or(self.input.len(), |(index, _)| index);
+        self.input.replace_range(start..end, "");
+        self.cursor = remove_index;
+    }
 }
 
 pub enum Actions {
@@ -113,6 +157,7 @@ pub struct App {
     selected_tab_index: usize,
     show_help: bool,
     error_message: Option<String>,
+    instance_prompt: Option<InstancePrompt>,
 }
 
 impl App {
@@ -139,6 +184,7 @@ impl App {
             selected_tab_index: 0,
             show_help: false,
             error_message: None,
+            instance_prompt: None,
         }
     }
 
@@ -233,6 +279,11 @@ impl App {
                     return Ok(effects);
                 }
 
+                if self.instance_prompt.is_some() {
+                    self.handle_instance_prompt_key(key, &mut effects);
+                    return Ok(effects);
+                }
+
                 match self.status {
                     Status::Log => {
                         if self.show_help {
@@ -281,7 +332,12 @@ impl App {
                         }
                         _ => {
                             if let Some(service) = self.table_service.get_selected_service() {
-                                effects.push(AppEffect::RunServiceAction { service, action });
+                                if service.is_template() {
+                                    self.table_service.set_ignore_key_events(true);
+                                    self.instance_prompt = Some(InstancePrompt::new(service, action));
+                                } else {
+                                    effects.push(AppEffect::RunServiceAction { service, action });
+                                }
                             } else {
                                 self.table_service.set_ignore_key_events(false);
                             }
@@ -364,6 +420,44 @@ impl App {
         }
 
         Ok(effects)
+    }
+
+    fn handle_instance_prompt_key(&mut self, key: KeyEvent, effects: &mut Vec<AppEffect>) {
+        let Some(mut prompt) = self.instance_prompt.take() else {
+            return;
+        };
+
+        match key.code {
+            KeyCode::Esc => {
+                self.table_service.set_ignore_key_events(false);
+                return;
+            }
+            KeyCode::Enter => match prompt.template.instantiate(&prompt.input) {
+                Ok(service) => {
+                    effects.push(AppEffect::RunServiceAction {
+                        service,
+                        action: prompt.action,
+                    });
+                    return;
+                }
+                Err(error) => self.error_message = Some(error),
+            },
+            KeyCode::Char(character)
+                if !key.modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+            {
+                prompt.insert(character);
+            }
+            KeyCode::Backspace => prompt.backspace(),
+            KeyCode::Left => prompt.cursor = prompt.cursor.saturating_sub(1),
+            KeyCode::Right => {
+                prompt.cursor = (prompt.cursor + 1).min(prompt.input.chars().count());
+            }
+            KeyCode::Home => prompt.cursor = 0,
+            KeyCode::End => prompt.cursor = prompt.input.chars().count(),
+            _ => {}
+        }
+
+        self.instance_prompt = Some(prompt);
     }
 
     fn execute_effects(
@@ -682,6 +776,64 @@ impl App {
             frame.render_widget(error_block, popup_area);
     }
 
+    fn draw_instance_prompt(&self, frame: &mut Frame, area: Rect, prompt: &InstancePrompt) {
+        let popup_width = std::cmp::min(70, area.width.saturating_sub(4));
+        let popup_height = std::cmp::min(8, area.height.saturating_sub(4));
+        let popup_area = Rect::new(
+            area.x + area.width.saturating_sub(popup_width) / 2,
+            area.y + area.height.saturating_sub(popup_height) / 2,
+            popup_width,
+            popup_height,
+        );
+        let inner = popup_area.inner(Margin {
+            vertical: 1,
+            horizontal: 2,
+        });
+        let [message_area, input_area, help_area] = Layout::vertical([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
+        .areas(inner);
+
+        frame.render_widget(Clear, popup_area);
+        frame.render_widget(
+            Block::default()
+                .title(" Service instance ")
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(Color::Cyan)),
+            popup_area,
+        );
+        frame.render_widget(
+            Paragraph::new(format!(
+                "Enter an instance to {} {}",
+                prompt.action.label(),
+                prompt.template.name()
+            )),
+            message_area,
+        );
+        frame.render_widget(
+            Paragraph::new(prompt.input.as_str())
+                .style(Style::default().fg(Color::Yellow))
+                .block(Block::default().borders(Borders::BOTTOM)),
+            input_area,
+        );
+        frame.render_widget(
+            Paragraph::new("Enter: confirm | Esc: cancel").style(Style::default().fg(Color::Gray)),
+            help_area,
+        );
+
+        let before_cursor = prompt.input.chars().take(prompt.cursor).collect::<String>();
+        let cursor_offset = u16::try_from(Line::from(before_cursor).width())
+            .unwrap_or(u16::MAX)
+            .min(input_area.width.saturating_sub(1));
+        frame.set_cursor_position(Position::new(
+            input_area.x.saturating_add(cursor_offset),
+            input_area.y,
+        ));
+    }
+
     fn draw_details_status(
         &mut self,
         terminal: &mut DefaultTerminal,
@@ -815,6 +967,9 @@ impl App {
     fn draw_overlays(&self, frame: &mut Frame, area: Rect) {
         if self.show_help {
             self.draw_help_popup(frame, area);
+        }
+        if let Some(prompt) = self.instance_prompt.as_ref() {
+            self.draw_instance_prompt(frame, area, prompt);
         }
         if let Some(error_message) = self.error_message.as_deref() {
             self.draw_error_popup(frame, area, error_message);
@@ -1101,6 +1256,166 @@ mod tests {
 
         assert_eq!(observer.calls(), ["start:demo.service"]);
         assert_eq!(app.table_service.services[0].state().active(), "active");
+    }
+
+    #[test]
+    fn service_action_on_template_opens_instance_prompt() {
+        let mut app = test_app();
+        app.table_service.services = vec![service("worker@.service", "inactive", "disabled")];
+        app.table_service.refresh("");
+
+        let effects = app
+            .handle_event(AppEvent::Action(Actions::ServiceAction(ServiceAction::Start)))
+            .unwrap();
+
+        assert!(effects.is_empty());
+        let prompt = app.instance_prompt.as_ref().unwrap();
+        assert_eq!(prompt.template.name(), "worker@.service");
+        assert_eq!(prompt.action, ServiceAction::Start);
+    }
+
+    #[test]
+    fn concrete_instance_bypasses_instance_prompt() {
+        let mut app = test_app();
+        let unit = service("worker@queue.service", "inactive", "disabled");
+        app.table_service.services = vec![unit.clone()];
+        app.table_service.refresh("");
+
+        let effects = app
+            .handle_event(AppEvent::Action(Actions::ServiceAction(ServiceAction::Start)))
+            .unwrap();
+
+        assert!(app.instance_prompt.is_none());
+        assert_eq!(
+            effects,
+            [AppEffect::RunServiceAction {
+                service: unit,
+                action: ServiceAction::Start,
+            }]
+        );
+    }
+
+    #[test]
+    fn submitting_instance_runs_original_action_with_instantiated_name() {
+        let mut app = test_app();
+        app.table_service.services = vec![service("worker@.service", "inactive", "disabled")];
+        app.table_service.refresh("");
+        app.handle_event(AppEvent::Action(Actions::ServiceAction(ServiceAction::Enable)))
+            .unwrap();
+
+        for character in "queue one".chars() {
+            let effects = app
+                .handle_event(AppEvent::Key(KeyEvent::new(
+                    KeyCode::Char(character),
+                    KeyModifiers::NONE,
+                )))
+                .unwrap();
+            assert!(effects.is_empty());
+        }
+        let effects = app
+            .handle_event(AppEvent::Key(KeyEvent::new(
+                KeyCode::Enter,
+                KeyModifiers::NONE,
+            )))
+            .unwrap();
+
+        assert!(app.instance_prompt.is_none());
+        assert!(matches!(
+            effects.as_slice(),
+            [AppEffect::RunServiceAction { service, action: ServiceAction::Enable }]
+                if service.name() == r"worker@queue\x20one.service"
+        ));
+    }
+
+    #[test]
+    fn cancelling_instance_prompt_unlocks_the_service_table() {
+        let mut app = test_app();
+        app.table_service.services = vec![service("worker@.service", "inactive", "disabled")];
+        app.table_service.refresh("");
+        app.table_service.set_ignore_key_events(true);
+        app.handle_event(AppEvent::Action(Actions::ServiceAction(ServiceAction::Stop)))
+            .unwrap();
+
+        let effects = app
+            .handle_event(AppEvent::Key(KeyEvent::new(
+                KeyCode::Esc,
+                KeyModifiers::NONE,
+            )))
+            .unwrap();
+
+        assert!(effects.is_empty());
+        assert!(app.instance_prompt.is_none());
+        assert!(!app.table_service.ignore_key_events);
+    }
+
+    #[test]
+    fn empty_instance_keeps_prompt_open_and_displays_error() {
+        let mut app = test_app();
+        app.table_service.services = vec![service("worker@.service", "inactive", "disabled")];
+        app.table_service.refresh("");
+        app.handle_event(AppEvent::Action(Actions::ServiceAction(ServiceAction::Restart)))
+            .unwrap();
+
+        let effects = app
+            .handle_event(AppEvent::Key(KeyEvent::new(
+                KeyCode::Enter,
+                KeyModifiers::NONE,
+            )))
+            .unwrap();
+
+        assert!(effects.is_empty());
+        assert!(app.instance_prompt.is_some());
+        assert_eq!(app.error_message.as_deref(), Some("Instance name cannot be empty"));
+    }
+
+    #[test]
+    fn instance_prompt_is_rendered_by_test_backend() {
+        let mut app = test_app();
+        app.instance_prompt = Some(InstancePrompt::new(
+            service("worker@.service", "inactive", "disabled"),
+            ServiceAction::Start,
+        ));
+        let backend = TestBackend::new(80, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| app.draw_overlays(frame, frame.area()))
+            .unwrap();
+
+        let screen = terminal.backend().to_string();
+        assert!(screen.contains("Service instance"));
+        assert!(screen.contains("Enter an instance to start worker@.service"));
+        assert!(screen.contains("Enter: confirm | Esc: cancel"));
+    }
+
+    #[test]
+    fn instantiated_service_reaches_repository_worker() {
+        let fake = FakeRepository::default();
+        let observer = fake.clone();
+        let mut app = test_app_with_repository(fake);
+        let template = service("worker@.service", "inactive", "disabled");
+        let instance = template.instantiate("queue").unwrap();
+
+        app.spawn_service_action_worker(instance, ServiceAction::Start);
+        let event = app.event_rx.recv_timeout(Duration::from_secs(1)).unwrap();
+        app.handle_event(event).unwrap();
+
+        assert_eq!(observer.calls(), ["start:worker@queue.service"]);
+    }
+
+    #[test]
+    fn instance_prompt_edits_unicode_by_character() {
+        let template = service("worker@.service", "inactive", "disabled");
+        let mut prompt = InstancePrompt::new(template, ServiceAction::Start);
+
+        prompt.insert('a');
+        prompt.insert('é');
+        prompt.insert('中');
+        prompt.cursor = 2;
+        prompt.backspace();
+
+        assert_eq!(prompt.input, "a中");
+        assert_eq!(prompt.cursor, 1);
     }
 
     #[test]
