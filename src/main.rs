@@ -50,16 +50,19 @@ impl From<Args> for Config {
     }
 }
 
+struct TerminalRestoreGuard;
+
+impl Drop for TerminalRestoreGuard {
+    fn drop(&mut self) {
+        ratatui::restore();
+    }
+}
+
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
+    let args: Config = Args::parse().into();
     let terminal = ratatui::init();
-    let args: Config = match Args::try_parse() {
-        Ok(args) => args.into(),
-        Err(err) => {
-            ratatui::restore();
-            err.exit(); 
-        }
-    };
+    let _terminal_restore_guard = TerminalRestoreGuard;
     
     let (event_tx, event_rx) = mpsc::channel::<AppEvent>();
 
@@ -90,7 +93,5 @@ fn main() -> color_eyre::Result<()> {
         usecase,
     );
     app.init(args);
-    let result = app.run(terminal);
-    ratatui::restore();
-    result
+    app.run(terminal)
 }
