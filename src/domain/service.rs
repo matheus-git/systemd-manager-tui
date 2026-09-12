@@ -1,6 +1,6 @@
 use super::service_state::ServiceState;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Service {
     name: String,
     description: String,

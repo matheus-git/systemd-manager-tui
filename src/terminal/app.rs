@@ -21,6 +21,7 @@ use std::rc::Rc;
 use rayon::prelude::*;
 
 use crate::infrastructure::systemd_service_adapter::ConnectionType;
+use crate::domain::service::Service;
 use crate::terminal::components::list::ActiveFilterState;
 use crate::usecases::services_manager::ServicesManager;
 use crate::Config;
@@ -35,6 +36,18 @@ enum Status {
     List,
     Log,
     Details,
+}
+
+#[derive(Debug, PartialEq)]
+enum AppEffect {
+    Suspend,
+    EditUnit(String),
+    FetchLog(Service),
+    FetchDetails(Service),
+    RunServiceAction {
+        service: Service,
+        action: ServiceAction,
+    },
 }
 
 pub enum Actions {
@@ -91,6 +104,7 @@ pub struct App {
     event_tx: Sender<AppEvent>,
     selected_tab_index: usize,
     show_help: bool,
+    error_message: Option<String>,
 }
 
 impl App {
@@ -116,6 +130,7 @@ impl App {
             event_tx,
             selected_tab_index: 0,
             show_help: false,
+            error_message: None,
         }
     }
 
@@ -170,13 +185,51 @@ impl App {
                 self.event_rx.recv()?
             };
 
-            match event {
-                AppEvent::Key(key) => match self.status {
+            let effects = self.handle_event(event)?;
+            self.execute_effects(effects, &mut terminal)?;
+        }
+
+        Ok(())
+    }
+
+    fn handle_event(&mut self, event: AppEvent) -> Result<Vec<AppEffect>> {
+        let mut effects = Vec::new();
+
+        match event {
+            AppEvent::Key(key) => {
+                if self.error_message.take().is_some() {
+                    return Ok(effects);
+                }
+
+                if matches!(
+                    key,
+                    KeyEvent {
+                        modifiers: KeyModifiers::CONTROL,
+                        code: KeyCode::Char('c' | 'C'),
+                        ..
+                    }
+                ) {
+                    self.quit();
+                    return Ok(effects);
+                }
+
+                if matches!(
+                    key,
+                    KeyEvent {
+                        modifiers: KeyModifiers::CONTROL,
+                        code: KeyCode::Char('z'),
+                        ..
+                    }
+                ) {
+                    effects.push(AppEffect::Suspend);
+                    return Ok(effects);
+                }
+
+                match self.status {
                     Status::Log => {
                         if self.show_help {
                             self.show_help = false;
                         } else {
-                            self.on_key_event(key, &mut terminal)?;
                             self.service_log.on_key_event(key);
                         }
                     }
@@ -190,7 +243,6 @@ impl App {
                                 self.table_service.set_selected_index(0);
                             }
                         } else {
-                            self.on_key_event(key, &mut terminal)?;
                             self.on_key_horizontal_event(key, self.filter.input_mode == InputMode::Editing);
                             self.table_service.on_key_event(key);
                             self.filter.on_key_event(key);
@@ -200,14 +252,17 @@ impl App {
                         if self.show_help {
                             self.show_help = false;
                         } else {
-                            self.on_key_event(key, &mut terminal)?;
                             self.details.on_key_event(key);
                         }
                     }
-                },
+                }
+            }
                 AppEvent::Action(Actions::ServiceAction(action)) => {
-                    self.table_service.act_on_selected_service(&action);
-                    self.table_service.invalidate_timestamp();
+                    if let Some(service) = self.table_service.get_selected_service() {
+                        effects.push(AppEffect::RunServiceAction { service, action });
+                    } else {
+                        self.table_service.set_ignore_key_events(false);
+                    }
                 }
                 AppEvent::Action(Actions::UpdateIgnoreListKeys(bool)) => {
                     self.table_service.set_ignore_key_events(bool);
@@ -222,7 +277,7 @@ impl App {
                 AppEvent::Action(Actions::RefreshLog) => {
                     if self.status == Status::Log 
                         && let Some(service) = self.table_service.get_selected_service() {
-                            self.service_log.fetch_log_and_dispatch(&service);
+                            effects.push(AppEffect::FetchLog(service));
                     }
                 }
                 AppEvent::Action(Actions::GoLog) => {
@@ -238,30 +293,58 @@ impl App {
                 }
                 AppEvent::Action(Actions::UpdateDetails | Actions::Redraw) => {}
                 AppEvent::Action(Actions::RefreshDetails) => {
-                    if self.status == Status::Details {
-                        self.details.fetch_unit_file();
+                    if self.status == Status::Details
+                        && let Some(service) = self.table_service.get_selected_service()
+                    {
+                        effects.push(AppEffect::FetchDetails(service));
                     }
                 }
                 AppEvent::Action(Actions::GoDetails) => {
                     if let Some(service) = self.table_service.get_selected_service() {
                         self.details.update(service.clone());
+                        effects.push(AppEffect::FetchDetails(service));
                     }
-                    self.event_tx
-                        .send(AppEvent::Action(Actions::RefreshDetails))?;
                     self.status = Status::Details;
                 }
                 AppEvent::Action(Actions::EditCurrentService) => {
                     if let Some(service) = &self.table_service.get_selected_service() {
-                        self.edit_unit(&mut terminal, service.name())?;
-                        self.event_tx.send(AppEvent::Action(Actions::RefreshDetails))?;
+                        effects.push(AppEffect::EditUnit(service.name().to_string()));
                     }
                 }
                 AppEvent::Error(error_msg) => {
-                    self.error_popup(&mut terminal, &error_msg)?;
+                    self.error_message = Some(error_msg);
                 }
                 AppEvent::Action(Actions::ShowHelp) => {
                     self.show_help = !self.show_help;
                 },
+        }
+
+        Ok(effects)
+    }
+
+    fn execute_effects(
+        &mut self,
+        effects: Vec<AppEffect>,
+        terminal: &mut DefaultTerminal,
+    ) -> Result<()> {
+        for effect in effects {
+            match effect {
+                AppEffect::Suspend => self.suspend_tui(terminal)?,
+                AppEffect::EditUnit(unit_name) => {
+                    self.edit_unit(terminal, &unit_name)?;
+                    self.event_tx.send(AppEvent::Action(Actions::RefreshDetails))?;
+                }
+                AppEffect::FetchLog(service) => {
+                    self.service_log.fetch_log_and_dispatch(&service);
+                }
+                AppEffect::FetchDetails(service) => {
+                    self.details.update(service);
+                    self.details.fetch_unit_file();
+                }
+                AppEffect::RunServiceAction { service, action } => {
+                    self.table_service.act_on_service(service, &action);
+                    self.table_service.invalidate_timestamp();
+                }
             }
         }
 
@@ -280,25 +363,27 @@ impl App {
     }
 
 
-    fn edit_unit(&self, terminal: &mut DefaultTerminal, unit_name: &str) -> Result<()> {
+    fn edit_unit(&mut self, terminal: &mut DefaultTerminal, unit_name: &str) -> Result<()> {
         self.event_listener_enabled.store(false, Ordering::Relaxed);
 
         if let Err(e) = disable_raw_mode() {
-            self.resume_tui(terminal)?;
-            self.error_popup(terminal, &format!("Failed to disable raw mode: {e}"))?;
+            self.error_message = Some(format!("Failed to disable raw mode: {e}"));
+            self.event_listener_enabled.store(true, Ordering::Relaxed);
             return Ok(());
         }
 
         let mut stdout = io::stdout();
         if let Err(e) = execute!(stdout, LeaveAlternateScreen) {
             self.resume_tui(terminal)?;
-            self.error_popup(terminal, &format!("Failed to leave alternate screen: {e}"))?;
+            self.error_message = Some(format!("Failed to leave alternate screen: {e}"));
+            self.event_listener_enabled.store(true, Ordering::Relaxed);
             return Ok(());
         }
 
         if let Err(e) = terminal.show_cursor() {
             self.resume_tui(terminal)?;
-            self.error_popup(terminal, &format!("Failed to show cursor: {e}"))?;
+            self.error_message = Some(format!("Failed to show cursor: {e}"));
+            self.event_listener_enabled.store(true, Ordering::Relaxed);
             return Ok(());
         }
 
@@ -317,22 +402,19 @@ impl App {
             .arg(unit_name)
             .status();
 
-        match status {
-            Ok(s) if s.success() => {},
-            Ok(_s) => {
-                self.resume_tui(terminal)?;
-                self.error_popup(terminal, "'systemctl edit' failed. Try running the program with sudo!")?;
-            },
-            Err(e) => {
-                self.resume_tui(terminal)?;
-                self.error_popup(terminal, &format!("Error executing systemctl: {e}"))?;
-            }
-        }
+        let edit_error = match status {
+            Ok(s) if s.success() => None,
+            Ok(_) => Some("'systemctl edit' failed. Try running the program with sudo!".to_string()),
+            Err(e) => Some(format!("Error executing systemctl: {e}")),
+        };
 
         if let Err(e) = self.resume_tui(terminal) {
-            self.error_popup(terminal, &format!("Failed to return to TUI: {e}"))?;
+            self.error_message = Some(format!("Failed to return to TUI: {e}"));
+            self.event_listener_enabled.store(true, Ordering::Relaxed);
             return Ok(());
         }
+
+        self.error_message = edit_error;
 
         self.event_listener_enabled.store(true, Ordering::Relaxed);
 
@@ -420,12 +502,8 @@ impl App {
     }
 
     #[allow(clippy::unused_self)]
-    fn error_popup(&self, terminal: &mut DefaultTerminal, error_msg: &str) -> Result<()> {
+    fn draw_error_popup(&self, frame: &mut Frame, area: Rect, error_msg: &str) {
         let user_friendly_message = get_user_friendly_error(error_msg);
-
-        terminal.draw(|frame| {
-            let area = frame.area();
-
             let popup_width = std::cmp::min(70, area.width.saturating_sub(4));
             let popup_height = std::cmp::min(10, area.height.saturating_sub(4));
 
@@ -466,12 +544,6 @@ impl App {
                 .wrap(ratatui::widgets::Wrap { trim: true });
 
             frame.render_widget(error_block, popup_area);
-        })?;
-
-        if let Ok(Event::Key(_)) = event::read() {
-            // Continue after key press
-        }
-        Ok(())
     }
 
     fn draw_details_status(
@@ -486,6 +558,7 @@ impl App {
 
             self.details.render(frame, list_box);
             self.draw_shortcuts(frame, help_area_box, &self.details.shortcuts());
+            self.draw_overlays(frame, area);
         })?;
 
         Ok(())
@@ -503,6 +576,7 @@ impl App {
 
             self.service_log.render(frame, list_box);
             self.draw_shortcuts(frame, help_area_box, &self.service_log.shortcuts());
+            self.draw_overlays(frame, area);
         })?;
 
         Ok(())
@@ -561,10 +635,7 @@ impl App {
             self.filter.draw(frame, filter_box);
             table_service.render(frame, list_box);
 
-            // Show help popup if needed
-            if self.show_help {
-                self.draw_help_popup(frame, area);
-            }
+            self.draw_overlays(frame, area);
         })?;
 
         Ok(())
@@ -605,22 +676,13 @@ impl App {
         frame.render_widget(help_block, help_area);
     }
 
-    fn on_key_event(&mut self, key: KeyEvent, terminal: &mut DefaultTerminal) -> Result<()> {
-         if let KeyEvent {
-                 modifiers: KeyModifiers::CONTROL,
-                 code: KeyCode::Char('c' | 'C'),
-                 ..
-             } = key {
-             self.quit();
-         }
-         if let KeyEvent {
-                 modifiers: KeyModifiers::CONTROL,
-                 code: KeyCode::Char('z'),
-                 ..
-             } = key {
-             self.suspend_tui(terminal)?;
-         }
-        Ok(())
+    fn draw_overlays(&self, frame: &mut Frame, area: Rect) {
+        if self.show_help {
+            self.draw_help_popup(frame, area);
+        }
+        if let Some(error_message) = self.error_message.as_deref() {
+            self.draw_error_popup(frame, area, error_message);
+        }
     }
 
     fn suspend_tui(&mut self, 
@@ -697,7 +759,32 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use super::get_user_friendly_error;
+    use super::*;
+    use crate::test_support::{service, FakeRepository};
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+    use std::sync::mpsc;
+
+    fn test_app() -> App {
+        let (event_tx, event_rx) = mpsc::channel();
+        let manager = Rc::new(RefCell::new(ServicesManager::new(Box::new(
+            FakeRepository::default(),
+        ))));
+        let table = TableServices::new(event_tx.clone(), manager.clone());
+        let filter = Filter::new(event_tx.clone(), String::new());
+        let log = ServiceLog::new(event_tx.clone(), manager.clone());
+        let details = ServiceDetails::new(event_tx.clone(), manager.clone());
+
+        App::new(
+            event_tx,
+            event_rx,
+            table,
+            filter,
+            log,
+            details,
+            manager,
+        )
+    }
 
     #[test]
     fn translates_known_dbus_errors() {
@@ -711,5 +798,118 @@ mod tests {
     #[test]
     fn preserves_unknown_errors() {
         assert_eq!(get_user_friendly_error("custom failure"), "custom failure");
+    }
+
+    #[test]
+    fn actions_navigate_between_all_screens() {
+        let mut app = test_app();
+
+        app.handle_event(AppEvent::Action(Actions::GoDetails)).unwrap();
+        assert!(matches!(app.status, Status::Details));
+
+        app.handle_event(AppEvent::Action(Actions::GoLog)).unwrap();
+        assert!(matches!(app.status, Status::Log));
+
+        app.handle_event(AppEvent::Action(Actions::GoList)).unwrap();
+        assert!(matches!(app.status, Status::List));
+    }
+
+    #[test]
+    fn error_event_opens_overlay_and_next_key_closes_it() {
+        let mut app = test_app();
+
+        app.handle_event(AppEvent::Error("failure".into())).unwrap();
+        assert_eq!(app.error_message.as_deref(), Some("failure"));
+
+        app.handle_event(AppEvent::Key(KeyEvent::new(
+            KeyCode::Esc,
+            KeyModifiers::NONE,
+        )))
+        .unwrap();
+        assert!(app.error_message.is_none());
+    }
+
+    #[test]
+    fn error_overlay_is_rendered_by_test_backend() {
+        let mut app = test_app();
+        app.handle_event(AppEvent::Error(
+            "org.freedesktop.DBus.Error.AccessDenied".into(),
+        ))
+        .unwrap();
+        let backend = TestBackend::new(80, 20);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| app.draw_overlays(frame, frame.area()))
+            .unwrap();
+
+        let screen = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(screen.contains("ERROR"));
+        assert!(screen.contains("Access denied"));
+        assert!(screen.contains("Press any key to dismiss"));
+    }
+
+    #[test]
+    fn help_overlay_can_be_opened_and_closed() {
+        let mut app = test_app();
+
+        app.handle_event(AppEvent::Action(Actions::ShowHelp)).unwrap();
+        assert!(app.show_help);
+
+        app.handle_event(AppEvent::Key(KeyEvent::new(
+            KeyCode::Char('?'),
+            KeyModifiers::NONE,
+        )))
+        .unwrap();
+        assert!(!app.show_help);
+    }
+
+    #[test]
+    fn ctrl_c_stops_the_application() {
+        let mut app = test_app();
+
+        let effects = app
+            .handle_event(AppEvent::Key(KeyEvent::new(
+                KeyCode::Char('c'),
+                KeyModifiers::CONTROL,
+            )))
+            .unwrap();
+
+        assert!(!app.running);
+        assert!(effects.is_empty());
+        assert!(app.event_rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn ctrl_z_returns_suspend_effect_without_touching_terminal() {
+        let mut app = test_app();
+
+        let effects = app
+            .handle_event(AppEvent::Key(KeyEvent::new(
+                KeyCode::Char('z'),
+                KeyModifiers::CONTROL,
+            )))
+            .unwrap();
+
+        assert_eq!(effects, [AppEffect::Suspend]);
+    }
+
+    #[test]
+    fn edit_action_returns_effect_for_selected_unit() {
+        let mut app = test_app();
+        app.table_service.services = vec![service("demo.service", "active", "enabled")];
+        app.table_service.refresh("");
+
+        let effects = app
+            .handle_event(AppEvent::Action(Actions::EditCurrentService))
+            .unwrap();
+
+        assert_eq!(effects, [AppEffect::EditUnit("demo.service".into())]);
     }
 }

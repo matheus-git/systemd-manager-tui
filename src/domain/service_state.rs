@@ -1,4 +1,4 @@
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default, Debug, PartialEq, Eq)]
 pub struct ServiceState {
     load: String,
     active: String,

@@ -165,6 +165,7 @@ impl ActiveFilterState {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ServiceAction {
     Start,
     Stop,
@@ -599,8 +600,7 @@ impl TableServices {
         }
     }
 
-    pub fn act_on_selected_service(&mut self, action: &ServiceAction) {
-        if let Some(service) = self.get_selected_service() {
+    pub fn act_on_service(&mut self, service: Service, action: &ServiceAction) {
             let binding_usecase = self.usecase.clone();
             let usecase = binding_usecase.borrow();
             match action {
@@ -643,7 +643,6 @@ impl TableServices {
                     self.fetch_and_refresh(&self.old_filter_text.clone());
                 },
             }
-        }
         self.set_ignore_key_events(false);
     }
 
