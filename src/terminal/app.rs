@@ -493,25 +493,26 @@ impl App {
                     }
                 }
                 AppEvent::Action(Actions::ConnectionChanged(request_id, target, result)) => {
-                    if request_id == self.latest_connection_request_id {
-                        match result {
-                            Ok(()) => {
-                                self.active_connection = target;
-                                effects.push(
-                                    self.refresh_services_effect_for_connection(request_id),
-                                );
-                            }
-                            Err(error) => {
-                                self.selected_tab_index = match self.active_connection {
-                                    ConnectionType::System => 0,
-                                    ConnectionType::Session => 1,
-                                };
-                                self.error_message = Some(error);
+                    match result {
+                        Ok(()) => {
+                            self.active_connection = target;
+                            if request_id == self.latest_connection_request_id {
                                 effects.push(
                                     self.refresh_services_effect_for_connection(request_id),
                                 );
                             }
                         }
+                        Err(error) if request_id == self.latest_connection_request_id => {
+                            self.selected_tab_index = match self.active_connection {
+                                ConnectionType::System => 0,
+                                ConnectionType::Session => 1,
+                            };
+                            self.error_message = Some(error);
+                            effects.push(
+                                self.refresh_services_effect_for_connection(request_id),
+                            );
+                        }
+                        Err(_) => {}
                     }
                 }
                 AppEvent::Action(Actions::RefreshDetails) => {
@@ -1581,6 +1582,7 @@ mod tests {
                 Ok(()),
             )))
             .unwrap();
+        assert_eq!(app.active_connection, ConnectionType::Session);
         let current_effects = app
             .handle_event(AppEvent::Action(Actions::ConnectionChanged(
                 2,
@@ -1593,6 +1595,42 @@ mod tests {
         assert!(matches!(
             current_effects.as_slice(),
             [AppEffect::RefreshServices { .. }]
+        ));
+        assert_eq!(app.active_connection, ConnectionType::System);
+    }
+
+    #[test]
+    fn failed_latest_connection_restores_last_successful_intermediate_target() {
+        let mut app = test_app();
+        app.latest_connection_request_id = 2;
+        app.selected_tab_index = 0;
+        app.connection_pending = true;
+
+        let intermediate_effects = app
+            .handle_event(AppEvent::Action(Actions::ConnectionChanged(
+                1,
+                ConnectionType::Session,
+                Ok(()),
+            )))
+            .unwrap();
+        let latest_effects = app
+            .handle_event(AppEvent::Action(Actions::ConnectionChanged(
+                2,
+                ConnectionType::System,
+                Err("system connection failed".into()),
+            )))
+            .unwrap();
+
+        assert!(intermediate_effects.is_empty());
+        assert_eq!(app.active_connection, ConnectionType::Session);
+        assert_eq!(app.selected_tab_index, 1);
+        assert_eq!(app.error_message.as_deref(), Some("system connection failed"));
+        assert!(matches!(
+            latest_effects.as_slice(),
+            [AppEffect::RefreshServices {
+                connection_request_id: Some(2),
+                ..
+            }]
         ));
     }
 
