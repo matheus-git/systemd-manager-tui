@@ -1,9 +1,9 @@
 use ratatui::{
+    Frame,
     layout::{Alignment, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Wrap},
-    Frame,
 };
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
@@ -25,8 +25,8 @@ pub struct ServiceDetails {
 mod tests {
     use super::*;
     use crate::test_support::service;
-    use ratatui::backend::TestBackend;
     use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
     use std::sync::mpsc;
 
     fn details() -> (ServiceDetails, mpsc::Receiver<AppEvent>) {
@@ -37,8 +37,16 @@ mod tests {
     fn rendered_text(details: &mut ServiceDetails, width: u16, height: u16) -> String {
         let backend = TestBackend::new(width, height);
         let mut terminal = Terminal::new(backend).unwrap();
-        terminal.draw(|frame| details.render(frame, frame.area())).unwrap();
-        terminal.backend().buffer().content().iter().map(|cell| cell.symbol()).collect()
+        terminal
+            .draw(|frame| details.render(frame, frame.area()))
+            .unwrap();
+        terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect()
     }
 
     #[test]
@@ -57,11 +65,20 @@ mod tests {
     #[test]
     fn navigation_updates_scroll_and_emits_actions() {
         let (mut details, receiver) = details();
-        details.on_key_event(KeyEvent::new(KeyCode::PageDown, crossterm::event::KeyModifiers::NONE));
+        details.on_key_event(KeyEvent::new(
+            KeyCode::PageDown,
+            crossterm::event::KeyModifiers::NONE,
+        ));
         assert_eq!(details.scroll, 10);
 
-        details.on_key_event(KeyEvent::new(KeyCode::Char('e'), crossterm::event::KeyModifiers::NONE));
-        assert!(matches!(receiver.recv().unwrap(), AppEvent::Action(Actions::EditCurrentService)));
+        details.on_key_event(KeyEvent::new(
+            KeyCode::Char('e'),
+            crossterm::event::KeyModifiers::NONE,
+        ));
+        assert!(matches!(
+            receiver.recv().unwrap(),
+            AppEvent::Action(Actions::EditCurrentService)
+        ));
     }
 
     #[test]
@@ -162,7 +179,9 @@ impl ServiceDetails {
                 self.scroll += 10;
             }
             KeyCode::Char('e') => {
-                self.sender.send(AppEvent::Action(Actions::EditCurrentService)).unwrap();
+                self.sender
+                    .send(AppEvent::Action(Actions::EditCurrentService))
+                    .unwrap();
             }
             KeyCode::Char('q') | KeyCode::Esc => {
                 self.exit();
@@ -170,7 +189,7 @@ impl ServiceDetails {
             _ => {}
         }
     }
-    
+
     #[allow(clippy::unused_self)]
     pub fn shortcuts(&self) -> Vec<Line<'_>> {
         let help_text = vec![

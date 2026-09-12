@@ -1,11 +1,13 @@
 mod domain;
 mod infrastructure;
 mod terminal;
-mod usecases;
 #[cfg(test)]
 mod test_support;
-use infrastructure::systemd_service_adapter::{ConnectionType, PollingConfig, SystemdServiceAdapter};
+mod usecases;
 use infrastructure::notifier::start_notifier;
+use infrastructure::systemd_service_adapter::{
+    ConnectionType, PollingConfig, SystemdServiceAdapter,
+};
 use terminal::app::App;
 use usecases::services_manager::ServicesManager;
 
@@ -63,7 +65,7 @@ fn main() -> color_eyre::Result<()> {
     let args: Config = Args::parse().into();
     let terminal = ratatui::init();
     let _terminal_restore_guard = TerminalRestoreGuard;
-    
+
     let (event_tx, event_rx) = mpsc::channel::<AppEvent>();
 
     start_notifier();
@@ -71,12 +73,10 @@ fn main() -> color_eyre::Result<()> {
         Duration::from_secs(args.operation_timeout_seconds),
         Duration::from_millis(100),
     );
-    let systemd_adapter = SystemdServiceAdapter::with_polling_config(
-        ConnectionType::System,
-        polling,
-    )?;
+    let systemd_adapter =
+        SystemdServiceAdapter::with_polling_config(ConnectionType::System, polling)?;
     let usecase = Rc::new(RefCell::new(ServicesManager::new(Box::new(
-        systemd_adapter
+        systemd_adapter,
     ))));
     let table_services = TableServices::new(event_tx.clone(), usecase.clone());
     let filter = Filter::new(event_tx.clone(), args.filter.clone());

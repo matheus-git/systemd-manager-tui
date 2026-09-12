@@ -1,2 +1,2 @@
-pub mod systemd_service_adapter;
 pub mod notifier;
+pub mod systemd_service_adapter;

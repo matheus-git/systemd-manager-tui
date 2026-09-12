@@ -39,7 +39,12 @@ mod tests {
 
     #[test]
     fn exposes_all_state_fields() {
-        let state = ServiceState::new("loaded".into(), "active".into(), "running".into(), "enabled".into());
+        let state = ServiceState::new(
+            "loaded".into(),
+            "active".into(),
+            "running".into(),
+            "enabled".into(),
+        );
 
         assert_eq!(state.load(), "loaded");
         assert_eq!(state.active(), "active");

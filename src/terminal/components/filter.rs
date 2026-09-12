@@ -1,11 +1,11 @@
 use crossterm::event::KeyModifiers;
 use ratatui::{
+    Frame,
     crossterm::event::{KeyCode, KeyEvent, KeyEventKind},
     layout::{Constraint, Layout, Position, Rect},
     style::{Color, Style, Stylize},
     text::{Line, Text},
     widgets::{Block, Paragraph},
-    Frame,
 };
 use std::sync::mpsc::Sender;
 
@@ -78,10 +78,7 @@ impl Filter {
             return;
         }
 
-        let after_cursor = self
-            .input
-            .chars()
-            .skip(self.character_index);
+        let after_cursor = self.input.chars().skip(self.character_index);
 
         self.input = after_cursor.collect();
         self.character_index = 0;
@@ -115,10 +112,7 @@ impl Filter {
             return;
         }
 
-        let before_cursor = self
-            .input
-            .chars()
-            .take(self.character_index);
+        let before_cursor = self.input.chars().take(self.character_index);
 
         self.input = before_cursor.collect();
     }
@@ -205,40 +199,40 @@ impl Filter {
                     KeyCode::Enter => self.submit_message(),
                     KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         self.delete_to_start();
-                    },
+                    }
                     KeyCode::Char('f') if key.modifiers.contains(KeyModifiers::ALT) => {
                         self.move_cursor_next_word();
-                    },
+                    }
                     KeyCode::Right if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         self.move_cursor_next_word();
-                    },
+                    }
                     KeyCode::Char('b') if key.modifiers.contains(KeyModifiers::ALT) => {
                         self.move_cursor_prev_word();
-                    },
+                    }
                     KeyCode::Left if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         self.move_cursor_prev_word();
-                    },
+                    }
                     KeyCode::Char('k') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         self.delete_from_cursor();
-                    },
+                    }
                     KeyCode::Char('w') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         self.delete_prev_word();
-                    },
+                    }
                     KeyCode::Backspace if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         self.delete_prev_word();
-                    },
+                    }
                     KeyCode::Char('a') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         self.character_index = 0;
-                    },
+                    }
                     KeyCode::Home => {
                         self.character_index = 0;
-                    },
+                    }
                     KeyCode::Char('e') if key.modifiers.contains(KeyModifiers::CONTROL) => {
                         self.character_index = self.input.chars().count();
-                    },
+                    }
                     KeyCode::End => {
                         self.character_index = self.input.chars().count();
-                    },
+                    }
                     KeyCode::Char(to_insert) => self.enter_char(to_insert),
                     KeyCode::Backspace => self.delete_char(),
                     KeyCode::Left => self.move_cursor_left(),
@@ -265,7 +259,13 @@ impl Filter {
 
         let (msg, style) = match self.input_mode {
             InputMode::Normal => (
-                vec!["Press ".into(), "i".bold(), " or ".into(), "/".bold(), " to start filtering.".into()],
+                vec![
+                    "Press ".into(),
+                    "i".bold(),
+                    " or ".into(),
+                    "/".bold(),
+                    " to start filtering.".into(),
+                ],
                 Style::default(),
             ),
             InputMode::Editing => (
@@ -304,8 +304,8 @@ impl Filter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ratatui::backend::{Backend, TestBackend};
     use ratatui::Terminal;
+    use ratatui::backend::{Backend, TestBackend};
     use std::sync::mpsc::{self, Receiver};
 
     fn filter_with_input(input: &str) -> (Filter, Receiver<AppEvent>) {
@@ -361,9 +361,14 @@ mod tests {
         let backend = TestBackend::new(40, 4);
         let mut terminal = Terminal::new(backend).unwrap();
 
-        terminal.draw(|frame| filter.draw(frame, frame.area())).unwrap();
+        terminal
+            .draw(|frame| filter.draw(frame, frame.area()))
+            .unwrap();
 
-        let rendered = terminal.backend().buffer().content()
+        let rendered = terminal
+            .backend()
+            .buffer()
+            .content()
             .iter()
             .map(|cell| cell.symbol())
             .collect::<String>();

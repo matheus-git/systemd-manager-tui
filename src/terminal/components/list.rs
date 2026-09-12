@@ -4,23 +4,23 @@ use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
 use ratatui::{
-    layout::Constraint,
-    widgets::{Block, Borders, Cell, Row, Table, TableState, Padding},
     Frame,
+    layout::Constraint,
+    widgets::{Block, Borders, Cell, Padding, Row, Table, TableState},
 };
-use std::error::Error;
-use std::sync::mpsc::{Receiver, Sender};
-use std::sync::mpsc;
-use std::rc::Rc;
 use std::cell::RefCell;
+use std::collections::HashMap;
+use std::error::Error;
+use std::rc::Rc;
+use std::sync::mpsc;
+use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::{Duration, Instant};
-use std::collections::HashMap;
 
+use crate::Config;
 use crate::domain::service::Service;
 use crate::terminal::app::{Actions, AppEvent};
-use crate::Config;
 
 use rayon::prelude::*;
 
@@ -30,7 +30,7 @@ pub const LOADING_PLACEHOLDER: &str = "Loading";
 
 fn resolve_file<'a>(service: &'a Service, states: Option<&'a HashMap<String, String>>) -> &'a str {
     if service.state().file() != LOADING_PLACEHOLDER {
-        return service.state().file()
+        return service.state().file();
     }
     states
         .and_then(|states| states.get(service.name()))
@@ -50,7 +50,9 @@ fn build_service_row(
         .add_modifier(Modifier::BOLD);
     let normal_style = Style::default().fg(Color::Gray);
 
-    let active_cell = if let Some((service_name, label)) = runtime_label && service_name == service.name() {
+    let active_cell = if let Some((service_name, label)) = runtime_label
+        && service_name == service.name()
+    {
         Cell::from(label.to_string()).style(Style::default().fg(Color::Green))
     } else {
         let state_style = match service.state().active() {
@@ -72,11 +74,9 @@ fn build_service_row(
         Style::default()
             .fg(Color::Gray)
             .add_modifier(Modifier::ITALIC | Modifier::DIM)
-    }else {
+    } else {
         normal_style
     };
-
-
 
     Row::new(vec![
         Cell::from(service.name().to_string()).style(highlight_style),
@@ -87,7 +87,11 @@ fn build_service_row(
     ])
 }
 
-fn generate_rows(services: &[Service], states: Option<&HashMap<String, String>>, service_uptime: Option<(&str, &str)>) -> Vec<Row<'static>> {
+fn generate_rows(
+    services: &[Service],
+    states: Option<&HashMap<String, String>>,
+    service_uptime: Option<(&str, &str)>,
+) -> Vec<Row<'static>> {
     services
         .par_iter()
         .map(|service| build_service_row(service, states, service_uptime))
@@ -112,11 +116,7 @@ fn generate_table<'a>(rows: &'a [Row<'a>], ignore_key_events: bool) -> Table<'a>
                 .add_modifier(Modifier::BOLD),
         ),
     )
-    .block( 
-        Block::default()
-            .borders(Borders::NONE)
-            .padding(PADDING),
-    )
+    .block(Block::default().borders(Borders::NONE).padding(PADDING))
     .row_highlight_style(
         Style::default()
             .bg(Color::Blue)
@@ -189,7 +189,7 @@ pub enum QueryUnitFile {
         error: String,
     },
 }
- 
+
 pub struct TableServices {
     pub table_state: TableState,
     pub services: Vec<Service>,
@@ -211,7 +211,7 @@ pub struct TableServices {
 }
 
 impl TableServices {
-    pub fn new(sender: Sender<AppEvent>,  usecase: Rc<RefCell<ServicesManager>>) -> Self {
+    pub fn new(sender: Sender<AppEvent>, usecase: Rc<RefCell<ServicesManager>>) -> Self {
         let (event_tx, event_rx) = mpsc::channel::<QueryUnitFile>();
         let (timestamp_request_tx, timestamp_request_rx) = mpsc::channel::<String>();
         let filter_all = false;
@@ -241,12 +241,10 @@ impl TableServices {
     }
 
     pub fn init(&mut self, config: &Config) {
-        self.services = self.usecase.borrow().list_services(
-            self.filter_all,
-            self.event_tx.clone(),
-            0,
-            None,
-        )
+        self.services = self
+            .usecase
+            .borrow()
+            .list_services(self.filter_all, self.event_tx.clone(), 0, None)
             .unwrap_or_default();
         self.spawn_query_listener();
         self.spawn_timestamp_worker();
@@ -309,15 +307,18 @@ impl TableServices {
         self.refresh_selected_timestamp();
         let runtime_label = self.format_runtime();
 
-        let service_uptime: Option<(&str, &str)> = runtime_label.as_deref()
-            .and_then(|label| {
-                let service = self.table_state.selected()
-                    .and_then(|idx| self.filtered_services.get(idx))
-                    .filter(|s| s.state().active() == "active");
-                service.map(|service| (service.name(), label))
-            });
+        let service_uptime: Option<(&str, &str)> = runtime_label.as_deref().and_then(|label| {
+            let service = self
+                .table_state
+                .selected()
+                .and_then(|idx| self.filtered_services.get(idx))
+                .filter(|s| s.state().active() == "active");
+            service.map(|service| (service.name(), label))
+        });
 
-        let rows = self.states.try_lock()
+        let rows = self
+            .states
+            .try_lock()
             .ok()
             .map(|states| generate_rows(&self.filtered_services, Some(&states), service_uptime))
             .unwrap_or_else(|| generate_rows(&self.filtered_services, None, service_uptime));
@@ -337,7 +338,10 @@ impl TableServices {
     }
 
     fn spawn_timestamp_worker(&mut self) {
-        let rx = self.timestamp_request_rx.take().expect("timestamp receiver already taken");
+        let rx = self
+            .timestamp_request_rx
+            .take()
+            .expect("timestamp receiver already taken");
         let repo = self.usecase.borrow().repository_handle();
         let sender = self.sender.clone();
 
@@ -368,7 +372,8 @@ impl TableServices {
         let current_name = selected.as_ref().map(|s| s.name().to_string());
 
         let selection_changed = current_name != self.selected_service_name;
-        let stale = self.last_timestamp_fetch
+        let stale = self
+            .last_timestamp_fetch
             .map(|t| t.elapsed() >= Duration::from_secs(30))
             .unwrap_or(true);
 
@@ -462,7 +467,8 @@ impl TableServices {
     }
 
     pub fn get_selected_service(&self) -> Option<Service> {
-        self.table_state.selected()
+        self.table_state
+            .selected()
             .and_then(|idx| self.filtered_services.get(idx).cloned())
     }
 
@@ -474,20 +480,20 @@ impl TableServices {
         self.old_filter_text.clear();
         self.old_filter_text.push_str(filter_text);
         self.filtered_services = self.filter(filter_text, &self.services);
-        
+
         // If no item is selected and the list is not empty, select the first item
         if self.table_state.selected().is_none() && !self.filtered_services.is_empty() {
             self.table_state.select(Some(0));
         }
         // If the selected index is out of bounds, reset to first item or None
-        else if let Some(selected) = self.table_state.selected() 
-            && selected >= self.filtered_services.len() {
-                if self.filtered_services.is_empty() {
-                    self.table_state.select(None);
-                } else {
-                    self.table_state.select(Some(0));
-                }
-            
+        else if let Some(selected) = self.table_state.selected()
+            && selected >= self.filtered_services.len()
+        {
+            if self.filtered_services.is_empty() {
+                self.table_state.select(None);
+            } else {
+                self.table_state.select(Some(0));
+            }
         }
     }
 
@@ -497,8 +503,7 @@ impl TableServices {
         services
             .iter()
             .filter(|service| {
-                let name_matches =
-                    service.name().to_lowercase().contains(&lower_filter);
+                let name_matches = service.name().to_lowercase().contains(&lower_filter);
 
                 let active_matches = match self.active_filter_state {
                     ActiveFilterState::All => true,
@@ -522,31 +527,59 @@ impl TableServices {
 
         match key.code {
             KeyCode::Char('r') => {
-                self.sender.send(AppEvent::Action(Actions::ServiceAction(ServiceAction::Restart))).unwrap();
+                self.sender
+                    .send(AppEvent::Action(Actions::ServiceAction(
+                        ServiceAction::Restart,
+                    )))
+                    .unwrap();
                 return;
             }
             KeyCode::Char('s') => {
-                self.sender.send(AppEvent::Action(Actions::ServiceAction(ServiceAction::Start))).unwrap();
+                self.sender
+                    .send(AppEvent::Action(Actions::ServiceAction(
+                        ServiceAction::Start,
+                    )))
+                    .unwrap();
                 return;
             }
             KeyCode::Char('x') => {
-                self.sender.send(AppEvent::Action(Actions::ServiceAction(ServiceAction::Stop))).unwrap();
+                self.sender
+                    .send(AppEvent::Action(Actions::ServiceAction(
+                        ServiceAction::Stop,
+                    )))
+                    .unwrap();
                 return;
             }
             KeyCode::Char('e') => {
-                self.sender.send(AppEvent::Action(Actions::ServiceAction(ServiceAction::Enable))).unwrap();
+                self.sender
+                    .send(AppEvent::Action(Actions::ServiceAction(
+                        ServiceAction::Enable,
+                    )))
+                    .unwrap();
                 return;
             }
             KeyCode::Char('d') => {
-                self.sender.send(AppEvent::Action(Actions::ServiceAction(ServiceAction::Disable))).unwrap();
+                self.sender
+                    .send(AppEvent::Action(Actions::ServiceAction(
+                        ServiceAction::Disable,
+                    )))
+                    .unwrap();
                 return;
             }
             KeyCode::Char('u') => {
-                self.sender.send(AppEvent::Action(Actions::ServiceAction(ServiceAction::RefreshAll))).unwrap();
+                self.sender
+                    .send(AppEvent::Action(Actions::ServiceAction(
+                        ServiceAction::RefreshAll,
+                    )))
+                    .unwrap();
                 return;
             }
             KeyCode::Char('f') => {
-                self.sender.send(AppEvent::Action(Actions::ServiceAction(ServiceAction::ToggleFilter))).unwrap();
+                self.sender
+                    .send(AppEvent::Action(Actions::ServiceAction(
+                        ServiceAction::ToggleFilter,
+                    )))
+                    .unwrap();
                 return;
             }
             KeyCode::Char('a') => {
@@ -562,11 +595,17 @@ impl TableServices {
                 return;
             }
             KeyCode::Char('m') => {
-                self.sender.send(AppEvent::Action(Actions::ServiceAction(ServiceAction::ToggleMask))).unwrap();
+                self.sender
+                    .send(AppEvent::Action(Actions::ServiceAction(
+                        ServiceAction::ToggleMask,
+                    )))
+                    .unwrap();
                 return;
             }
             KeyCode::Char('?') => {
-                self.sender.send(AppEvent::Action(Actions::ShowHelp)).unwrap();
+                self.sender
+                    .send(AppEvent::Action(Actions::ShowHelp))
+                    .unwrap();
                 return;
             }
             _ => {}
@@ -583,7 +622,9 @@ impl TableServices {
             KeyCode::PageDown => self.select_page_down(),
             KeyCode::PageUp => self.select_page_up(),
             KeyCode::Char('c') => {
-                self.sender.send(AppEvent::Action(Actions::GoDetails)).unwrap();
+                self.sender
+                    .send(AppEvent::Action(Actions::GoDetails))
+                    .unwrap();
             }
             KeyCode::Char('v') => {
                 self.sender.send(AppEvent::Action(Actions::GoLog)).unwrap();
@@ -636,7 +677,9 @@ impl TableServices {
         }
 
         if let Some(selected_index) = self.table_state.selected() {
-            let next_index = if !self.filtered_services.is_empty() && selected_index == self.filtered_services.len() - 1 {
+            let next_index = if !self.filtered_services.is_empty()
+                && selected_index == self.filtered_services.len() - 1
+            {
                 0
             } else {
                 selected_index + 1
@@ -729,30 +772,65 @@ mod tests {
     use crate::domain::service_repository::ServiceRepository;
     use crate::domain::service_state::ServiceState;
     use crate::infrastructure::systemd_service_adapter::ConnectionType;
+    use ratatui::Terminal;
+    use ratatui::backend::TestBackend;
     use std::collections::HashMap;
     use std::sync::mpsc;
-    use ratatui::backend::TestBackend;
-    use ratatui::Terminal;
 
     struct EmptyRepository;
 
     impl ServiceRepository for EmptyRepository {
-        fn list_services(&self, _: bool) -> Result<Vec<Service>, Box<dyn Error>> { Ok(vec![]) }
-        fn unit_files_state(&self, _: Vec<Service>) -> Result<HashMap<String, String>, Box<dyn Error>> { Ok(HashMap::new()) }
-        fn list_service_files(&self) -> Result<Vec<Service>, Box<dyn Error>> { Ok(vec![]) }
-        fn get_unit(&self, _: &str) -> Result<Service, Box<dyn Error>> { Err("not found".into()) }
-        fn get_service_log(&self, _: &str) -> Result<String, Box<dyn Error>> { Ok(String::new()) }
-        fn start_service(&self, _: &str) -> Result<Service, Box<dyn Error>> { Err("unsupported".into()) }
-        fn stop_service(&self, _: &str) -> Result<Service, Box<dyn Error>> { Err("unsupported".into()) }
-        fn restart_service(&self, _: &str) -> Result<Service, Box<dyn Error>> { Err("unsupported".into()) }
-        fn enable_service(&self, _: &str) -> Result<Service, Box<dyn Error>> { Err("unsupported".into()) }
-        fn disable_service(&self, _: &str) -> Result<Service, Box<dyn Error>> { Err("unsupported".into()) }
-        fn mask_service(&self, _: &str) -> Result<Service, Box<dyn Error>> { Err("unsupported".into()) }
-        fn unmask_service(&self, _: &str) -> Result<Service, Box<dyn Error>> { Err("unsupported".into()) }
-        fn reload_daemon(&self) -> Result<(), Box<dyn Error>> { Ok(()) }
-        fn change_connection(&mut self, _: ConnectionType) -> Result<(), zbus::Error> { Ok(()) }
-        fn systemctl_cat(&self, _: &str) -> Result<String, Box<dyn Error>> { Ok(String::new()) }
-        fn get_active_enter_timestamp(&self, _: &str) -> Result<u64, Box<dyn Error>> { Ok(0) }
+        fn list_services(&self, _: bool) -> Result<Vec<Service>, Box<dyn Error>> {
+            Ok(vec![])
+        }
+        fn unit_files_state(
+            &self,
+            _: Vec<Service>,
+        ) -> Result<HashMap<String, String>, Box<dyn Error>> {
+            Ok(HashMap::new())
+        }
+        fn list_service_files(&self) -> Result<Vec<Service>, Box<dyn Error>> {
+            Ok(vec![])
+        }
+        fn get_unit(&self, _: &str) -> Result<Service, Box<dyn Error>> {
+            Err("not found".into())
+        }
+        fn get_service_log(&self, _: &str) -> Result<String, Box<dyn Error>> {
+            Ok(String::new())
+        }
+        fn start_service(&self, _: &str) -> Result<Service, Box<dyn Error>> {
+            Err("unsupported".into())
+        }
+        fn stop_service(&self, _: &str) -> Result<Service, Box<dyn Error>> {
+            Err("unsupported".into())
+        }
+        fn restart_service(&self, _: &str) -> Result<Service, Box<dyn Error>> {
+            Err("unsupported".into())
+        }
+        fn enable_service(&self, _: &str) -> Result<Service, Box<dyn Error>> {
+            Err("unsupported".into())
+        }
+        fn disable_service(&self, _: &str) -> Result<Service, Box<dyn Error>> {
+            Err("unsupported".into())
+        }
+        fn mask_service(&self, _: &str) -> Result<Service, Box<dyn Error>> {
+            Err("unsupported".into())
+        }
+        fn unmask_service(&self, _: &str) -> Result<Service, Box<dyn Error>> {
+            Err("unsupported".into())
+        }
+        fn reload_daemon(&self) -> Result<(), Box<dyn Error>> {
+            Ok(())
+        }
+        fn change_connection(&mut self, _: ConnectionType) -> Result<(), zbus::Error> {
+            Ok(())
+        }
+        fn systemctl_cat(&self, _: &str) -> Result<String, Box<dyn Error>> {
+            Ok(String::new())
+        }
+        fn get_active_enter_timestamp(&self, _: &str) -> Result<u64, Box<dyn Error>> {
+            Ok(0)
+        }
     }
 
     fn table() -> TableServices {
@@ -765,7 +843,12 @@ mod tests {
         Service::new(
             name.to_string(),
             String::new(),
-            ServiceState::new("loaded".into(), active.into(), "running".into(), "enabled".into()),
+            ServiceState::new(
+                "loaded".into(),
+                active.into(),
+                "running".into(),
+                "enabled".into(),
+            ),
         )
     }
 
@@ -784,7 +867,10 @@ mod tests {
     #[test]
     fn navigation_wraps_in_both_directions() {
         let mut table = table();
-        table.filtered_services = vec![service("a.service", "active"), service("b.service", "inactive")];
+        table.filtered_services = vec![
+            service("a.service", "active"),
+            service("b.service", "inactive"),
+        ];
         table.table_state.select(Some(1));
 
         table.select_next();
@@ -835,7 +921,12 @@ mod tests {
         let loading = Service::new(
             "demo.service".into(),
             String::new(),
-            ServiceState::new("loaded".into(), "active".into(), "running".into(), LOADING_PLACEHOLDER.into()),
+            ServiceState::new(
+                "loaded".into(),
+                "active".into(),
+                "running".into(),
+                LOADING_PLACEHOLDER.into(),
+            ),
         );
         let states = HashMap::from([("demo.service".to_string(), "enabled".to_string())]);
 
@@ -850,9 +941,14 @@ mod tests {
         let backend = TestBackend::new(90, 6);
         let mut terminal = Terminal::new(backend).unwrap();
 
-        terminal.draw(|frame| table.render(frame, frame.area())).unwrap();
+        terminal
+            .draw(|frame| table.render(frame, frame.area()))
+            .unwrap();
 
-        let rendered = terminal.backend().buffer().content()
+        let rendered = terminal
+            .backend()
+            .buffer()
+            .content()
             .iter()
             .map(|cell| cell.symbol())
             .collect::<String>();
