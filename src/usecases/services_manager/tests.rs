@@ -22,10 +22,11 @@ fn lists_sorts_and_deduplicates_runtime_and_file_units() {
 
     let names: Vec<_> = services.iter().map(Service::name).collect();
     assert_eq!(names, ["alpha.service", "beta.service", "zeta.service"]);
-    assert!(matches!(
-        receiver.recv_timeout(Duration::from_secs(1)),
-        Ok(QueryUnitFile::Finished(_))
-    ));
+    let QueryUnitFile::Finished(states) = receiver
+        .recv_timeout(Duration::from_secs(1))
+        .expect("unit file states were not returned");
+    assert_eq!(states.get("alpha.service").map(String::as_str), Some("enabled"));
+    assert_eq!(states.get("zeta.service").map(String::as_str), Some("enabled"));
 }
 
 #[test]
@@ -167,3 +168,21 @@ fn log_and_unit_file_failures_are_propagated() {
     );
 }
 
+#[test]
+fn service_sorting_is_case_insensitive() {
+    let fake = FakeRepository::with_services(
+        vec![
+            service("Zulu.service", "active", "enabled"),
+            service("alpha.service", "active", "enabled"),
+            service("Beta.service", "active", "enabled"),
+        ],
+        vec![],
+    );
+    let manager = ServicesManager::new(Box::new(fake));
+    let (sender, _receiver) = mpsc::channel();
+
+    let services = manager.list_services(false, Arc::new(sender)).unwrap();
+    let names: Vec<_> = services.iter().map(Service::name).collect();
+
+    assert_eq!(names, ["alpha.service", "Beta.service", "Zulu.service"]);
+}

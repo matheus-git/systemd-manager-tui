@@ -110,6 +110,14 @@ fn file_state_resolution_prefers_loaded_state_map() {
 }
 
 #[test]
+fn explicit_service_file_state_wins_over_loaded_state_map() {
+    let unit = service("demo.service", "active");
+    let states = HashMap::from([("demo.service".to_string(), "masked".to_string())]);
+
+    assert_eq!(resolve_file(&unit, Some(&states)), "enabled");
+}
+
+#[test]
 fn renders_service_table_to_test_backend() {
     let mut table = table();
     table.filtered_services = vec![service("demo.service", "active")];
@@ -332,3 +340,108 @@ fn rendered_rows_expose_active_state_and_loading_styles() {
     }));
 }
 
+#[test]
+fn every_list_shortcut_dispatches_its_expected_action() {
+    fn assert_action(key: char, expected: fn(Actions) -> bool) {
+        let (mut table, receiver) = table_with_receiver();
+        table.on_key_event(KeyEvent::new(
+            KeyCode::Char(key),
+            crossterm::event::KeyModifiers::NONE,
+        ));
+        match receiver.recv().unwrap() {
+            AppEvent::Action(action) => assert!(expected(action), "wrong action for key {key}"),
+            AppEvent::Key(_) | AppEvent::Error(_) => panic!("wrong event for key {key}"),
+        }
+    }
+
+    assert_action('r', |action| {
+        matches!(action, Actions::ServiceAction(ServiceAction::Restart))
+    });
+    assert_action('x', |action| {
+        matches!(action, Actions::ServiceAction(ServiceAction::Stop))
+    });
+    assert_action('e', |action| {
+        matches!(action, Actions::ServiceAction(ServiceAction::Enable))
+    });
+    assert_action('d', |action| {
+        matches!(action, Actions::ServiceAction(ServiceAction::Disable))
+    });
+    assert_action('u', |action| {
+        matches!(action, Actions::ServiceAction(ServiceAction::RefreshAll))
+    });
+    assert_action('f', |action| {
+        matches!(action, Actions::ServiceAction(ServiceAction::ToggleFilter))
+    });
+    assert_action('m', |action| {
+        matches!(action, Actions::ServiceAction(ServiceAction::ToggleMask))
+    });
+    assert_action('?', |action| matches!(action, Actions::ShowHelp));
+    assert_action('c', |action| matches!(action, Actions::GoDetails));
+    assert_action('v', |action| matches!(action, Actions::GoLog));
+}
+
+#[test]
+fn page_navigation_wraps_for_lists_larger_than_jump() {
+    let mut table = table();
+    table.filtered_services = (0..11)
+        .map(|index| service(&format!("{index}.service"), "active"))
+        .collect();
+    table.table_state.select(Some(0));
+
+    table.select_page_up();
+    assert_eq!(table.table_state.selected(), Some(1));
+    table.select_page_down();
+    assert_eq!(table.table_state.selected(), Some(0));
+}
+
+#[test]
+fn active_service_runtime_is_rendered_instead_of_raw_state() {
+    let mut table = table();
+    table.filtered_services = vec![service("demo.service", "active")];
+    table.table_state.select(Some(0));
+    table.selected_service_name = Some("demo.service".into());
+    table.last_timestamp_fetch = Some(Instant::now());
+    table.active_enter_timestamp = Some(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_micros() as u64
+            - 65_000_000,
+    );
+    let backend = TestBackend::new(90, 6);
+    let mut terminal = Terminal::new(backend).unwrap();
+
+    terminal.draw(|frame| table.render(frame, frame.area())).unwrap();
+
+    let rendered = terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect::<String>();
+    assert!(rendered.contains("Uptime: 1m"));
+    assert!(!rendered.contains("active (running)"));
+}
+
+#[test]
+fn toggle_mask_masks_an_unmasked_service() {
+    let fake = FakeRepository::default();
+    let observer = fake.clone();
+    let (mut table, _receiver) = table_with_repository(fake);
+    let unit = service("demo.service", "inactive");
+    table.services = vec![unit.clone()];
+    table.filtered_services = vec![unit];
+    table.table_state.select(Some(0));
+    table
+        .states
+        .lock()
+        .unwrap()
+        .insert("demo.service".into(), "enabled".into());
+
+    table.act_on_selected_service(&ServiceAction::ToggleMask);
+
+    let calls = observer.calls();
+    assert!(calls.contains(&"mask:demo.service".to_string()));
+    assert!(!calls.contains(&"unmask:demo.service".to_string()));
+}
