@@ -24,6 +24,10 @@ pub struct ServiceDetails {
     usecase: Rc<RefCell<ServicesManager>>,
 }
 
+#[cfg(test)]
+#[allow(clippy::items_after_test_module)]
+mod tests;
+
 impl ServiceDetails {
     pub fn new(sender: Sender<AppEvent>,  usecase: Rc<RefCell<ServicesManager>>) -> Self {
         Self {

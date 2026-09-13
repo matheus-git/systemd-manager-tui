@@ -522,6 +522,11 @@ impl TableServices {
     }
 
     fn select_page_down(&mut self) {
+        if self.filtered_services.is_empty() {
+            self.table_state.select(None);
+            return;
+        }
+
         let jump = 10;
         if let Some(selected_index) = self.table_state.selected() {
             let new_index = selected_index + jump;
@@ -537,6 +542,11 @@ impl TableServices {
     }
 
     fn select_page_up(&mut self) {
+        if self.filtered_services.is_empty() {
+            self.table_state.select(None);
+            return;
+        }
+
         let jump = 10;
         if let Some(selected_index) = self.table_state.selected() {
             let selected_index = isize::try_from(selected_index).expect("Failed to convert selected index to isize");
@@ -554,6 +564,11 @@ impl TableServices {
     }
 
     fn select_next(&mut self) {
+        if self.filtered_services.is_empty() {
+            self.table_state.select(None);
+            return;
+        }
+
         if let Some(selected_index) = self.table_state.selected() {
             let next_index = if !self.filtered_services.is_empty() && selected_index == self.filtered_services.len() - 1 {
                 0
@@ -567,6 +582,11 @@ impl TableServices {
     }
 
     fn select_previous(&mut self) {
+        if self.filtered_services.is_empty() {
+            self.table_state.select(None);
+            return;
+        }
+
         if let Some(selected_index) = self.table_state.selected() {
             let prev_index = if selected_index == 0 {
                 self.filtered_services.len() - 1
@@ -671,3 +691,6 @@ impl TableServices {
         help_text
     }
 }
+
+#[cfg(test)]
+mod tests;

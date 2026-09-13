@@ -694,3 +694,6 @@ impl App {
         self.running = false;
     }
 }
+
+#[cfg(test)]
+mod tests;

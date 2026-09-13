@@ -32,3 +32,6 @@ impl ServiceState {
         &self.file
     }
 }
+
+#[cfg(test)]
+mod tests;

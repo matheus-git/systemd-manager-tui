@@ -363,3 +363,6 @@ impl ServiceRepository for SystemdServiceAdapter {
 
 
 }
+
+#[cfg(test)]
+mod tests;

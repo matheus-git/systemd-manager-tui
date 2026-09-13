@@ -300,3 +300,6 @@ impl Filter {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

@@ -149,3 +149,6 @@ fn decode_unit_path(path: &str) -> String {
 
     out
 }
+
+#[cfg(test)]
+mod tests;

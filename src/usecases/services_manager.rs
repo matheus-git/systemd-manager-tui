@@ -12,6 +12,10 @@ pub struct ServicesManager {
     repository: Arc<Mutex<Box<dyn ServiceRepository>>>,
 }
 
+#[cfg(test)]
+#[allow(clippy::items_after_test_module)]
+mod tests;
+
 impl ServicesManager {
     pub fn new(repository: Box<dyn ServiceRepository>) -> Self {
         Self { repository: Arc::new(Mutex::new(repository)) }
@@ -107,4 +111,3 @@ impl ServicesManager {
         Arc::clone(&self.repository)
     }
 }
-

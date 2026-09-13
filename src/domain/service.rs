@@ -28,3 +28,6 @@ impl Service {
         &self.state
     }
 }
+
+#[cfg(test)]
+mod tests;

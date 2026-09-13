@@ -49,6 +49,10 @@ fn render_loading(frame: &mut Frame, area: Rect) {
     frame.render_widget(loading, horizontal[1]);
 }
 
+#[cfg(test)]
+#[allow(clippy::items_after_test_module)]
+mod tests;
+
 enum BorderColor {
     White,
     Orange,

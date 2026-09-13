@@ -2,6 +2,10 @@ mod domain;
 mod infrastructure;
 mod terminal;
 mod usecases;
+#[cfg(test)]
+mod test_support;
+#[cfg(test)]
+mod tests;
 use infrastructure::systemd_service_adapter::{ConnectionType, SystemdServiceAdapter};
 use infrastructure::notifier::start_notifier;
 use terminal::app::App;
