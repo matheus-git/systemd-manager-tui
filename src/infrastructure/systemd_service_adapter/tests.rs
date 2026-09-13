@@ -164,7 +164,7 @@ fn operation_timeout_identifies_context_and_systemd_uncertainty() {
     let message = error.to_string();
     assert!(message.contains("demo.service"));
     assert!(message.contains("restart"));
-    assert!(message.contains("0.2s"));
+    assert!(message.contains("250ms"));
     assert!(message.contains("may still be in progress"));
 }
 

@@ -46,10 +46,8 @@ impl fmt::Display for OperationTimeout {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             formatter,
-            "Timed out after {:.1}s waiting to {} '{}'; the operation may still be in progress in systemd",
-            self.timeout.as_secs_f64(),
-            self.action,
-            self.service
+            "Timed out after {:?} waiting to {} '{}'; the operation may still be in progress in systemd",
+            self.timeout, self.action, self.service
         )
     }
 }
