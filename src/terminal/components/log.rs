@@ -179,6 +179,55 @@ mod tests {
             AppEvent::Action(Actions::GoList)
         ));
     }
+
+    #[test]
+    fn switching_from_log_resets_content_and_opens_details() {
+        let (mut log, receiver) = log_with(FakeRepository::default());
+        log.update("demo.service".into(), "journal output".into());
+        log.scroll = 3;
+
+        log.on_key_event(KeyEvent::new(
+            KeyCode::Right,
+            crossterm::event::KeyModifiers::NONE,
+        ));
+
+        assert!(log.log.is_empty());
+        assert_eq!(log.scroll, 0);
+        assert!(matches!(
+            receiver.recv().unwrap(),
+            AppEvent::Action(Actions::GoDetails)
+        ));
+    }
+
+    #[test]
+    fn downward_scrolling_saturates_at_zero() {
+        let (mut log, _receiver) = log_with(FakeRepository::default());
+
+        log.on_key_event(KeyEvent::new(
+            KeyCode::Down,
+            crossterm::event::KeyModifiers::NONE,
+        ));
+        log.on_key_event(KeyEvent::new(
+            KeyCode::PageDown,
+            crossterm::event::KeyModifiers::NONE,
+        ));
+
+        assert_eq!(log.scroll, 0);
+    }
+
+    #[test]
+    fn long_log_lines_wrap_to_available_width() {
+        let (mut log, _receiver) = log_with(FakeRepository::default());
+        log.update(
+            "demo.service".into(),
+            "abcdefghijklmnopqrst".into(),
+        );
+
+        let screen = rendered_text(&mut log, 12, 4);
+
+        assert!(screen.contains("abcdefghij"));
+        assert!(screen.contains("klmnopqrst"));
+    }
 }
 
 enum BorderColor {

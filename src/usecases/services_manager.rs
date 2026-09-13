@@ -140,6 +140,49 @@ mod tests {
             ["log:demo.service", "cat:demo.service", "connection:session", "timestamp:demo.service"]
         );
     }
+
+    #[test]
+    fn list_failure_is_returned_without_attempting_file_lookup() {
+        let fake = FakeRepository::default();
+        fake.fail("list");
+        let observer = fake.clone();
+        let manager = ServicesManager::new(Box::new(fake));
+        let (sender, _receiver) = mpsc::channel();
+
+        let error = manager.list_services(true, Arc::new(sender)).unwrap_err();
+
+        assert_eq!(error.to_string(), "list failed");
+        assert_eq!(observer.calls(), ["list:true"]);
+    }
+
+    #[test]
+    fn daemon_reload_failure_is_propagated_after_enable() {
+        let fake = FakeRepository::default();
+        fake.fail("reload");
+        let observer = fake.clone();
+        let manager = ServicesManager::new(Box::new(fake));
+        let unit = service("demo.service", "inactive", "disabled");
+
+        let error = manager.enable_service(&unit).unwrap_err();
+
+        assert_eq!(error.to_string(), "reload failed");
+        assert_eq!(observer.calls(), ["enable:demo.service", "reload:"]);
+    }
+
+    #[test]
+    fn log_and_unit_file_failures_are_propagated() {
+        let fake = FakeRepository::default();
+        fake.fail("log");
+        fake.fail("cat");
+        let manager = ServicesManager::new(Box::new(fake));
+        let unit = service("broken.service", "active", "enabled");
+
+        assert_eq!(manager.get_log(&unit).unwrap_err().to_string(), "log failed");
+        assert_eq!(
+            manager.systemctl_cat(&unit).unwrap_err().to_string(),
+            "cat failed"
+        );
+    }
 }
 
 impl ServicesManager {

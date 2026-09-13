@@ -698,6 +698,7 @@ mod tests {
     use crate::domain::service_repository::ServiceRepository;
     use crate::domain::service_state::ServiceState;
     use crate::infrastructure::systemd_service_adapter::ConnectionType;
+    use crate::test_support::FakeRepository;
     use std::collections::HashMap;
     use std::sync::mpsc;
     use ratatui::backend::TestBackend;
@@ -724,13 +725,19 @@ mod tests {
         fn get_active_enter_timestamp(&self, _: &str) -> Result<u64, Box<dyn Error>> { Ok(0) }
     }
 
-    fn table_with_receiver() -> (TableServices, mpsc::Receiver<AppEvent>) {
+    fn table_with_repository(
+        repository: impl ServiceRepository + 'static,
+    ) -> (TableServices, mpsc::Receiver<AppEvent>) {
         let (sender, receiver) = mpsc::channel();
-        let manager = ServicesManager::new(Box::new(EmptyRepository));
+        let manager = ServicesManager::new(Box::new(repository));
         (
             TableServices::new(sender, Rc::new(RefCell::new(manager))),
             receiver,
         )
+    }
+
+    fn table_with_receiver() -> (TableServices, mpsc::Receiver<AppEvent>) {
+        table_with_repository(EmptyRepository)
     }
 
     fn table() -> TableServices {
@@ -923,5 +930,101 @@ mod tests {
         table.update_timestamp("current.service".into(), Some(20));
         assert_eq!(table.active_enter_timestamp, Some(20));
         assert!(table.has_active_runtime());
+    }
+
+    #[test]
+    fn successful_service_action_updates_row_and_unlocks_input() {
+        let fake = FakeRepository::default();
+        let observer = fake.clone();
+        let (mut table, _receiver) = table_with_repository(fake);
+        let unit = service("demo.service", "inactive");
+        table.services = vec![unit.clone()];
+        table.filtered_services = vec![unit];
+        table.table_state.select(Some(0));
+        table.set_ignore_key_events(true);
+
+        table.act_on_selected_service(&ServiceAction::Start);
+
+        assert_eq!(observer.calls(), ["start:demo.service"]);
+        assert_eq!(table.services[0].state().active(), "active");
+        assert!(!table.ignore_key_events);
+    }
+
+    #[test]
+    fn failed_service_action_reports_error_and_unlocks_input() {
+        let fake = FakeRepository::default();
+        fake.fail("start");
+        let (mut table, receiver) = table_with_repository(fake);
+        let unit = service("broken.service", "inactive");
+        table.services = vec![unit.clone()];
+        table.filtered_services = vec![unit];
+        table.table_state.select(Some(0));
+        table.set_ignore_key_events(true);
+
+        table.act_on_selected_service(&ServiceAction::Start);
+
+        assert!(matches!(
+            receiver.recv().unwrap(),
+            AppEvent::Error(message) if message == "start failed"
+        ));
+        assert!(!table.ignore_key_events);
+    }
+
+    #[test]
+    fn toggle_mask_chooses_operation_from_loaded_file_state() {
+        let fake = FakeRepository::default();
+        let observer = fake.clone();
+        let (mut table, _receiver) = table_with_repository(fake);
+        let unit = service("demo.service", "inactive");
+        table.services = vec![unit.clone()];
+        table.filtered_services = vec![unit];
+        table.table_state.select(Some(0));
+        table
+            .states
+            .lock()
+            .unwrap()
+            .insert("demo.service".into(), "masked".into());
+
+        table.act_on_selected_service(&ServiceAction::ToggleMask);
+
+        let calls = observer.calls();
+        assert!(calls.contains(&"unmask:demo.service".to_string()));
+        assert!(!calls.contains(&"mask:demo.service".to_string()));
+    }
+
+    #[test]
+    fn rendered_rows_expose_active_state_and_loading_styles() {
+        let mut table = table();
+        table.filtered_services = vec![
+            service("active.service", "active"),
+            service("starting.service", "activating"),
+            service("inactive.service", "inactive"),
+            service("failed.service", "failed"),
+            Service::new(
+                "loading.service".into(),
+                String::new(),
+                ServiceState::new(
+                    "loaded".into(),
+                    "active".into(),
+                    String::new(),
+                    LOADING_PLACEHOLDER.into(),
+                ),
+            ),
+        ];
+        table.table_state.select(None);
+        let backend = TestBackend::new(100, 10);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|frame| table.render(frame, frame.area())).unwrap();
+
+        let cells = terminal.backend().buffer().content();
+        for color in [Color::Green, Color::Yellow, Color::DarkGray, Color::Red] {
+            assert!(cells.iter().any(|cell| cell.fg == color));
+        }
+        assert!(cells.iter().any(|cell| {
+            cell.symbol() == "L"
+                && cell.modifier.contains(Modifier::ITALIC)
+                && cell.modifier.contains(Modifier::DIM)
+        }));
     }
 }

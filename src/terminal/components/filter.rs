@@ -418,4 +418,69 @@ mod tests {
             .iter()
             .any(|cell| cell.symbol() == "d" && cell.fg == Color::Yellow));
     }
+
+    #[test]
+    fn escape_in_normal_mode_clears_filter_and_unlocks_list() {
+        let (mut filter, receiver) = filter_with_input("docker");
+
+        filter.on_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+
+        assert!(filter.input.is_empty());
+        assert!(matches!(
+            receiver.recv().unwrap(),
+            AppEvent::Action(Actions::Filter(value)) if value.is_empty()
+        ));
+        assert!(matches!(
+            receiver.recv().unwrap(),
+            AppEvent::Action(Actions::UpdateIgnoreListKeys(false))
+        ));
+    }
+
+    #[test]
+    fn escape_in_edit_mode_preserves_text_and_stops_editing() {
+        let (mut filter, receiver) = filter_with_input("docker");
+        filter.input_mode = InputMode::Editing;
+
+        filter.on_key_event(KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+
+        assert_eq!(filter.input, "docker");
+        assert!(filter.input_mode == InputMode::Normal);
+        assert!(matches!(
+            receiver.recv().unwrap(),
+            AppEvent::Action(Actions::UpdateIgnoreListKeys(false))
+        ));
+        assert!(matches!(
+            receiver.recv().unwrap(),
+            AppEvent::Action(Actions::Filter(value)) if value == "docker"
+        ));
+    }
+
+    #[test]
+    fn release_events_do_not_edit_or_dispatch_filter() {
+        let (mut filter, receiver) = filter_with_input("docker");
+        filter.input_mode = InputMode::Editing;
+        let mut key = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE);
+        key.kind = KeyEventKind::Release;
+
+        filter.on_key_event(key);
+
+        assert_eq!(filter.input, "docker");
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[test]
+    fn backspace_deletes_character_before_cursor() {
+        let (mut filter, receiver) = filter_with_input("abcd");
+        filter.input_mode = InputMode::Editing;
+        filter.character_index = 2;
+
+        filter.on_key_event(KeyEvent::new(KeyCode::Backspace, KeyModifiers::NONE));
+
+        assert_eq!(filter.input, "acd");
+        assert_eq!(filter.character_index, 1);
+        assert!(matches!(
+            receiver.recv().unwrap(),
+            AppEvent::Action(Actions::Filter(value)) if value == "acd"
+        ));
+    }
 }

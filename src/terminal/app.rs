@@ -772,4 +772,27 @@ mod tests {
             .iter()
             .any(|cell| cell.symbol() == "S" && cell.fg == Color::Cyan));
     }
+
+    #[test]
+    fn shortcuts_panel_renders_context_actions_and_global_exit() {
+        let app = test_app();
+        let backend = TestBackend::new(70, 7);
+        let mut terminal = Terminal::new(backend).unwrap();
+        let shortcuts = vec![Line::from("Custom action: x")];
+
+        terminal
+            .draw(|frame| app.draw_shortcuts(frame, frame.area(), &shortcuts))
+            .unwrap();
+
+        let rendered = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(rendered.contains("Shortcuts"));
+        assert!(rendered.contains("Custom action: x"));
+        assert!(rendered.contains("Exit: Ctrl + c"));
+    }
 }

@@ -158,6 +158,35 @@ mod tests {
             AppEvent::Action(Actions::GoLog)
         ));
     }
+
+    #[test]
+    fn fetching_without_selected_service_is_a_noop() {
+        let fake = FakeRepository::default();
+        let observer = fake.clone();
+        let (mut details, receiver) = details_with(fake);
+
+        details.fetch_unit_file();
+
+        assert!(details.unit_file.is_empty());
+        assert!(observer.calls().is_empty());
+        assert!(receiver.try_recv().is_err());
+    }
+
+    #[test]
+    fn upward_scrolling_saturates_at_zero() {
+        let (mut details, _receiver) = details_with(FakeRepository::default());
+
+        details.on_key_event(KeyEvent::new(
+            KeyCode::Up,
+            crossterm::event::KeyModifiers::NONE,
+        ));
+        details.on_key_event(KeyEvent::new(
+            KeyCode::PageUp,
+            crossterm::event::KeyModifiers::NONE,
+        ));
+
+        assert_eq!(details.scroll, 0);
+    }
 }
 
 impl ServiceDetails {
