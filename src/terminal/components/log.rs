@@ -118,6 +118,67 @@ mod tests {
         assert!(shortcuts.iter().any(|line| line.to_string().contains("Disable auto-refresh")));
         log.set_auto_refresh(false);
     }
+
+    #[test]
+    fn auto_refresh_state_is_visible_in_rendered_border_color() {
+        let (mut log, _receiver) = log_with(FakeRepository::default());
+        log.update("demo.service".into(), "journal output".into());
+        log.set_auto_refresh(true);
+        let backend = TestBackend::new(40, 5);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|frame| log.render(frame, frame.area())).unwrap();
+
+        assert_eq!(
+            terminal.backend().buffer().content()[0].fg,
+            Color::Rgb(255, 165, 0)
+        );
+        log.set_auto_refresh(false);
+    }
+
+    #[test]
+    fn scrolling_changes_the_visible_log_window() {
+        let (mut log, _receiver) = log_with(FakeRepository::default());
+        log.update(
+            "demo.service".into(),
+            "line1\nline2\nline3\nline4\nline5\nline6".into(),
+        );
+
+        let latest = rendered_text(&mut log, 40, 4);
+        assert!(latest.contains("line5"));
+        assert!(latest.contains("line6"));
+        assert!(!latest.contains("line4"));
+
+        log.on_key_event(KeyEvent::new(
+            KeyCode::Up,
+            crossterm::event::KeyModifiers::NONE,
+        ));
+        let older = rendered_text(&mut log, 40, 4);
+        assert!(older.contains("line4"));
+        assert!(older.contains("line5"));
+        assert!(!older.contains("line6"));
+    }
+
+    #[test]
+    fn leaving_log_resets_state_and_returns_to_list() {
+        let (mut log, receiver) = log_with(FakeRepository::default());
+        log.update("demo.service".into(), "journal output".into());
+        log.set_auto_refresh(true);
+        log.scroll = 10;
+
+        log.on_key_event(KeyEvent::new(
+            KeyCode::Esc,
+            crossterm::event::KeyModifiers::NONE,
+        ));
+
+        assert!(log.log.is_empty());
+        assert_eq!(log.scroll, 0);
+        assert!(!*log.auto_refresh.lock().unwrap());
+        assert!(matches!(
+            receiver.recv().unwrap(),
+            AppEvent::Action(Actions::GoList)
+        ));
+    }
 }
 
 enum BorderColor {

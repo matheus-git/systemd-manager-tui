@@ -724,10 +724,17 @@ mod tests {
         fn get_active_enter_timestamp(&self, _: &str) -> Result<u64, Box<dyn Error>> { Ok(0) }
     }
 
-    fn table() -> TableServices {
-        let (sender, _receiver) = mpsc::channel();
+    fn table_with_receiver() -> (TableServices, mpsc::Receiver<AppEvent>) {
+        let (sender, receiver) = mpsc::channel();
         let manager = ServicesManager::new(Box::new(EmptyRepository));
-        TableServices::new(sender, Rc::new(RefCell::new(manager)))
+        (
+            TableServices::new(sender, Rc::new(RefCell::new(manager))),
+            receiver,
+        )
+    }
+
+    fn table() -> TableServices {
+        table_with_receiver().0
     }
 
     fn service(name: &str, active: &str) -> Service {
@@ -809,5 +816,112 @@ mod tests {
         assert!(rendered.contains("demo.service"));
         assert!(rendered.contains("active (running)"));
         assert!(rendered.contains("enabled"));
+    }
+
+    #[test]
+    fn active_filter_state_cycles_through_every_option() {
+        let state = ActiveFilterState::All;
+
+        let state = state.next();
+        assert!(state == ActiveFilterState::Active);
+        assert_eq!(state.as_str(), "active");
+        let state = state.next();
+        assert!(state == ActiveFilterState::Inactive);
+        assert_eq!(state.as_str(), "inactive");
+        let state = state.next();
+        assert!(state == ActiveFilterState::Failed);
+        assert_eq!(state.as_str(), "failed");
+        assert!(state.next() == ActiveFilterState::All);
+    }
+
+    #[test]
+    fn each_active_state_filter_selects_only_matching_services() {
+        let mut table = table();
+        let services = vec![
+            service("active.service", "active"),
+            service("inactive.service", "inactive"),
+            service("failed.service", "failed"),
+        ];
+
+        for (filter_state, expected_name) in [
+            (ActiveFilterState::Active, "active.service"),
+            (ActiveFilterState::Inactive, "inactive.service"),
+            (ActiveFilterState::Failed, "failed.service"),
+        ] {
+            table.active_filter_state = filter_state;
+            let filtered = table.filter("", &services);
+            assert_eq!(filtered.len(), 1);
+            assert_eq!(filtered[0].name(), expected_name);
+        }
+    }
+
+    #[test]
+    fn refresh_repairs_an_out_of_bounds_selection() {
+        let mut table = table();
+        table.services = vec![service("demo.service", "active")];
+        table.table_state.select(Some(99));
+
+        table.refresh("");
+
+        assert_eq!(table.table_state.selected(), Some(0));
+        assert_eq!(table.get_selected_service().unwrap().name(), "demo.service");
+    }
+
+    #[test]
+    fn service_shortcut_dispatches_action_and_locks_input() {
+        let (mut table, receiver) = table_with_receiver();
+
+        table.on_key_event(KeyEvent::new(
+            KeyCode::Char('s'),
+            crossterm::event::KeyModifiers::NONE,
+        ));
+
+        assert!(table.ignore_key_events);
+        assert!(matches!(
+            receiver.recv().unwrap(),
+            AppEvent::Action(Actions::ServiceAction(ServiceAction::Start))
+        ));
+        assert!(table.shortcuts().is_empty());
+    }
+
+    #[test]
+    fn selected_row_uses_distinct_enabled_and_disabled_colors() {
+        let mut table = table();
+        table.filtered_services = vec![service("demo.service", "active")];
+        table.table_state.select(Some(0));
+        let backend = TestBackend::new(90, 6);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|frame| table.render(frame, frame.area())).unwrap();
+        assert!(terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .any(|cell| cell.bg == Color::Blue));
+
+        table.set_ignore_key_events(true);
+        let backend = TestBackend::new(90, 6);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| table.render(frame, frame.area())).unwrap();
+        assert!(terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .any(|cell| cell.bg == Color::DarkGray));
+    }
+
+    #[test]
+    fn timestamp_update_is_applied_only_to_current_selection() {
+        let mut table = table();
+        table.selected_service_name = Some("current.service".into());
+
+        table.update_timestamp("old.service".into(), Some(10));
+        assert!(table.active_enter_timestamp.is_none());
+
+        table.update_timestamp("current.service".into(), Some(20));
+        assert_eq!(table.active_enter_timestamp, Some(20));
+        assert!(table.has_active_runtime());
     }
 }

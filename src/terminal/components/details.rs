@@ -84,6 +84,80 @@ mod tests {
         details.on_key_event(KeyEvent::new(KeyCode::Char('e'), crossterm::event::KeyModifiers::NONE));
         assert!(matches!(receiver.recv().unwrap(), AppEvent::Action(Actions::EditCurrentService)));
     }
+
+    #[test]
+    fn unit_file_rendering_applies_systemd_syntax_colors() {
+        let fake = FakeRepository::with_content(
+            "",
+            "[Service]\nDescription=Demo\n# comment\n; another comment",
+            0,
+        );
+        let (mut details, _receiver) = details_with(fake);
+        details.update(service("demo.service", "active", "enabled"));
+        details.fetch_unit_file();
+        let backend = TestBackend::new(60, 8);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal
+            .draw(|frame| details.render(frame, frame.area()))
+            .unwrap();
+
+        let cells = terminal.backend().buffer().content();
+        assert!(cells
+            .iter()
+            .any(|cell| cell.symbol() == "[" && cell.fg == Color::LightBlue));
+        assert!(cells
+            .iter()
+            .any(|cell| cell.symbol() == "D" && cell.fg == Color::Yellow));
+        assert!(cells
+            .iter()
+            .any(|cell| cell.symbol() == "#" && cell.fg == Color::Green));
+        assert!(cells
+            .iter()
+            .any(|cell| cell.symbol() == ";" && cell.fg == Color::Green));
+    }
+
+    #[test]
+    fn leaving_details_clears_content_and_returns_to_list() {
+        let fake = FakeRepository::with_content("", "[Service]\nExecStart=/bin/true", 0);
+        let (mut details, receiver) = details_with(fake);
+        details.update(service("demo.service", "active", "enabled"));
+        details.fetch_unit_file();
+        details.scroll = 12;
+
+        details.on_key_event(KeyEvent::new(
+            KeyCode::Esc,
+            crossterm::event::KeyModifiers::NONE,
+        ));
+
+        assert!(details.service.is_none());
+        assert!(details.unit_file.is_empty());
+        assert_eq!(details.scroll, 0);
+        assert!(matches!(
+            receiver.recv().unwrap(),
+            AppEvent::Action(Actions::GoList)
+        ));
+    }
+
+    #[test]
+    fn switching_from_details_clears_content_and_opens_log() {
+        let fake = FakeRepository::with_content("", "old content", 0);
+        let (mut details, receiver) = details_with(fake);
+        details.update(service("demo.service", "active", "enabled"));
+        details.fetch_unit_file();
+
+        details.on_key_event(KeyEvent::new(
+            KeyCode::Right,
+            crossterm::event::KeyModifiers::NONE,
+        ));
+
+        assert!(details.service.is_none());
+        assert!(details.unit_file.is_empty());
+        assert!(matches!(
+            receiver.recv().unwrap(),
+            AppEvent::Action(Actions::GoLog)
+        ));
+    }
 }
 
 impl ServiceDetails {
