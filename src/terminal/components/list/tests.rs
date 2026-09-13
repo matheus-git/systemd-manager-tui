@@ -402,6 +402,33 @@ fn failed_service_action_reports_error_and_unlocks_input() {
 }
 
 #[test]
+fn failed_refresh_keeps_the_current_list_and_selection() {
+    let fake = FakeRepository::default();
+    fake.fail("list");
+    let (mut table, receiver) = table_with_repository(fake);
+    let existing = service("existing.service", "active");
+    table.services = vec![existing.clone()];
+    table.filtered_services = vec![existing];
+    table.table_state.select(Some(0));
+
+    table.fetch_and_refresh("existing");
+
+    assert_eq!(table.services.len(), 1);
+    assert_eq!(table.services[0].name(), "existing.service");
+    assert_eq!(
+        table.get_selected_service().unwrap().name(),
+        "existing.service"
+    );
+    assert!(matches!(
+        receiver.recv().unwrap(),
+        AppEvent::Error(message)
+            if message.contains("system connection")
+                && message.contains("list failed")
+                && message.contains("current list was kept")
+    ));
+}
+
+#[test]
 fn toggle_mask_chooses_operation_from_loaded_file_state() {
     let fake = FakeRepository::default();
     let observer = fake.clone();

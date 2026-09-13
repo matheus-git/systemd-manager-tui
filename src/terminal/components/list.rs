@@ -253,7 +253,7 @@ impl TableServices {
     }
 
     pub fn init(&mut self, config: &Config) {
-        self.fetch_services();
+        let _ = self.fetch_services();
         self.spawn_query_listener();
         self.spawn_timestamp_worker();
         self.refresh(&config.filter);
@@ -496,7 +496,7 @@ impl TableServices {
         }
     }
 
-    fn fetch_services(&mut self) {
+    fn fetch_services(&mut self) -> bool {
         self.list_generation = self.list_generation.wrapping_add(1);
         let context = ListRequestContext {
             connection: self.active_connection,
@@ -505,11 +505,23 @@ impl TableServices {
         if let Ok(mut current) = self.current_list_context.lock() {
             *current = context;
         }
-        self.services = self
-            .usecase
-            .borrow()
-            .list_services(self.filter_all, context, self.event_tx.clone())
-            .unwrap_or_default();
+        let result =
+            self.usecase
+                .borrow()
+                .list_services(self.filter_all, context, self.event_tx.clone());
+        match result {
+            Ok(services) => {
+                self.services = services;
+                true
+            }
+            Err(error) => {
+                let _ = self.sender.send(AppEvent::Error(format!(
+                    "Could not refresh services from the {} connection: {error}. The current list was kept.",
+                    self.active_connection
+                )));
+                false
+            }
+        }
     }
 
     pub fn set_active_connection(&mut self, connection: ConnectionType) {
@@ -528,8 +540,9 @@ impl TableServices {
     }
 
     fn fetch_and_refresh(&mut self, filter_text: &str) {
-        self.fetch_services();
-        self.refresh(filter_text);
+        if self.fetch_services() {
+            self.refresh(filter_text);
+        }
     }
 
     fn filter(&self, filter_text: &str, services: &[Service]) -> Vec<Service> {
@@ -732,7 +745,7 @@ impl TableServices {
                             }
                         }
 
-                        self.fetch_services();
+                        let _ = self.fetch_services();
                         self.fetch_and_refresh(&self.old_filter_text.clone());
                     }
                 }
