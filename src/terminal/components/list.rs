@@ -212,6 +212,10 @@ pub struct TableServices {
 }
 
 impl TableServices {
+    fn dispatch(&self, action: Actions) {
+        let _ = self.sender.send(AppEvent::Action(action));
+    }
+
     pub fn new(sender: Sender<AppEvent>, usecase: Rc<RefCell<ServicesManager>>) -> Self {
         let (event_tx, event_rx) = mpsc::channel::<QueryUnitFile>();
         let (timestamp_request_tx, timestamp_request_rx) = mpsc::channel::<ServiceRequestContext>();
@@ -558,59 +562,31 @@ impl TableServices {
 
         match key.code {
             KeyCode::Char('r') => {
-                self.sender
-                    .send(AppEvent::Action(Actions::ServiceAction(
-                        ServiceAction::Restart,
-                    )))
-                    .unwrap();
+                self.dispatch(Actions::ServiceAction(ServiceAction::Restart));
                 return;
             }
             KeyCode::Char('s') => {
-                self.sender
-                    .send(AppEvent::Action(Actions::ServiceAction(
-                        ServiceAction::Start,
-                    )))
-                    .unwrap();
+                self.dispatch(Actions::ServiceAction(ServiceAction::Start));
                 return;
             }
             KeyCode::Char('x') => {
-                self.sender
-                    .send(AppEvent::Action(Actions::ServiceAction(
-                        ServiceAction::Stop,
-                    )))
-                    .unwrap();
+                self.dispatch(Actions::ServiceAction(ServiceAction::Stop));
                 return;
             }
             KeyCode::Char('e') => {
-                self.sender
-                    .send(AppEvent::Action(Actions::ServiceAction(
-                        ServiceAction::Enable,
-                    )))
-                    .unwrap();
+                self.dispatch(Actions::ServiceAction(ServiceAction::Enable));
                 return;
             }
             KeyCode::Char('d') => {
-                self.sender
-                    .send(AppEvent::Action(Actions::ServiceAction(
-                        ServiceAction::Disable,
-                    )))
-                    .unwrap();
+                self.dispatch(Actions::ServiceAction(ServiceAction::Disable));
                 return;
             }
             KeyCode::Char('u') => {
-                self.sender
-                    .send(AppEvent::Action(Actions::ServiceAction(
-                        ServiceAction::RefreshAll,
-                    )))
-                    .unwrap();
+                self.dispatch(Actions::ServiceAction(ServiceAction::RefreshAll));
                 return;
             }
             KeyCode::Char('f') => {
-                self.sender
-                    .send(AppEvent::Action(Actions::ServiceAction(
-                        ServiceAction::ToggleFilter,
-                    )))
-                    .unwrap();
+                self.dispatch(Actions::ServiceAction(ServiceAction::ToggleFilter));
                 return;
             }
             KeyCode::Char('a') => {
@@ -626,17 +602,11 @@ impl TableServices {
                 return;
             }
             KeyCode::Char('m') => {
-                self.sender
-                    .send(AppEvent::Action(Actions::ServiceAction(
-                        ServiceAction::ToggleMask,
-                    )))
-                    .unwrap();
+                self.dispatch(Actions::ServiceAction(ServiceAction::ToggleMask));
                 return;
             }
             KeyCode::Char('?') => {
-                self.sender
-                    .send(AppEvent::Action(Actions::ShowHelp))
-                    .unwrap();
+                self.dispatch(Actions::ShowHelp);
                 return;
             }
             _ => {}
@@ -653,12 +623,10 @@ impl TableServices {
             KeyCode::PageDown => self.select_page_down(),
             KeyCode::PageUp => self.select_page_up(),
             KeyCode::Char('c') => {
-                self.sender
-                    .send(AppEvent::Action(Actions::GoDetails))
-                    .unwrap();
+                self.dispatch(Actions::GoDetails);
             }
             KeyCode::Char('v') => {
-                self.sender.send(AppEvent::Action(Actions::GoLog)).unwrap();
+                self.dispatch(Actions::GoLog);
             }
             _ => {}
         }
@@ -692,17 +660,8 @@ impl TableServices {
 
         let jump = 10;
         if let Some(selected_index) = self.table_state.selected() {
-            let selected_index =
-                isize::try_from(selected_index).expect("Failed to convert selected index to isize");
-            let new_index = selected_index - jump as isize;
-            let wrapped_index = if new_index < 0 {
-                let len = isize::try_from(self.filtered_services.len())
-                    .expect("Failed to convert table length to isize");
-                usize::try_from(len + new_index % len)
-                    .expect("Failed to convert calculated circular index to usize")
-            } else {
-                usize::try_from(new_index).expect("Failed to convert new_index to usize")
-            };
+            let len = self.filtered_services.len();
+            let wrapped_index = (selected_index + len - jump % len) % len;
             self.table_state.select(Some(wrapped_index));
         } else {
             self.table_state.select(Some(0));
@@ -756,7 +715,9 @@ impl TableServices {
                     let state_opt = match self.states.lock() {
                         Ok(guard) => guard.get(service.name()).cloned(),
                         Err(e) => {
-                            self.sender.send(AppEvent::Error(e.to_string())).unwrap();
+                            let _ = self.sender.send(AppEvent::Error(format!(
+                                "Could not read the service state: {e}"
+                            )));
                             return;
                         }
                     };
@@ -816,7 +777,7 @@ impl TableServices {
                 // Re-read the unit list before returning control so the synchronous UI
                 // reflects the freshest state available.
                 self.fetch_and_refresh(&self.old_filter_text.clone());
-                self.sender.send(AppEvent::Error(e.to_string())).unwrap();
+                let _ = self.sender.send(AppEvent::Error(e.to_string()));
             }
         }
     }

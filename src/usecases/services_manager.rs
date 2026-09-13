@@ -5,7 +5,7 @@ use crate::terminal::components::list::{ListRequestContext, QueryUnitFile};
 use std::collections::HashSet;
 use std::error::Error;
 use std::sync::mpsc::Sender;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 
 pub struct ServicesManager {
@@ -17,6 +17,12 @@ pub struct ServicesManager {
 mod tests;
 
 impl ServicesManager {
+    fn repository(&self) -> Result<MutexGuard<'_, Box<dyn ServiceRepository>>, Box<dyn Error>> {
+        self.repository
+            .lock()
+            .map_err(|error| format!("Service repository lock was poisoned: {error}").into())
+    }
+
     pub fn new(repository: Box<dyn ServiceRepository>) -> Self {
         Self {
             repository: Arc::new(Mutex::new(repository)),
@@ -24,67 +30,39 @@ impl ServicesManager {
     }
 
     pub fn start_service(&self, service: &Service) -> Result<Service, Box<dyn Error>> {
-        let service = self
-            .repository
-            .lock()
-            .unwrap()
-            .start_service(service.name())?;
+        let service = self.repository()?.start_service(service.name())?;
         Ok(service)
     }
 
     pub fn stop_service(&self, service: &Service) -> Result<Service, Box<dyn Error>> {
-        let service = self
-            .repository
-            .lock()
-            .unwrap()
-            .stop_service(service.name())?;
+        let service = self.repository()?.stop_service(service.name())?;
         Ok(service)
     }
 
     pub fn restart_service(&self, service: &Service) -> Result<Service, Box<dyn Error>> {
-        let service = self
-            .repository
-            .lock()
-            .unwrap()
-            .restart_service(service.name())?;
+        let service = self.repository()?.restart_service(service.name())?;
         Ok(service)
     }
 
     pub fn enable_service(&self, service: &Service) -> Result<Service, Box<dyn Error>> {
-        let service = self
-            .repository
-            .lock()
-            .unwrap()
-            .enable_service(service.name())?;
-        self.repository.lock().unwrap().reload_daemon()?;
+        let service = self.repository()?.enable_service(service.name())?;
+        self.repository()?.reload_daemon()?;
         Ok(service)
     }
 
     pub fn disable_service(&self, service: &Service) -> Result<Service, Box<dyn Error>> {
-        let service = self
-            .repository
-            .lock()
-            .unwrap()
-            .disable_service(service.name())?;
-        self.repository.lock().unwrap().reload_daemon()?;
+        let service = self.repository()?.disable_service(service.name())?;
+        self.repository()?.reload_daemon()?;
         Ok(service)
     }
 
     pub fn mask_service(&self, service: &Service) -> Result<Service, Box<dyn Error>> {
-        let service = self
-            .repository
-            .lock()
-            .unwrap()
-            .mask_service(service.name())?;
+        let service = self.repository()?.mask_service(service.name())?;
         Ok(service)
     }
 
     pub fn unmask_service(&self, service: &Service) -> Result<Service, Box<dyn Error>> {
-        let service = self
-            .repository
-            .lock()
-            .unwrap()
-            .unmask_service(service.name())?;
+        let service = self.repository()?.unmask_service(service.name())?;
         Ok(service)
     }
 
@@ -96,7 +74,7 @@ impl ServicesManager {
     ) -> Result<Vec<Service>, Box<dyn Error>> {
         let mut all = Vec::new();
 
-        let mut services_runtime = self.repository.lock().unwrap().list_services(filter)?;
+        let mut services_runtime = self.repository()?.list_services(filter)?;
         all.append(&mut services_runtime);
 
         let mut seen = HashSet::new();
@@ -106,7 +84,7 @@ impl ServicesManager {
         }
 
         if filter {
-            let services_files = self.repository.lock().unwrap().list_service_files()?;
+            let services_files = self.repository()?.list_service_files()?;
             #[allow(clippy::explicit_iter_loop)]
             for s in services_files.iter() {
                 if seen.insert(s.name().to_string()) {
@@ -140,28 +118,19 @@ impl ServicesManager {
     }
 
     pub fn get_log(&self, service_name: &str) -> Result<String, Box<dyn Error>> {
-        self.repository
-            .lock()
-            .unwrap()
-            .get_service_log(service_name)
+        self.repository()?.get_service_log(service_name)
     }
 
     pub fn change_repository_connection(
         &mut self,
         connection_type: ConnectionType,
     ) -> Result<(), Box<dyn Error>> {
-        self.repository
-            .lock()
-            .unwrap()
-            .change_connection(connection_type)?;
+        self.repository()?.change_connection(connection_type)?;
         Ok(())
     }
 
     pub fn systemctl_cat(&self, service: &Service) -> Result<String, Box<dyn Error>> {
-        self.repository
-            .lock()
-            .unwrap()
-            .systemctl_cat(service.name())
+        self.repository()?.systemctl_cat(service.name())
     }
 
     pub fn repository_handle(&self) -> Arc<Mutex<Box<dyn ServiceRepository>>> {

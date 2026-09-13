@@ -73,6 +73,21 @@ fn fetch_dispatches_log_update_event() {
 }
 
 #[test]
+fn log_failure_is_reported_without_panicking() {
+    let fake = FakeRepository::default();
+    fake.fail("log");
+    let (mut log, receiver) = log_with(fake);
+
+    log.fetch_log_and_dispatch(request_context("broken.service"));
+
+    assert!(matches!(
+        receiver.recv().unwrap(),
+        AppEvent::Error(message)
+            if message.contains("broken.service") && message.contains("log failed")
+    ));
+}
+
+#[test]
 fn auto_refresh_changes_border_and_shortcut_label() {
     let (mut log, _receiver) = log_with(FakeRepository::default());
 

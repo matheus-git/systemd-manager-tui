@@ -160,15 +160,11 @@ impl ServiceLog {
         match key.code {
             code if right_keys.contains(&code) => {
                 self.reset();
-                self.sender
-                    .send(AppEvent::Action(Actions::GoDetails))
-                    .unwrap();
+                let _ = self.sender.send(AppEvent::Action(Actions::GoDetails));
             }
             code if left_keys.contains(&code) => {
                 self.reset();
-                self.sender
-                    .send(AppEvent::Action(Actions::GoDetails))
-                    .unwrap();
+                let _ = self.sender.send(AppEvent::Action(Actions::GoDetails));
             }
             code if up_keys.contains(&code) => {
                 self.scroll = self.scroll.saturating_add(1);
@@ -223,7 +219,7 @@ impl ServiceLog {
     }
 
     fn exit(&mut self) {
-        self.sender.send(AppEvent::Action(Actions::GoList)).unwrap();
+        let _ = self.sender.send(AppEvent::Action(Actions::GoList));
     }
 
     pub fn auto_refresh_thread(&mut self) {
@@ -253,10 +249,16 @@ impl ServiceLog {
 
     pub fn fetch_log_and_dispatch(&mut self, context: ServiceRequestContext) {
         let event_tx = self.sender.clone();
-        if let Ok(log) = self.usecase.borrow().get_log(&context.service_name) {
-            event_tx
-                .send(AppEvent::Action(Actions::UpdateLog(context, log)))
-                .expect("Failed to send Updatelog event");
+        match self.usecase.borrow().get_log(&context.service_name) {
+            Ok(log) => {
+                let _ = event_tx.send(AppEvent::Action(Actions::UpdateLog(context, log)));
+            }
+            Err(error) => {
+                let _ = event_tx.send(AppEvent::Error(format!(
+                    "Could not load logs for '{}': {error}",
+                    context.service_name
+                )));
+            }
         }
     }
 

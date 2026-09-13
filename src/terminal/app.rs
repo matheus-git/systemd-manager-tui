@@ -132,9 +132,9 @@ impl App {
 
     pub fn init(&mut self, config: Config) {
         self.table_service.init(&config);
-        self.event_tx
-            .send(AppEvent::Action(Actions::Filter(config.filter)))
-            .unwrap();
+        let _ = self
+            .event_tx
+            .send(AppEvent::Action(Actions::Filter(config.filter)));
         self.spawn_key_event_listener();
     }
 
@@ -649,8 +649,7 @@ impl App {
                 .map(|line| line.spans.iter().map(ratatui::prelude::Span::width).sum())
                 .max()
                 .unwrap_or(0);
-            let shortcuts_width =
-                u16::try_from(shortcuts_width).expect("Failed to convert shortcuts_width to u16");
+            let shortcuts_width = u16::try_from(shortcuts_width).unwrap_or(u16::MAX);
             if help_area.width > shortcuts_width {
                 help_text.push(Line::raw(""));
             }
@@ -741,14 +740,10 @@ impl App {
             .borrow_mut()
             .change_repository_connection(requested_connection)
         {
-            self.event_tx
-                .send(AppEvent::Error(
-                    format!(
+            let _ = self.event_tx.send(AppEvent::Error(format!(
                         "Failed to switch from {} to {requested_connection}: {err}. The {} connection remains active.",
                         self.active_connection, self.active_connection
-                    ),
-                ))
-                .expect("Failed to change connection type");
+                    )));
             return;
         }
 
@@ -757,9 +752,7 @@ impl App {
         self.table_service
             .set_active_connection(requested_connection);
         self.table_service.invalidate_timestamp();
-        self.event_tx
-            .send(AppEvent::Action(Actions::ResetList))
-            .expect("Failed to send ResetList event");
+        let _ = self.event_tx.send(AppEvent::Action(Actions::ResetList));
     }
 
     fn service_context(&self, service: &crate::domain::service::Service) -> ServiceRequestContext {
