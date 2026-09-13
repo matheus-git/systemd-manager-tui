@@ -1,64 +1,169 @@
-#!/bin/bash
-#
-# Script to build the project and generate .deb and .rpm packages for multiple architectures
-# Author: matheus-git <mathiew0@gmail.com>
-# 
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
+
 YELLOW_BOLD="\033[1;33m"
 RESET="\033[0m"
+PACKAGE_NAME="systemd-manager-tui"
+PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
-PGO_DIR="/tmp/pgo-data"
-MERGED_PROFILE="$(pwd)/merged.profdata"
+TARGETS=(
+    "x86_64-unknown-linux-musl"
+    "aarch64-unknown-linux-musl"
+)
 
-#echo -e "${YELLOW_BOLD}\nCleaning old builds${RESET}"
-#cargo clean
-#rm -rf "$PGO_DIR" "$MERGED_PROFILE"
+declare -A RPM_ARCH=(
+    [x86_64-unknown-linux-musl]="x86_64"
+    [aarch64-unknown-linux-musl]="aarch64"
+)
 
-echo -e "${YELLOW_BOLD}\ncargo build --release${RESET}"
-cargo build --release
-#RUSTFLAGS="-Cprofile-generate=/tmp/pgo-data" cargo build --release
-#
-#echo -e "${YELLOW_BOLD}\nRunning binary to collect profiles${RESET}"
-#./target/release/systemd-manager-tui
-#
-#echo -e "${YELLOW_BOLD}\nMerging profiles${RESET}"
-#llvm-profdata merge -o "$MERGED_PROFILE" "$PGO_DIR"/*.profraw
-#
-#echo -e "${YELLOW_BOLD}\nFinal release build using PGO${RESET}"
-#RUSTFLAGS="-Cprofile-use=$MERGED_PROFILE -Cllvm-args=-pgo-warn-missing-function" cargo build --release
+build_native=true
+build_cross=true
+build_deb=true
+build_rpm=true
+install_tools=true
 
-echo -e "${YELLOW_BOLD}\ncross build --release --target x86_64-unknown-linux-musl${RESET}"
-cargo zigbuild --release --target x86_64-unknown-linux-musl
+usage() {
+    cat <<'EOF'
+Usage: ./build.sh [OPTION]
 
-echo -e "${YELLOW_BOLD}\ncross build --release --target aarch64-unknown-linux-musl${RESET}"
-cargo zigbuild --release --target aarch64-unknown-linux-musl
+Build binaries and Linux packages without editing Cargo.toml per architecture.
 
-if ! command -v cargo-deb &> /dev/null; then
-    echo -e "${YELLOW_BOLD}\nInstalling cargo-deb${RESET}"
-    cargo install cargo-deb
-fi 
+Options:
+  --rpm-only       Generate RPMs from existing cross-compiled binaries
+  --deb-only       Generate DEBs from existing cross-compiled binaries
+  --packages-only  Generate DEBs and RPMs without compiling
+  --skip-native    Skip the native release build
+  --target TRIPLE  Process only one supported target triple
+  --no-install     Do not automatically install missing packaging tools
+  -h, --help       Show this help
+EOF
+}
 
-echo -e "${YELLOW_BOLD}\ncargo deb${RESET}"
-cargo deb --target x86_64-unknown-linux-musl --no-build 
+log() {
+    printf "%b\n" "${YELLOW_BOLD}$1${RESET}"
+}
 
-echo -e "${YELLOW_BOLD}\ncargo deb --target aarch64-unknown-linux-musl${RESET}"
-cargo deb --target aarch64-unknown-linux-musl --no-build
+ensure_tool() {
+    local executable="$1"
+    local crate="$2"
 
-if ! command -v cargo-generate-rpm &> /dev/null && ! command -v cargo generate-rpm &> /dev/null; then
-    echo -e "${YELLOW_BOLD}\nInstalling cargo-rpm${RESET}"
-    cargo install cargo-generate-rpm
-fi 
+    if command -v "$executable" >/dev/null 2>&1; then
+        return
+    fi
+    if [[ "$install_tools" == false ]]; then
+        printf "Missing required tool: %s (install with: cargo install %s)\n" "$executable" "$crate" >&2
+        exit 1
+    fi
+    log "Installing ${crate}"
+    cargo install "$crate" --locked
+}
 
-echo -e "${YELLOW_BOLD}\ncargo generate-rpm --target x86_64-unknown-linux-musl${RESET}"
-cargo generate-rpm --target x86_64-unknown-linux-musl
+while (($# > 0)); do
+    case "$1" in
+        --rpm-only)
+            build_native=false
+            build_cross=false
+            build_deb=false
+            ;;
+        --deb-only)
+            build_native=false
+            build_cross=false
+            build_rpm=false
+            ;;
+        --packages-only)
+            build_native=false
+            build_cross=false
+            ;;
+        --skip-native)
+            build_native=false
+            ;;
+        --target)
+            if (($# < 2)); then
+                printf "--target requires a target triple\n" >&2
+                exit 2
+            fi
+            if [[ -z "${RPM_ARCH[$2]+supported}" ]]; then
+                printf "Unsupported target: %s\n" "$2" >&2
+                exit 2
+            fi
+            TARGETS=("$2")
+            shift
+            ;;
+        --no-install)
+            install_tools=false
+            ;;
+        -h | --help)
+            usage
+            exit 0
+            ;;
+        *)
+            printf "Unknown option: %s\n\n" "$1" >&2
+            usage >&2
+            exit 2
+            ;;
+    esac
+    shift
+done
 
-echo -e "${YELLOW_BOLD}\ncargo generate-rpm --target aarch64-unknown-linux-musl${RESET}"
-cargo generate-rpm --target aarch64-unknown-linux-musl
+cd "$PROJECT_DIR"
 
-echo -e "${YELLOW_BOLD}\nBuilds and packages generated in the following directories:${RESET}"
-echo -e "${YELLOW_BOLD}  - target/release/${RESET}"
-echo -e "${YELLOW_BOLD}  - target/x86_64-unknown-linux-musl/release/${RESET}"
-echo -e "${YELLOW_BOLD}  - target/aarch64-unknown-linux-musl/release/${RESET}"
-echo -e "${YELLOW_BOLD}  - target/x86_64-unknown-linux-musl/debian/${RESET}"
-echo -e "${YELLOW_BOLD}  - target/aarch64-unknown-linux-musl/debian/${RESET}"
-echo -e "${YELLOW_BOLD}  - target/x86_64-unknown-linux-musl/generate-rpm/${RESET}"
-echo -e "${YELLOW_BOLD}  - target/aarch64-unknown-linux-musl/generate-rpm/${RESET}"
+if [[ "$build_native" == true ]]; then
+    log "Building native release binary"
+    cargo build --release --locked
+fi
+
+if [[ "$build_cross" == true ]]; then
+    ensure_tool cargo-zigbuild cargo-zigbuild
+    for target in "${TARGETS[@]}"; do
+        log "Building release binary for ${target}"
+        cargo zigbuild --release --locked --target "$target"
+    done
+fi
+
+if [[ "$build_deb" == true ]]; then
+    ensure_tool cargo-deb cargo-deb
+    for target in "${TARGETS[@]}"; do
+        binary="target/${target}/release/${PACKAGE_NAME}"
+        if [[ ! -x "$binary" ]]; then
+            printf "Missing binary: %s. Run ./build.sh first.\n" "$binary" >&2
+            exit 1
+        fi
+        deb_output="target/${target}/debian"
+        mkdir -p "$deb_output"
+        log "Generating DEB for ${target}"
+        cargo deb --locked --target "$target" --no-build --output "${deb_output}/"
+    done
+fi
+
+if [[ "$build_rpm" == true ]]; then
+    ensure_tool cargo-generate-rpm cargo-generate-rpm
+    for target in "${TARGETS[@]}"; do
+        binary="target/${target}/release/${PACKAGE_NAME}"
+        if [[ ! -x "$binary" ]]; then
+            printf "Missing binary: %s. Run ./build.sh first.\n" "$binary" >&2
+            exit 1
+        fi
+
+        rpm_metadata="assets = [{ source = \"${binary}\", dest = \"/usr/bin/${PACKAGE_NAME}\", mode = \"755\" }]"
+        log "Generating RPM for ${target} (${RPM_ARCH[$target]})"
+        cargo generate-rpm \
+            --target "$target" \
+            --arch "${RPM_ARCH[$target]}" \
+            --set-metadata "$rpm_metadata"
+    done
+fi
+
+log "Build completed"
+if [[ "$build_native" == true ]]; then
+    printf "  Native binary: target/release/\n"
+fi
+for target in "${TARGETS[@]}"; do
+    printf "  %-28s target/%s/release/\n" "${target}:" "$target"
+    if [[ "$build_deb" == true ]]; then
+        printf "  %-28s target/%s/debian/\n" "${target} DEB:" "$target"
+    fi
+    if [[ "$build_rpm" == true ]]; then
+        printf "  %-28s target/%s/generate-rpm/\n" "${target} RPM:" "$target"
+    fi
+done

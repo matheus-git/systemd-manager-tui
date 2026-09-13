@@ -37,6 +37,30 @@ Download the .deb file from [Releases](https://github.com/matheus-git/systemd-ma
     
 Download the .rpm file from [Releases](https://github.com/matheus-git/systemd-manager-tui/releases)
 
+### Building packages
+
+Build native and cross-compiled binaries, DEBs, and RPMs with:
+
+```sh
+./build.sh
+```
+
+The script selects the RPM architecture and binary asset automatically. To regenerate packages
+from binaries that already exist under `target/<triple>/release/`, use:
+
+```sh
+./build.sh --rpm-only
+./build.sh --deb-only
+./build.sh --packages-only
+```
+
+To build or package only one architecture, combine an option with `--target`:
+
+```sh
+./build.sh --rpm-only --target aarch64-unknown-linux-musl
+./build.sh --skip-native --target x86_64-unknown-linux-musl
+```
+
 ### Arch linux
 
     yay -S systemd-manager-tui
