@@ -1,20 +1,31 @@
 use super::*;
-use crate::test_support::{service, FakeRepository};
-use ratatui::backend::TestBackend;
+use crate::test_support::{FakeRepository, service};
 use ratatui::Terminal;
+use ratatui::backend::TestBackend;
 use std::sync::mpsc;
 
 fn details_with(repository: FakeRepository) -> (ServiceDetails, mpsc::Receiver<AppEvent>) {
     let (sender, receiver) = mpsc::channel();
     let manager = ServicesManager::new(Box::new(repository));
-    (ServiceDetails::new(sender, Rc::new(RefCell::new(manager))), receiver)
+    (
+        ServiceDetails::new(sender, Rc::new(RefCell::new(manager))),
+        receiver,
+    )
 }
 
 fn rendered_text(details: &mut ServiceDetails, width: u16, height: u16) -> String {
     let backend = TestBackend::new(width, height);
     let mut terminal = Terminal::new(backend).unwrap();
-    terminal.draw(|frame| details.render(frame, frame.area())).unwrap();
-    terminal.backend().buffer().content().iter().map(|cell| cell.symbol()).collect()
+    terminal
+        .draw(|frame| details.render(frame, frame.area()))
+        .unwrap();
+    terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect()
 }
 
 #[test]
@@ -43,17 +54,28 @@ fn reports_repository_error_as_app_event() {
 
     details.fetch_unit_file();
 
-    assert!(matches!(receiver.recv().unwrap(), AppEvent::Error(message) if message == "cat failed"));
+    assert!(
+        matches!(receiver.recv().unwrap(), AppEvent::Error(message) if message == "cat failed")
+    );
 }
 
 #[test]
 fn navigation_updates_scroll_and_emits_actions() {
     let (mut details, receiver) = details_with(FakeRepository::default());
-    details.on_key_event(KeyEvent::new(KeyCode::PageDown, crossterm::event::KeyModifiers::NONE));
+    details.on_key_event(KeyEvent::new(
+        KeyCode::PageDown,
+        crossterm::event::KeyModifiers::NONE,
+    ));
     assert_eq!(details.scroll, 10);
 
-    details.on_key_event(KeyEvent::new(KeyCode::Char('e'), crossterm::event::KeyModifiers::NONE));
-    assert!(matches!(receiver.recv().unwrap(), AppEvent::Action(Actions::EditCurrentService)));
+    details.on_key_event(KeyEvent::new(
+        KeyCode::Char('e'),
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    assert!(matches!(
+        receiver.recv().unwrap(),
+        AppEvent::Action(Actions::EditCurrentService)
+    ));
 }
 
 #[test]
@@ -74,18 +96,26 @@ fn unit_file_rendering_applies_systemd_syntax_colors() {
         .unwrap();
 
     let cells = terminal.backend().buffer().content();
-    assert!(cells
-        .iter()
-        .any(|cell| cell.symbol() == "[" && cell.fg == Color::LightBlue));
-    assert!(cells
-        .iter()
-        .any(|cell| cell.symbol() == "D" && cell.fg == Color::Yellow));
-    assert!(cells
-        .iter()
-        .any(|cell| cell.symbol() == "#" && cell.fg == Color::Green));
-    assert!(cells
-        .iter()
-        .any(|cell| cell.symbol() == ";" && cell.fg == Color::Green));
+    assert!(
+        cells
+            .iter()
+            .any(|cell| cell.symbol() == "[" && cell.fg == Color::LightBlue)
+    );
+    assert!(
+        cells
+            .iter()
+            .any(|cell| cell.symbol() == "D" && cell.fg == Color::Yellow)
+    );
+    assert!(
+        cells
+            .iter()
+            .any(|cell| cell.symbol() == "#" && cell.fg == Color::Green)
+    );
+    assert!(
+        cells
+            .iter()
+            .any(|cell| cell.symbol() == ";" && cell.fg == Color::Green)
+    );
 }
 
 #[test]
@@ -158,4 +188,3 @@ fn upward_scrolling_saturates_at_zero() {
 
     assert_eq!(details.scroll, 0);
 }
-

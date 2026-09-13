@@ -1,14 +1,14 @@
 use ratatui::{
+    Frame,
     layout::{Alignment, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Wrap},
-    Frame,
 };
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
-use std::rc::Rc;
-use std::cell::RefCell;
 
 use crossterm::event::{KeyCode, KeyEvent};
 
@@ -29,13 +29,13 @@ pub struct ServiceDetails {
 mod tests;
 
 impl ServiceDetails {
-    pub fn new(sender: Sender<AppEvent>,  usecase: Rc<RefCell<ServicesManager>>) -> Self {
+    pub fn new(sender: Sender<AppEvent>, usecase: Rc<RefCell<ServicesManager>>) -> Self {
         Self {
             service: None,
             sender,
             unit_file: String::new(),
             scroll: 0,
-            usecase
+            usecase,
         }
     }
 
@@ -108,7 +108,9 @@ impl ServiceDetails {
                 self.scroll += 10;
             }
             KeyCode::Char('e') => {
-                self.sender.send(AppEvent::Action(Actions::EditCurrentService)).unwrap();
+                self.sender
+                    .send(AppEvent::Action(Actions::EditCurrentService))
+                    .unwrap();
             }
             KeyCode::Char('q') | KeyCode::Esc => {
                 self.exit();
@@ -116,7 +118,7 @@ impl ServiceDetails {
             _ => {}
         }
     }
-    
+
     #[allow(clippy::unused_self)]
     pub fn shortcuts(&self) -> Vec<Line<'_>> {
         let help_text = vec![

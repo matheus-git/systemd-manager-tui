@@ -1,17 +1,17 @@
-use zbus::blocking::{Connection, Proxy};
-use zbus::zvariant::{OwnedObjectPath, OwnedValue};
-use zbus::Error;
-use zbus::proxy::MethodFlags;
-use std::time::Duration;
-use std::process::Command;
-use std::io::{self};
-use std::thread;
 use crate::domain::service::Service;
 use crate::domain::service_repository::ServiceRepository;
 use crate::domain::service_state::ServiceState;
+use crate::terminal::components::list::LOADING_PLACEHOLDER;
 use rayon::prelude::*;
 use std::collections::HashMap;
-use crate::terminal::components::list::LOADING_PLACEHOLDER;
+use std::io::{self};
+use std::process::Command;
+use std::thread;
+use std::time::Duration;
+use zbus::Error;
+use zbus::blocking::{Connection, Proxy};
+use zbus::proxy::MethodFlags;
+use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 
 const SLEEP_DURATION: u64 = 100;
 
@@ -30,24 +30,24 @@ type SystemdUnit = (
 
 pub enum ConnectionType {
     Session,
-    System
+    System,
 }
 
 pub struct SystemdServiceAdapter {
     connection: Connection,
-    connection_type: ConnectionType
+    connection_type: ConnectionType,
 }
 
 impl SystemdServiceAdapter {
     pub fn new(connection_type: ConnectionType) -> Result<Self, Error> {
         let connection = match connection_type {
             ConnectionType::Session => Connection::session()?,
-            ConnectionType::System => Connection::system()?
+            ConnectionType::System => Connection::system()?,
         };
 
         Ok(Self {
-            connection, 
-            connection_type
+            connection,
+            connection_type,
         })
     }
 
@@ -60,14 +60,13 @@ impl SystemdServiceAdapter {
         )?;
         Ok(proxy)
     }
-
 }
 
 impl ServiceRepository for SystemdServiceAdapter {
     fn change_connection(&mut self, connection_type: ConnectionType) -> Result<(), Error> {
         self.connection = match connection_type {
             ConnectionType::Session => Connection::session()?,
-            ConnectionType::System => Connection::system()?
+            ConnectionType::System => Connection::system()?,
         };
         self.connection_type = connection_type;
         Ok(())
@@ -75,9 +74,8 @@ impl ServiceRepository for SystemdServiceAdapter {
 
     fn unit_files_state(
         &self,
-        services: Vec<Service>
+        services: Vec<Service>,
     ) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
-
         let proxy = self.manager_proxy()?;
 
         let states_vec: Vec<(String, String)> = services
@@ -105,36 +103,30 @@ impl ServiceRepository for SystemdServiceAdapter {
             units
                 .into_par_iter()
                 .map(
-                    |(
-                        name,
-                        description,
-                        load_state,
-                        active_state,
-                        sub_state,
-                        .. 
-                    )| {
-                        let service_state =
-                            ServiceState::new(load_state, active_state, sub_state, LOADING_PLACEHOLDER.to_string());
+                    |(name, description, load_state, active_state, sub_state, ..)| {
+                        let service_state = ServiceState::new(
+                            load_state,
+                            active_state,
+                            sub_state,
+                            LOADING_PLACEHOLDER.to_string(),
+                        );
 
                         Service::new(name, description, service_state)
                     },
                 )
                 .collect::<Vec<_>>()
-        }else {
+        } else {
             units
                 .into_par_iter()
                 .filter(|(name, ..)| name.ends_with(".service"))
                 .map(
-                    |(
-                        name,
-                        description,
-                        load_state,
-                        active_state,
-                        sub_state,
-                        .. 
-                    )| {
-                        let service_state =
-                            ServiceState::new(load_state, active_state, sub_state, LOADING_PLACEHOLDER.to_string());
+                    |(name, description, load_state, active_state, sub_state, ..)| {
+                        let service_state = ServiceState::new(
+                            load_state,
+                            active_state,
+                            sub_state,
+                            LOADING_PLACEHOLDER.to_string(),
+                        );
 
                         Service::new(name, description, service_state)
                     },
@@ -153,12 +145,8 @@ impl ServiceRepository for SystemdServiceAdapter {
         let services = units
             .into_par_iter()
             .map(|(name, state)| {
-                let service_state = ServiceState::new(
-                    String::new(),
-                    "inactive".to_string(),
-                    String::new(),
-                    state,
-                );
+                let service_state =
+                    ServiceState::new(String::new(), "inactive".to_string(), String::new(), state);
                 let short_name = name.rsplit('/').next().unwrap_or(&name);
                 Service::new(short_name.to_string(), String::new(), service_state)
             })
@@ -174,12 +162,11 @@ impl ServiceRepository for SystemdServiceAdapter {
             .arg(format!("--unit={name}"))
             .arg("--no-pager");
 
-        if matches!(self.connection_type, ConnectionType::Session){
+        if matches!(self.connection_type, ConnectionType::Session) {
             cmd.arg("--user");
         }
 
-        let output = cmd
-            .output()?;
+        let output = cmd.output()?;
 
         let log = if output.status.success() {
             String::from_utf8_lossy(&output.stdout).to_string()
@@ -189,23 +176,17 @@ impl ServiceRepository for SystemdServiceAdapter {
 
         Ok(log)
     }
-    
+
     fn systemctl_cat(&self, name: &str) -> Result<String, Box<dyn std::error::Error>> {
         let mut cmd = Command::new("systemctl");
 
-        cmd
-            .arg("cat")
-            .arg("--no-pager");
+        cmd.arg("cat").arg("--no-pager");
 
-        if matches!(self.connection_type, ConnectionType::Session){
-            cmd
-                .arg("--user");
+        if matches!(self.connection_type, ConnectionType::Session) {
+            cmd.arg("--user");
         }
 
-        let output = cmd
-            .arg("--")
-            .arg(name)
-            .output()?;
+        let output = cmd.arg("--").arg(name).output()?;
 
         if output.status.success() {
             Ok(String::from_utf8_lossy(&output.stdout).to_string())
@@ -221,14 +202,15 @@ impl ServiceRepository for SystemdServiceAdapter {
         let units: Vec<SystemdUnit> = proxy.call("ListUnitsByNames", &(vec![name]))?;
 
         let state: String = proxy
-                        .call("GetUnitFileState", &name)
-                        .unwrap_or_else(|_| "unknown".into());
-        
+            .call("GetUnitFileState", &name)
+            .unwrap_or_else(|_| "unknown".into());
+
         if let Some(unit) = units.first() {
-            let service_state = ServiceState::new(unit.2.clone(), unit.3.clone(), unit.4.clone(), state );
+            let service_state =
+                ServiceState::new(unit.2.clone(), unit.3.clone(), unit.4.clone(), state);
             let service = Service::new(unit.0.clone(), unit.1.clone(), service_state);
             Ok(service)
-        }else {
+        } else {
             Err(format!("Unit '{name}' not found").into())
         }
     }
@@ -236,9 +218,9 @@ impl ServiceRepository for SystemdServiceAdapter {
     fn start_service(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
         let reply: Option<OwnedObjectPath> = proxy.call_with_flags(
-            "StartUnit", 
-            MethodFlags::AllowInteractiveAuth.into(),  
-            &(name, "replace")
+            "StartUnit",
+            MethodFlags::AllowInteractiveAuth.into(),
+            &(name, "replace"),
         )?;
         reply.ok_or("No reply from StartUnit")?;
         thread::sleep(Duration::from_millis(SLEEP_DURATION));
@@ -253,9 +235,9 @@ impl ServiceRepository for SystemdServiceAdapter {
     fn stop_service(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
         let reply: Option<OwnedObjectPath> = proxy.call_with_flags(
-            "StopUnit", 
-            MethodFlags::AllowInteractiveAuth.into(), 
-            &(name.to_string(), "replace")
+            "StopUnit",
+            MethodFlags::AllowInteractiveAuth.into(),
+            &(name.to_string(), "replace"),
         )?;
         reply.ok_or("No reply from StopUnit")?;
         thread::sleep(Duration::from_millis(SLEEP_DURATION));
@@ -270,9 +252,9 @@ impl ServiceRepository for SystemdServiceAdapter {
     fn restart_service(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
         let reply: Option<OwnedObjectPath> = proxy.call_with_flags(
-            "RestartUnit", 
-            MethodFlags::AllowInteractiveAuth.into(), 
-            &(name, "replace")
+            "RestartUnit",
+            MethodFlags::AllowInteractiveAuth.into(),
+            &(name, "replace"),
         )?;
         reply.ok_or("No reply from Start")?;
         thread::sleep(Duration::from_millis(SLEEP_DURATION));
@@ -287,12 +269,11 @@ impl ServiceRepository for SystemdServiceAdapter {
     fn enable_service(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
         #[allow(clippy::type_complexity)]
-        let reply: Option<(bool, Vec<(String, String, String)>)> =
-            proxy.call_with_flags(
-                "EnableUnitFiles",
-                MethodFlags::AllowInteractiveAuth.into(),
-                &(vec![name], false, false),
-            )?;
+        let reply: Option<(bool, Vec<(String, String, String)>)> = proxy.call_with_flags(
+            "EnableUnitFiles",
+            MethodFlags::AllowInteractiveAuth.into(),
+            &(vec![name], false, false),
+        )?;
         reply.ok_or("No reply from EnableUnitFiles")?;
         thread::sleep(Duration::from_millis(SLEEP_DURATION));
         self.get_unit(name)
@@ -300,12 +281,11 @@ impl ServiceRepository for SystemdServiceAdapter {
 
     fn disable_service(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
-        let reply: Option<Vec<(String, String, String)>> =
-            proxy.call_with_flags(
-                "DisableUnitFiles",
-                MethodFlags::AllowInteractiveAuth.into(),
-                &(vec![name], false),
-            )?;
+        let reply: Option<Vec<(String, String, String)>> = proxy.call_with_flags(
+            "DisableUnitFiles",
+            MethodFlags::AllowInteractiveAuth.into(),
+            &(vec![name], false),
+        )?;
         reply.ok_or("No reply from DisableUnitFiles")?;
         thread::sleep(Duration::from_millis(SLEEP_DURATION));
         self.get_unit(name)
@@ -313,12 +293,11 @@ impl ServiceRepository for SystemdServiceAdapter {
 
     fn mask_service(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
-        let reply: Option<Vec<(String, String, String)>> =
-            proxy.call_with_flags(
-                "MaskUnitFiles", 
-                MethodFlags::AllowInteractiveAuth.into(), 
-                &(vec![name], false, true)
-            )?;
+        let reply: Option<Vec<(String, String, String)>> = proxy.call_with_flags(
+            "MaskUnitFiles",
+            MethodFlags::AllowInteractiveAuth.into(),
+            &(vec![name], false, true),
+        )?;
         reply.ok_or("No reply from MaskUnitFiles")?;
         thread::sleep(Duration::from_millis(SLEEP_DURATION));
         self.get_unit(name)
@@ -326,12 +305,11 @@ impl ServiceRepository for SystemdServiceAdapter {
 
     fn unmask_service(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
-        let reply: Option<Vec<(String, String, String)>> =
-            proxy.call_with_flags(
-                "UnmaskUnitFiles", 
-                MethodFlags::AllowInteractiveAuth.into(), 
-                &(vec![name], false)
-            )?;
+        let reply: Option<Vec<(String, String, String)>> = proxy.call_with_flags(
+            "UnmaskUnitFiles",
+            MethodFlags::AllowInteractiveAuth.into(),
+            &(vec![name], false),
+        )?;
         reply.ok_or("No reply from UnmaskUnitFiles")?;
         thread::sleep(Duration::from_millis(SLEEP_DURATION));
         self.get_unit(name)
@@ -339,7 +317,11 @@ impl ServiceRepository for SystemdServiceAdapter {
 
     fn reload_daemon(&self) -> Result<(), Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
-        proxy.call_with_flags::<&str, (), ()>("Reload", MethodFlags::AllowInteractiveAuth.into(), &())?;
+        proxy.call_with_flags::<&str, (), ()>(
+            "Reload",
+            MethodFlags::AllowInteractiveAuth.into(),
+            &(),
+        )?;
         thread::sleep(Duration::from_millis(SLEEP_DURATION));
         Ok(())
     }
@@ -360,8 +342,6 @@ impl ServiceRepository for SystemdServiceAdapter {
         let timestamp: u64 = variant.try_into()?;
         Ok(timestamp)
     }
-
-
 }
 
 #[cfg(test)]

@@ -1,20 +1,31 @@
 use super::*;
-use crate::test_support::{service, FakeRepository};
-use ratatui::backend::TestBackend;
+use crate::test_support::{FakeRepository, service};
 use ratatui::Terminal;
+use ratatui::backend::TestBackend;
 use std::sync::mpsc;
 
 fn log_with(repository: FakeRepository) -> (ServiceLog, mpsc::Receiver<AppEvent>) {
     let (sender, receiver) = mpsc::channel();
     let manager = ServicesManager::new(Box::new(repository));
-    (ServiceLog::new(sender, Rc::new(RefCell::new(manager))), receiver)
+    (
+        ServiceLog::new(sender, Rc::new(RefCell::new(manager))),
+        receiver,
+    )
 }
 
 fn rendered_text(log: &mut ServiceLog, width: u16, height: u16) -> String {
     let backend = TestBackend::new(width, height);
     let mut terminal = Terminal::new(backend).unwrap();
-    terminal.draw(|frame| log.render(frame, frame.area())).unwrap();
-    terminal.backend().buffer().content().iter().map(|cell| cell.symbol()).collect()
+    terminal
+        .draw(|frame| log.render(frame, frame.area()))
+        .unwrap();
+    terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect()
 }
 
 #[test]
@@ -61,7 +72,11 @@ fn auto_refresh_changes_border_and_shortcut_label() {
 
     assert!(matches!(log.border_color, BorderColor::Orange));
     let shortcuts = log.shortcuts();
-    assert!(shortcuts.iter().any(|line| line.to_string().contains("Disable auto-refresh")));
+    assert!(
+        shortcuts
+            .iter()
+            .any(|line| line.to_string().contains("Disable auto-refresh"))
+    );
     log.set_auto_refresh(false);
 }
 
@@ -73,7 +88,9 @@ fn auto_refresh_state_is_visible_in_rendered_border_color() {
     let backend = TestBackend::new(40, 5);
     let mut terminal = Terminal::new(backend).unwrap();
 
-    terminal.draw(|frame| log.render(frame, frame.area())).unwrap();
+    terminal
+        .draw(|frame| log.render(frame, frame.area()))
+        .unwrap();
 
     assert_eq!(
         terminal.backend().buffer().content()[0].fg,
@@ -164,14 +181,10 @@ fn downward_scrolling_saturates_at_zero() {
 #[test]
 fn long_log_lines_wrap_to_available_width() {
     let (mut log, _receiver) = log_with(FakeRepository::default());
-    log.update(
-        "demo.service".into(),
-        "abcdefghijklmnopqrst".into(),
-    );
+    log.update("demo.service".into(), "abcdefghijklmnopqrst".into());
 
     let screen = rendered_text(&mut log, 12, 4);
 
     assert!(screen.contains("abcdefghij"));
     assert!(screen.contains("klmnopqrst"));
 }
-

@@ -1,13 +1,13 @@
 mod domain;
 mod infrastructure;
 mod terminal;
-mod usecases;
 #[cfg(test)]
 mod test_support;
 #[cfg(test)]
 mod tests;
-use infrastructure::systemd_service_adapter::{ConnectionType, SystemdServiceAdapter};
+mod usecases;
 use infrastructure::notifier::start_notifier;
+use infrastructure::systemd_service_adapter::{ConnectionType, SystemdServiceAdapter};
 use terminal::app::App;
 use usecases::services_manager::ServicesManager;
 
@@ -52,16 +52,16 @@ fn main() -> color_eyre::Result<()> {
         Ok(args) => args.into(),
         Err(err) => {
             ratatui::restore();
-            err.exit(); 
+            err.exit();
         }
     };
-    
+
     let (event_tx, event_rx) = mpsc::channel::<AppEvent>();
 
     start_notifier();
     let systemd_adapter = SystemdServiceAdapter::new(ConnectionType::System)?;
     let usecase = Rc::new(RefCell::new(ServicesManager::new(Box::new(
-        systemd_adapter
+        systemd_adapter,
     ))));
     let table_services = TableServices::new(event_tx.clone(), usecase.clone());
     let filter = Filter::new(event_tx.clone(), args.filter.clone());

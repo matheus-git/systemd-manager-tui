@@ -1,5 +1,5 @@
 use super::*;
-use crate::test_support::{service, FakeRepository};
+use crate::test_support::{FakeRepository, service};
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -25,8 +25,14 @@ fn lists_sorts_and_deduplicates_runtime_and_file_units() {
     let QueryUnitFile::Finished(states) = receiver
         .recv_timeout(Duration::from_secs(1))
         .expect("unit file states were not returned");
-    assert_eq!(states.get("alpha.service").map(String::as_str), Some("enabled"));
-    assert_eq!(states.get("zeta.service").map(String::as_str), Some("enabled"));
+    assert_eq!(
+        states.get("alpha.service").map(String::as_str),
+        Some("enabled")
+    );
+    assert_eq!(
+        states.get("zeta.service").map(String::as_str),
+        Some("enabled")
+    );
 }
 
 #[test]
@@ -113,15 +119,27 @@ fn delegates_log_unit_file_timestamp_and_connection() {
 
     assert_eq!(manager.get_log(&unit).unwrap(), "journal output");
     assert!(manager.systemctl_cat(&unit).unwrap().contains("ExecStart"));
-    manager.change_repository_connection(ConnectionType::Session).unwrap();
+    manager
+        .change_repository_connection(ConnectionType::Session)
+        .unwrap();
     assert_eq!(
-        manager.repository_handle().lock().unwrap().get_active_enter_timestamp(unit.name()).unwrap(),
+        manager
+            .repository_handle()
+            .lock()
+            .unwrap()
+            .get_active_enter_timestamp(unit.name())
+            .unwrap(),
         42
     );
 
     assert_eq!(
         observer.calls(),
-        ["log:demo.service", "cat:demo.service", "connection:session", "timestamp:demo.service"]
+        [
+            "log:demo.service",
+            "cat:demo.service",
+            "connection:session",
+            "timestamp:demo.service"
+        ]
     );
 }
 
@@ -161,7 +179,10 @@ fn log_and_unit_file_failures_are_propagated() {
     let manager = ServicesManager::new(Box::new(fake));
     let unit = service("broken.service", "active", "enabled");
 
-    assert_eq!(manager.get_log(&unit).unwrap_err().to_string(), "log failed");
+    assert_eq!(
+        manager.get_log(&unit).unwrap_err().to_string(),
+        "log failed"
+    );
     assert_eq!(
         manager.systemctl_cat(&unit).unwrap_err().to_string(),
         "cat failed"

@@ -3,30 +3,62 @@ use crate::domain::service_repository::ServiceRepository;
 use crate::domain::service_state::ServiceState;
 use crate::infrastructure::systemd_service_adapter::ConnectionType;
 use crate::test_support::FakeRepository;
+use ratatui::Terminal;
+use ratatui::backend::TestBackend;
 use std::collections::HashMap;
 use std::sync::mpsc;
-use ratatui::backend::TestBackend;
-use ratatui::Terminal;
 
 struct EmptyRepository;
 
 impl ServiceRepository for EmptyRepository {
-    fn list_services(&self, _: bool) -> Result<Vec<Service>, Box<dyn Error>> { Ok(vec![]) }
-    fn unit_files_state(&self, _: Vec<Service>) -> Result<HashMap<String, String>, Box<dyn Error>> { Ok(HashMap::new()) }
-    fn list_service_files(&self) -> Result<Vec<Service>, Box<dyn Error>> { Ok(vec![]) }
-    fn get_unit(&self, _: &str) -> Result<Service, Box<dyn Error>> { Err("not found".into()) }
-    fn get_service_log(&self, _: &str) -> Result<String, Box<dyn Error>> { Ok(String::new()) }
-    fn start_service(&self, _: &str) -> Result<Service, Box<dyn Error>> { Err("unsupported".into()) }
-    fn stop_service(&self, _: &str) -> Result<Service, Box<dyn Error>> { Err("unsupported".into()) }
-    fn restart_service(&self, _: &str) -> Result<Service, Box<dyn Error>> { Err("unsupported".into()) }
-    fn enable_service(&self, _: &str) -> Result<Service, Box<dyn Error>> { Err("unsupported".into()) }
-    fn disable_service(&self, _: &str) -> Result<Service, Box<dyn Error>> { Err("unsupported".into()) }
-    fn mask_service(&self, _: &str) -> Result<Service, Box<dyn Error>> { Err("unsupported".into()) }
-    fn unmask_service(&self, _: &str) -> Result<Service, Box<dyn Error>> { Err("unsupported".into()) }
-    fn reload_daemon(&self) -> Result<(), Box<dyn Error>> { Ok(()) }
-    fn change_connection(&mut self, _: ConnectionType) -> Result<(), zbus::Error> { Ok(()) }
-    fn systemctl_cat(&self, _: &str) -> Result<String, Box<dyn Error>> { Ok(String::new()) }
-    fn get_active_enter_timestamp(&self, _: &str) -> Result<u64, Box<dyn Error>> { Ok(0) }
+    fn list_services(&self, _: bool) -> Result<Vec<Service>, Box<dyn Error>> {
+        Ok(vec![])
+    }
+    fn unit_files_state(&self, _: Vec<Service>) -> Result<HashMap<String, String>, Box<dyn Error>> {
+        Ok(HashMap::new())
+    }
+    fn list_service_files(&self) -> Result<Vec<Service>, Box<dyn Error>> {
+        Ok(vec![])
+    }
+    fn get_unit(&self, _: &str) -> Result<Service, Box<dyn Error>> {
+        Err("not found".into())
+    }
+    fn get_service_log(&self, _: &str) -> Result<String, Box<dyn Error>> {
+        Ok(String::new())
+    }
+    fn start_service(&self, _: &str) -> Result<Service, Box<dyn Error>> {
+        Err("unsupported".into())
+    }
+    fn stop_service(&self, _: &str) -> Result<Service, Box<dyn Error>> {
+        Err("unsupported".into())
+    }
+    fn restart_service(&self, _: &str) -> Result<Service, Box<dyn Error>> {
+        Err("unsupported".into())
+    }
+    fn enable_service(&self, _: &str) -> Result<Service, Box<dyn Error>> {
+        Err("unsupported".into())
+    }
+    fn disable_service(&self, _: &str) -> Result<Service, Box<dyn Error>> {
+        Err("unsupported".into())
+    }
+    fn mask_service(&self, _: &str) -> Result<Service, Box<dyn Error>> {
+        Err("unsupported".into())
+    }
+    fn unmask_service(&self, _: &str) -> Result<Service, Box<dyn Error>> {
+        Err("unsupported".into())
+    }
+    fn reload_daemon(&self) -> Result<(), Box<dyn Error>> {
+        Ok(())
+    }
+    fn change_connection(&mut self, _: ConnectionType) -> Result<(), zbus::Error> {
+        Ok(())
+    }
+    fn systemctl_cat(&self, _: &str) -> Result<String, Box<dyn Error>> {
+        Ok(String::new())
+    }
+    fn get_active_enter_timestamp(&self, _: &str) -> Result<u64, Box<dyn Error>> {
+        Ok(0)
+    }
 }
 
 fn table_with_repository(
@@ -52,7 +84,12 @@ fn service(name: &str, active: &str) -> Service {
     Service::new(
         name.to_string(),
         String::new(),
-        ServiceState::new("loaded".into(), active.into(), "running".into(), "enabled".into()),
+        ServiceState::new(
+            "loaded".into(),
+            active.into(),
+            "running".into(),
+            "enabled".into(),
+        ),
     )
 }
 
@@ -71,7 +108,10 @@ fn navigation_on_empty_list_clears_selection() {
 #[test]
 fn navigation_wraps_in_both_directions() {
     let mut table = table();
-    table.filtered_services = vec![service("a.service", "active"), service("b.service", "inactive")];
+    table.filtered_services = vec![
+        service("a.service", "active"),
+        service("b.service", "inactive"),
+    ];
     table.table_state.select(Some(1));
 
     table.select_next();
@@ -102,7 +142,12 @@ fn file_state_resolution_prefers_loaded_state_map() {
     let loading = Service::new(
         "demo.service".into(),
         String::new(),
-        ServiceState::new("loaded".into(), "active".into(), "running".into(), LOADING_PLACEHOLDER.into()),
+        ServiceState::new(
+            "loaded".into(),
+            "active".into(),
+            "running".into(),
+            LOADING_PLACEHOLDER.into(),
+        ),
     );
     let states = HashMap::from([("demo.service".to_string(), "enabled".to_string())]);
 
@@ -125,9 +170,14 @@ fn renders_service_table_to_test_backend() {
     let backend = TestBackend::new(90, 6);
     let mut terminal = Terminal::new(backend).unwrap();
 
-    terminal.draw(|frame| table.render(frame, frame.area())).unwrap();
+    terminal
+        .draw(|frame| table.render(frame, frame.area()))
+        .unwrap();
 
-    let rendered = terminal.backend().buffer().content()
+    let rendered = terminal
+        .backend()
+        .buffer()
+        .content()
         .iter()
         .map(|cell| cell.symbol())
         .collect::<String>();
@@ -211,24 +261,32 @@ fn selected_row_uses_distinct_enabled_and_disabled_colors() {
     let backend = TestBackend::new(90, 6);
     let mut terminal = Terminal::new(backend).unwrap();
 
-    terminal.draw(|frame| table.render(frame, frame.area())).unwrap();
-    assert!(terminal
-        .backend()
-        .buffer()
-        .content()
-        .iter()
-        .any(|cell| cell.bg == Color::Blue));
+    terminal
+        .draw(|frame| table.render(frame, frame.area()))
+        .unwrap();
+    assert!(
+        terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .any(|cell| cell.bg == Color::Blue)
+    );
 
     table.set_ignore_key_events(true);
     let backend = TestBackend::new(90, 6);
     let mut terminal = Terminal::new(backend).unwrap();
-    terminal.draw(|frame| table.render(frame, frame.area())).unwrap();
-    assert!(terminal
-        .backend()
-        .buffer()
-        .content()
-        .iter()
-        .any(|cell| cell.bg == Color::DarkGray));
+    terminal
+        .draw(|frame| table.render(frame, frame.area()))
+        .unwrap();
+    assert!(
+        terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .any(|cell| cell.bg == Color::DarkGray)
+    );
 }
 
 #[test]
@@ -327,7 +385,9 @@ fn rendered_rows_expose_active_state_and_loading_styles() {
     let backend = TestBackend::new(100, 10);
     let mut terminal = Terminal::new(backend).unwrap();
 
-    terminal.draw(|frame| table.render(frame, frame.area())).unwrap();
+    terminal
+        .draw(|frame| table.render(frame, frame.area()))
+        .unwrap();
 
     let cells = terminal.backend().buffer().content();
     for color in [Color::Green, Color::Yellow, Color::DarkGray, Color::Red] {
@@ -411,7 +471,9 @@ fn active_service_runtime_is_rendered_instead_of_raw_state() {
     let backend = TestBackend::new(90, 6);
     let mut terminal = Terminal::new(backend).unwrap();
 
-    terminal.draw(|frame| table.render(frame, frame.area())).unwrap();
+    terminal
+        .draw(|frame| table.render(frame, frame.area()))
+        .unwrap();
 
     let rendered = terminal
         .backend()

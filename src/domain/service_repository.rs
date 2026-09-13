@@ -1,12 +1,15 @@
 use crate::infrastructure::systemd_service_adapter::ConnectionType;
 
 use super::service::Service;
-use std::error::Error;
 use std::collections::HashMap;
+use std::error::Error;
 
 pub trait ServiceRepository: Send + Sync {
     fn list_services(&self, filter: bool) -> Result<Vec<Service>, Box<dyn Error>>;
-    fn unit_files_state(&self, services: Vec<Service>) -> Result<HashMap<String, String>, Box<dyn Error>>;
+    fn unit_files_state(
+        &self,
+        services: Vec<Service>,
+    ) -> Result<HashMap<String, String>, Box<dyn Error>>;
     fn list_service_files(&self) -> Result<Vec<Service>, Box<dyn Error>>;
     fn get_unit(&self, name: &str) -> Result<Service, Box<dyn Error>>;
     fn get_service_log(&self, name: &str) -> Result<String, Box<dyn Error>>;

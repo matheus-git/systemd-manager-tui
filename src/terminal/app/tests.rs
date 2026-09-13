@@ -1,7 +1,7 @@
 use super::*;
 use crate::test_support::FakeRepository;
-use ratatui::backend::TestBackend;
 use ratatui::Terminal;
+use ratatui::backend::TestBackend;
 use std::sync::mpsc;
 
 fn test_app() -> App {
@@ -14,16 +14,12 @@ fn test_app() -> App {
     let log = ServiceLog::new(event_tx.clone(), manager.clone());
     let details = ServiceDetails::new(event_tx.clone(), manager.clone());
 
-    App::new(
-        event_tx, event_rx, table, filter, log, details, manager,
-    )
+    App::new(event_tx, event_rx, table, filter, log, details, manager)
 }
 
 #[test]
 fn translates_known_dbus_errors() {
-    let message = get_user_friendly_error(
-        "org.freedesktop.DBus.Error.AccessDenied: rejected",
-    );
+    let message = get_user_friendly_error("org.freedesktop.DBus.Error.AccessDenied: rejected");
 
     assert!(message.contains("Access denied"));
 }
@@ -68,10 +64,12 @@ fn help_popup_is_rendered_with_sections_and_highlighted_title() {
     assert!(rendered.contains("Navigation:"));
     assert!(rendered.contains("Service Control:"));
     assert!(rendered.contains("Ctrl+c - Quit"));
-    assert!(buffer
-        .content()
-        .iter()
-        .any(|cell| cell.symbol() == "S" && cell.fg == Color::Cyan));
+    assert!(
+        buffer
+            .content()
+            .iter()
+            .any(|cell| cell.symbol() == "S" && cell.fg == Color::Cyan)
+    );
 }
 
 #[test]
@@ -96,4 +94,3 @@ fn shortcuts_panel_renders_context_actions_and_global_exit() {
     assert!(rendered.contains("Custom action: x"));
     assert!(rendered.contains("Exit: Ctrl + c"));
 }
-
