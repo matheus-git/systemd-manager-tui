@@ -6,7 +6,7 @@
 //! `cargo test infrastructure::systemd_service_adapter::tests -- --ignored --test-threads=1`
 
 use super::{
-    ConnectionType, OperationTimeout, ServiceAction, SystemdServiceAdapter, wait_for_job_completion,
+    ConnectionType, OperationTimeout, ServiceAction, SystemdJobFailed, SystemdServiceAdapter,
 };
 use crate::domain::service_repository::ServiceRepository;
 use std::error::Error;
@@ -160,36 +160,15 @@ fn operation_timeout_identifies_context_and_systemd_uncertainty() {
 }
 
 #[test]
-fn wait_for_job_completion_waits_until_the_job_disappears() {
-    let mut polls = 0;
-    wait_for_job_completion(
-        "demo.service",
-        ServiceAction::Start,
-        Duration::from_secs(1),
-        Duration::ZERO,
-        || {
-            polls += 1;
-            Ok(polls == 1)
-        },
-    )
-    .unwrap();
+fn job_failure_identifies_the_operation_and_systemd_result() {
+    let error = SystemdJobFailed {
+        service: "demo.service".to_string(),
+        action: ServiceAction::Start,
+        result: "dependency".to_string(),
+    };
 
-    assert_eq!(polls, 2);
-}
-
-#[test]
-fn wait_for_job_completion_stops_at_the_configured_timeout() {
-    let error = wait_for_job_completion(
-        "demo.service",
-        ServiceAction::Stop,
-        Duration::ZERO,
-        Duration::ZERO,
-        || Ok(true),
-    )
-    .unwrap_err();
-    let timeout = error.downcast_ref::<OperationTimeout>().unwrap();
-
-    assert_eq!(timeout.service, "demo.service");
-    assert_eq!(timeout.action, ServiceAction::Stop);
-    assert_eq!(timeout.timeout, Duration::ZERO);
+    let message = error.to_string();
+    assert!(message.contains("start"));
+    assert!(message.contains("demo.service"));
+    assert!(message.contains("dependency"));
 }

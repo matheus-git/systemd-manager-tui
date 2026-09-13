@@ -2,19 +2,19 @@ use crate::domain::service::Service;
 use crate::domain::service_repository::ServiceRepository;
 use crate::domain::service_state::ServiceState;
 use crate::terminal::components::list::LOADING_PLACEHOLDER;
+use async_io::Timer;
+use futures_lite::{StreamExt, future};
 use rayon::prelude::*;
 use std::collections::HashMap;
 use std::fmt;
 use std::io::{self};
 use std::process::Command;
-use std::thread;
 use std::time::{Duration, Instant};
-use zbus::Error;
-use zbus::blocking::{Connection, Proxy};
+use zbus::blocking::{Connection, MessageIterator, Proxy};
+use zbus::message::Type;
 use zbus::proxy::MethodFlags;
 use zbus::zvariant::{OwnedObjectPath, OwnedValue};
-
-const POLL_INTERVAL: Duration = Duration::from_millis(100);
+use zbus::{Error, MatchRule, MessageStream};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ServiceAction {
@@ -53,29 +53,61 @@ impl fmt::Display for OperationTimeout {
 
 impl std::error::Error for OperationTimeout {}
 
-fn wait_for_job_completion<F>(
+#[derive(Debug)]
+pub struct SystemdJobFailed {
+    pub service: String,
+    pub action: ServiceAction,
+    pub result: String,
+}
+
+impl fmt::Display for SystemdJobFailed {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "systemd could not {} '{}': job finished with result '{}'",
+            self.action, self.service, self.result
+        )
+    }
+}
+
+impl std::error::Error for SystemdJobFailed {}
+
+fn wait_for_job_result(
     service_name: &str,
     action: ServiceAction,
     timeout: Duration,
-    poll_interval: Duration,
-    mut job_is_pending: F,
-) -> Result<(), Box<dyn std::error::Error>>
-where
-    F: FnMut() -> Result<bool, Box<dyn std::error::Error>>,
-{
+    job_path: &OwnedObjectPath,
+    mut events: MessageStream,
+) -> Result<(), Box<dyn std::error::Error>> {
     let started_at = Instant::now();
     loop {
-        if !job_is_pending()? {
-            return Ok(());
-        }
-        if started_at.elapsed() >= timeout {
+        let remaining = timeout.saturating_sub(started_at.elapsed());
+        let message = future::block_on(future::race(async { events.next().await }, async {
+            Timer::after(remaining).await;
+            None
+        }));
+        let Some(message) = message else {
             return Err(Box::new(OperationTimeout {
                 service: service_name.to_string(),
                 action,
                 timeout,
             }));
+        };
+        let message = message?;
+        let (_id, removed_path, _unit, result): (u32, OwnedObjectPath, String, String) =
+            message.body().deserialize()?;
+        if removed_path != *job_path {
+            continue;
         }
-        thread::sleep(poll_interval.min(timeout));
+        return if result == "done" {
+            Ok(())
+        } else {
+            Err(Box::new(SystemdJobFailed {
+                service: service_name.to_string(),
+                action,
+                result,
+            }))
+        };
     }
 }
 
@@ -89,15 +121,6 @@ type SystemdUnit = (
     OwnedObjectPath,
     u32,
     String,
-    OwnedObjectPath,
-);
-
-type SystemdJob = (
-    u32,
-    String,
-    String,
-    String,
-    OwnedObjectPath,
     OwnedObjectPath,
 );
 
@@ -131,6 +154,7 @@ impl SystemdServiceAdapter {
             ConnectionType::Session => Connection::session()?,
             ConnectionType::System => Connection::system()?,
         };
+        Self::subscribe_to_jobs(&connection)?;
 
         Ok(Self {
             connection,
@@ -149,6 +173,16 @@ impl SystemdServiceAdapter {
         Ok(proxy)
     }
 
+    fn subscribe_to_jobs(connection: &Connection) -> Result<(), Error> {
+        let proxy = Proxy::new(
+            connection,
+            "org.freedesktop.systemd1",
+            "/org/freedesktop/systemd1",
+            "org.freedesktop.systemd1.Manager",
+        )?;
+        proxy.call::<_, _, ()>("Subscribe", &())
+    }
+
     fn run_unit_job(
         &self,
         name: &str,
@@ -156,6 +190,14 @@ impl SystemdServiceAdapter {
         method: &str,
     ) -> Result<Service, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
+        let rule = MatchRule::builder()
+            .msg_type(Type::Signal)
+            .sender("org.freedesktop.systemd1")?
+            .interface("org.freedesktop.systemd1.Manager")?
+            .member("JobRemoved")?
+            .arg(2, name)?
+            .build();
+        let events = MessageIterator::for_match_rule(rule, &self.connection, Some(8))?;
         let reply: Option<OwnedObjectPath> = proxy.call_with_flags(
             method,
             MethodFlags::AllowInteractiveAuth.into(),
@@ -163,10 +205,13 @@ impl SystemdServiceAdapter {
         )?;
         let job_path = reply.ok_or_else(|| format!("No job returned from {method}"))?;
 
-        wait_for_job_completion(name, action, self.operation_timeout, POLL_INTERVAL, || {
-            let jobs: Vec<SystemdJob> = proxy.call("ListJobs", &())?;
-            Ok(jobs.iter().any(|job| job.4 == job_path))
-        })?;
+        wait_for_job_result(
+            name,
+            action,
+            self.operation_timeout,
+            &job_path,
+            events.into_inner(),
+        )?;
 
         match self.get_unit(name) {
             Ok(service) => Ok(service),
@@ -204,6 +249,7 @@ impl ServiceRepository for SystemdServiceAdapter {
             ConnectionType::Session => Connection::session()?,
             ConnectionType::System => Connection::system()?,
         };
+        Self::subscribe_to_jobs(&connection)?;
         self.connection = connection;
         self.active_connection = connection_type;
         Ok(())
