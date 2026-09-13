@@ -62,6 +62,24 @@ Download binary from [Releases](https://github.com/matheus-git/systemd-manager-t
 - ratatui - 0.29.0
 - zbus - 5.5.0
 
+## Testing
+
+Run the regular test suite with:
+
+```bash
+cargo test
+```
+
+The regular suite includes unit, application-flow, and Ratatui rendering tests using `TestBackend`, so it does not require an interactive terminal or a running systemd instance.
+
+Real integration tests against the system and user D-Bus buses are available as an opt-in suite. Run them on a systemd-based Linux host where the current user has an active user manager and both `systemctl` and `systemd-run` are available:
+
+```bash
+cargo test infrastructure::systemd_service_adapter::tests -- --ignored --test-threads=1
+```
+
+The integration suite reads real system units and creates an isolated transient user service to exercise lifecycle operations. The temporary service is stopped and cleaned up automatically. These tests are ignored during a regular `cargo test` so environments without systemd, such as many CI containers, continue to work.
+
 ## Contributing
 
 Contributions are welcome! Please open an issue or submit a pull request for any improvements or bug fixes.
