@@ -1,5 +1,6 @@
 use super::{Args, Config};
 use clap::Parser;
+use std::time::Duration;
 
 #[test]
 fn cli_uses_expected_defaults() {
@@ -7,6 +8,23 @@ fn cli_uses_expected_defaults() {
     let config = Config::from(args);
 
     assert!(config.filter.is_empty());
+    assert_eq!(config.operation_timeout, Duration::from_secs(10));
+}
+
+#[test]
+fn cli_accepts_operation_timeout() {
+    let args =
+        Args::try_parse_from(["systemd-manager-tui", "--operation-timeout-secs", "3"]).unwrap();
+    let config = Config::from(args);
+
+    assert_eq!(config.operation_timeout, Duration::from_secs(3));
+}
+
+#[test]
+fn cli_rejects_zero_operation_timeout() {
+    assert!(
+        Args::try_parse_from(["systemd-manager-tui", "--operation-timeout-secs", "0"]).is_err()
+    );
 }
 
 #[test]

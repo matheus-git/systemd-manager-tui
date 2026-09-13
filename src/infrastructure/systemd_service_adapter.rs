@@ -4,16 +4,84 @@ use crate::domain::service_state::ServiceState;
 use crate::terminal::components::list::LOADING_PLACEHOLDER;
 use rayon::prelude::*;
 use std::collections::HashMap;
+use std::fmt;
 use std::io::{self};
 use std::process::Command;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use zbus::Error;
 use zbus::blocking::{Connection, Proxy};
 use zbus::proxy::MethodFlags;
 use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 
 const SLEEP_DURATION: u64 = 100;
+const POLL_INTERVAL: Duration = Duration::from_millis(100);
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ServiceAction {
+    Start,
+    Stop,
+    Restart,
+}
+
+impl fmt::Display for ServiceAction {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let action = match self {
+            Self::Start => "start",
+            Self::Stop => "stop",
+            Self::Restart => "restart",
+        };
+        formatter.write_str(action)
+    }
+}
+
+#[derive(Debug)]
+pub struct OperationTimeout {
+    pub service: String,
+    pub action: ServiceAction,
+    pub timeout: Duration,
+}
+
+impl fmt::Display for OperationTimeout {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            formatter,
+            "Timed out after {:.1}s waiting to {} '{}'; the operation may still be in progress in systemd",
+            self.timeout.as_secs_f64(),
+            self.action,
+            self.service
+        )
+    }
+}
+
+impl std::error::Error for OperationTimeout {}
+
+fn wait_for_operation<F>(
+    service_name: &str,
+    action: ServiceAction,
+    timeout: Duration,
+    poll_interval: Duration,
+    mut get_service: F,
+) -> Result<Service, Box<dyn std::error::Error>>
+where
+    F: FnMut() -> Result<Service, Box<dyn std::error::Error>>,
+{
+    let started_at = Instant::now();
+    loop {
+        let service = get_service()?;
+        if !service.state().active().ends_with("ing") {
+            return Ok(service);
+        }
+        if started_at.elapsed() >= timeout {
+            return Err(Box::new(OperationTimeout {
+                service: service_name.to_string(),
+                action,
+                timeout,
+            }));
+        }
+        thread::sleep(poll_interval.min(timeout));
+    }
+}
 
 type SystemdUnit = (
     String,
@@ -36,10 +104,14 @@ pub enum ConnectionType {
 pub struct SystemdServiceAdapter {
     connection: Connection,
     connection_type: ConnectionType,
+    operation_timeout: Duration,
 }
 
 impl SystemdServiceAdapter {
-    pub fn new(connection_type: ConnectionType) -> Result<Self, Error> {
+    pub fn new(
+        connection_type: ConnectionType,
+        operation_timeout: Duration,
+    ) -> Result<Self, Error> {
         let connection = match connection_type {
             ConnectionType::Session => Connection::session()?,
             ConnectionType::System => Connection::system()?,
@@ -48,6 +120,7 @@ impl SystemdServiceAdapter {
         Ok(Self {
             connection,
             connection_type,
+            operation_timeout,
         })
     }
 
@@ -223,13 +296,13 @@ impl ServiceRepository for SystemdServiceAdapter {
             &(name, "replace"),
         )?;
         reply.ok_or("No reply from StartUnit")?;
-        thread::sleep(Duration::from_millis(SLEEP_DURATION));
-        let mut service = self.get_unit(name)?;
-        while service.state().active().ends_with("ing") {
-            service = self.get_unit(name)?;
-            thread::sleep(Duration::from_millis(100));
-        }
-        Ok(service)
+        wait_for_operation(
+            name,
+            ServiceAction::Start,
+            self.operation_timeout,
+            POLL_INTERVAL,
+            || self.get_unit(name),
+        )
     }
 
     fn stop_service(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
@@ -240,13 +313,13 @@ impl ServiceRepository for SystemdServiceAdapter {
             &(name.to_string(), "replace"),
         )?;
         reply.ok_or("No reply from StopUnit")?;
-        thread::sleep(Duration::from_millis(SLEEP_DURATION));
-        let mut service = self.get_unit(name)?;
-        while service.state().active().ends_with("ing") {
-            service = self.get_unit(name)?;
-            thread::sleep(Duration::from_millis(100));
-        }
-        Ok(service)
+        wait_for_operation(
+            name,
+            ServiceAction::Stop,
+            self.operation_timeout,
+            POLL_INTERVAL,
+            || self.get_unit(name),
+        )
     }
 
     fn restart_service(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
@@ -257,13 +330,13 @@ impl ServiceRepository for SystemdServiceAdapter {
             &(name, "replace"),
         )?;
         reply.ok_or("No reply from Start")?;
-        thread::sleep(Duration::from_millis(SLEEP_DURATION));
-        let mut service = self.get_unit(name)?;
-        while service.state().active().ends_with("ing") {
-            service = self.get_unit(name)?;
-            thread::sleep(Duration::from_millis(100));
-        }
-        Ok(service)
+        wait_for_operation(
+            name,
+            ServiceAction::Restart,
+            self.operation_timeout,
+            POLL_INTERVAL,
+            || self.get_unit(name),
+        )
     }
 
     fn enable_service(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
