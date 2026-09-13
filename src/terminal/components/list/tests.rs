@@ -50,7 +50,7 @@ impl ServiceRepository for EmptyRepository {
     fn reload_daemon(&self) -> Result<(), Box<dyn Error>> {
         Ok(())
     }
-    fn change_connection(&mut self, _: ConnectionType) -> Result<(), zbus::Error> {
+    fn change_connection(&mut self, _: ConnectionType) -> Result<(), Box<dyn Error>> {
         Ok(())
     }
     fn systemctl_cat(&self, _: &str) -> Result<String, Box<dyn Error>> {

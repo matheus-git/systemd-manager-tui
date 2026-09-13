@@ -138,13 +138,12 @@ impl ServiceRepository for FakeRepository {
     fn reload_daemon(&self) -> Result<(), Box<dyn Error>> {
         self.record("reload", "")
     }
-    fn change_connection(&mut self, connection_type: ConnectionType) -> Result<(), zbus::Error> {
+    fn change_connection(&mut self, connection_type: ConnectionType) -> Result<(), Box<dyn Error>> {
         let name = match connection_type {
             ConnectionType::System => "system",
             ConnectionType::Session => "session",
         };
-        let _ = self.record("connection", name);
-        Ok(())
+        self.record("connection", name)
     }
     fn systemctl_cat(&self, name: &str) -> Result<String, Box<dyn Error>> {
         self.record("cat", name)?;

@@ -96,14 +96,24 @@ type SystemdUnit = (
     OwnedObjectPath,
 );
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ConnectionType {
     Session,
     System,
 }
 
+impl fmt::Display for ConnectionType {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::Session => "user",
+            Self::System => "system",
+        })
+    }
+}
+
 pub struct SystemdServiceAdapter {
     connection: Connection,
-    connection_type: ConnectionType,
+    active_connection: ConnectionType,
     operation_timeout: Duration,
 }
 
@@ -119,7 +129,7 @@ impl SystemdServiceAdapter {
 
         Ok(Self {
             connection,
-            connection_type,
+            active_connection: connection_type,
             operation_timeout,
         })
     }
@@ -136,12 +146,16 @@ impl SystemdServiceAdapter {
 }
 
 impl ServiceRepository for SystemdServiceAdapter {
-    fn change_connection(&mut self, connection_type: ConnectionType) -> Result<(), Error> {
-        self.connection = match connection_type {
+    fn change_connection(
+        &mut self,
+        connection_type: ConnectionType,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let connection = match connection_type {
             ConnectionType::Session => Connection::session()?,
             ConnectionType::System => Connection::system()?,
         };
-        self.connection_type = connection_type;
+        self.connection = connection;
+        self.active_connection = connection_type;
         Ok(())
     }
 
@@ -235,7 +249,7 @@ impl ServiceRepository for SystemdServiceAdapter {
             .arg(format!("--unit={name}"))
             .arg("--no-pager");
 
-        if matches!(self.connection_type, ConnectionType::Session) {
+        if matches!(self.active_connection, ConnectionType::Session) {
             cmd.arg("--user");
         }
 
@@ -255,7 +269,7 @@ impl ServiceRepository for SystemdServiceAdapter {
 
         cmd.arg("cat").arg("--no-pager");
 
-        if matches!(self.connection_type, ConnectionType::Session) {
+        if matches!(self.active_connection, ConnectionType::Session) {
             cmd.arg("--user");
         }
 

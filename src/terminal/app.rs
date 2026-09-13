@@ -93,6 +93,7 @@ pub struct App {
     event_rx: Receiver<AppEvent>,
     event_tx: Sender<AppEvent>,
     selected_tab_index: usize,
+    active_connection: ConnectionType,
     show_help: bool,
 }
 
@@ -118,6 +119,7 @@ impl App {
             event_rx,
             event_tx,
             selected_tab_index: 0,
+            active_connection: ConnectionType::System,
             show_help: false,
         }
     }
@@ -700,48 +702,50 @@ impl App {
         match key {
             KeyEvent { code, .. } if left_keys.contains(&code) => {
                 if !is_filtering && self.status == Status::List {
-                    self.selected_tab_index = if self.selected_tab_index == 0 {
+                    let requested_tab_index = if self.selected_tab_index == 0 {
                         1
                     } else {
                         self.selected_tab_index - 1
                     };
-
-                    self.update_connection_and_reset();
+                    self.update_connection_and_reset(requested_tab_index);
                 }
             }
 
             KeyEvent { code, .. } if right_keys.contains(&code) => {
                 if !is_filtering && self.status == Status::List {
-                    self.selected_tab_index = (self.selected_tab_index + 1) % 2;
-                    self.update_connection_and_reset();
+                    let requested_tab_index = (self.selected_tab_index + 1) % 2;
+                    self.update_connection_and_reset(requested_tab_index);
                 }
             }
 
             _ => {}
         }
     }
-    fn update_connection_and_reset(&mut self) {
-        self.table_service.invalidate_timestamp();
-
-        let conn_type = match self.selected_tab_index {
+    fn update_connection_and_reset(&mut self, requested_tab_index: usize) {
+        let requested_connection = match requested_tab_index {
             0 => ConnectionType::System,
             _ => ConnectionType::Session,
         };
 
-        if let Err(_err) = self
+        if let Err(err) = self
             .usecases
             .borrow_mut()
-            .change_repository_connection(conn_type)
+            .change_repository_connection(requested_connection)
         {
             self.event_tx
                 .send(AppEvent::Error(
-                    "Failed to change connection type with D-Bus. Try run without sudo".to_string(),
+                    format!(
+                        "Failed to switch from {} to {requested_connection}: {err}. The {} connection remains active.",
+                        self.active_connection, self.active_connection
+                    ),
                 ))
                 .expect("Failed to change connection type");
-            self.selected_tab_index = 0;
             return;
         }
 
+        self.active_connection = requested_connection;
+        self.selected_tab_index = requested_tab_index;
+        self.table_service.invalidate_timestamp();
         self.event_tx
             .send(AppEvent::Action(Actions::ResetList))
             .expect("Failed to send ResetList event");
