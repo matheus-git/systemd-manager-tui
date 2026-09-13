@@ -362,6 +362,43 @@ fn unit_file_states_are_applied_only_for_the_current_list_request() {
 }
 
 #[test]
+fn background_workers_start_once_and_are_signalled_on_drop() {
+    let (mut table, receiver) = table_with_receiver();
+    let shutdown = table.workers_shutdown.clone();
+
+    table.spawn_query_listener();
+    table.spawn_timestamp_worker();
+    let query_thread = table.query_listener_handle.as_ref().unwrap().thread().id();
+    let timestamp_thread = table
+        .timestamp_worker_handle
+        .as_ref()
+        .unwrap()
+        .thread()
+        .id();
+
+    table.spawn_query_listener();
+    table.spawn_timestamp_worker();
+
+    assert_eq!(
+        table.query_listener_handle.as_ref().unwrap().thread().id(),
+        query_thread
+    );
+    assert_eq!(
+        table
+            .timestamp_worker_handle
+            .as_ref()
+            .unwrap()
+            .thread()
+            .id(),
+        timestamp_thread
+    );
+    assert!(receiver.try_recv().is_err());
+
+    drop(table);
+    assert!(shutdown.load(Ordering::Acquire));
+}
+
+#[test]
 fn successful_service_action_updates_row_and_unlocks_input() {
     let fake = FakeRepository::default();
     let observer = fake.clone();

@@ -371,6 +371,9 @@ impl TableServices {
     }
 
     fn spawn_timestamp_worker(&mut self) {
+        if self.timestamp_worker_handle.is_some() {
+            return;
+        }
         let Some(rx) = self.timestamp_request_rx.take() else {
             let _ = self.sender.send(AppEvent::Error(
                 "Timestamp worker was already started".to_string(),
