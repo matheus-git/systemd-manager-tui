@@ -304,6 +304,32 @@ fn is_no_such_unit(error: &(dyn std::error::Error + 'static)) -> bool {
     )
 }
 
+fn unit_name_from_path(path: &str) -> &str {
+    path.rsplit('/').next().unwrap_or(path)
+}
+
+fn resolve_unit_file_states(
+    services: Vec<Service>,
+    unit_files: Vec<(String, String)>,
+) -> HashMap<String, String> {
+    let known_states: HashMap<&str, String> = unit_files
+        .iter()
+        .map(|(path, state)| (unit_name_from_path(path), state.clone()))
+        .collect();
+
+    services
+        .into_iter()
+        .map(|service| {
+            let name = service.name().to_string();
+            let state = known_states
+                .get(name.as_str())
+                .cloned()
+                .unwrap_or_else(|| " ".to_string());
+            (name, state)
+        })
+        .collect()
+}
+
 impl ServiceRepository for SystemdServiceAdapter {
     fn change_connection(
         &mut self,
@@ -324,21 +350,8 @@ impl ServiceRepository for SystemdServiceAdapter {
         services: Vec<Service>,
     ) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
-
-        let states_vec: Vec<(String, String)> = services
-            .par_iter()
-            .map(|service| {
-                let name = service.name().to_string();
-                let state = proxy
-                    .call("GetUnitFileState", &name)
-                    .unwrap_or_else(|_| "unknown".to_string());
-                (name, state)
-            })
-            .collect();
-
-        let states: HashMap<String, String> = states_vec.into_iter().collect();
-
-        Ok(states)
+        let unit_files: Vec<(String, String)> = proxy.call("ListUnitFiles", &())?;
+        Ok(resolve_unit_file_states(services, unit_files))
     }
 
     fn list_services(&self, filter: bool) -> Result<Vec<Service>, Box<dyn std::error::Error>> {
@@ -394,7 +407,7 @@ impl ServiceRepository for SystemdServiceAdapter {
             .map(|(name, state)| {
                 let service_state =
                     ServiceState::new(String::new(), "inactive".to_string(), String::new(), state);
-                let short_name = name.rsplit('/').next().unwrap_or(&name);
+                let short_name = unit_name_from_path(&name);
                 Service::new(short_name.to_string(), String::new(), service_state)
             })
             .collect::<Vec<_>>();

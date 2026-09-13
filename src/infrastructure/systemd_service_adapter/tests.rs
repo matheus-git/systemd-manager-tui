@@ -7,8 +7,11 @@
 
 use super::{
     ConnectionType, OperationTimeout, ServiceAction, SystemdJobFailed, SystemdServiceAdapter,
+    resolve_unit_file_states, unit_name_from_path,
 };
+use crate::domain::service::Service;
 use crate::domain::service_repository::ServiceRepository;
+use crate::domain::service_state::ServiceState;
 use std::error::Error;
 use std::fs;
 use std::io;
@@ -19,6 +22,19 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const INTEGRATION_TIMEOUT: Duration = Duration::from_secs(10);
 
+fn loaded_service(name: &str) -> Service {
+    Service::new(
+        name.to_string(),
+        String::new(),
+        ServiceState::new(
+            "loaded".to_string(),
+            "active".to_string(),
+            "running".to_string(),
+            String::new(),
+        ),
+    )
+}
+
 fn command_error(command: &str, output: &Output) -> io::Error {
     let stderr = String::from_utf8_lossy(&output.stderr);
     io::Error::other(format!(
@@ -26,6 +42,42 @@ fn command_error(command: &str, output: &Output) -> io::Error {
         output.status,
         stderr.trim()
     ))
+}
+
+#[test]
+fn extracts_plain_and_instantiated_unit_names_from_paths() {
+    assert_eq!(
+        unit_name_from_path("/usr/lib/systemd/system/demo.service"),
+        "demo.service"
+    );
+    assert_eq!(
+        unit_name_from_path("/run/systemd/system/worker@1.service"),
+        "worker@1.service"
+    );
+    assert_eq!(unit_name_from_path("plain.service"), "plain.service");
+}
+
+#[test]
+fn resolves_unit_file_states_with_a_blank_for_units_without_a_file() {
+    let states = resolve_unit_file_states(
+        vec![
+            loaded_service("known.service"),
+            loaded_service("transient.service"),
+        ],
+        vec![(
+            "/usr/lib/systemd/system/known.service".to_string(),
+            "enabled".to_string(),
+        )],
+    );
+
+    assert_eq!(
+        states.get("known.service").map(String::as_str),
+        Some("enabled")
+    );
+    assert_eq!(
+        states.get("transient.service").map(String::as_str),
+        Some(" ")
+    );
 }
 
 struct TransientUserUnit {
