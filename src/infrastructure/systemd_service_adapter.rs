@@ -19,6 +19,7 @@ use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 use zbus::{Error, MatchRule, MessageStream};
 
 const LATE_COMPLETION_WATCH_TIMEOUT: Duration = Duration::from_secs(300);
+const MAX_UNIT_FILE_STATE_FALLBACKS: usize = 16;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ServiceAction {
@@ -308,10 +309,14 @@ fn unit_name_from_path(path: &str) -> &str {
     path.rsplit('/').next().unwrap_or(path)
 }
 
-fn resolve_unit_file_states(
+fn resolve_unit_file_states<F>(
     services: Vec<Service>,
     unit_files: Vec<(String, String)>,
-) -> HashMap<String, String> {
+    mut resolve_missing: F,
+) -> HashMap<String, String>
+where
+    F: FnMut(&str) -> Option<String>,
+{
     let known_states: HashMap<&str, String> = unit_files
         .iter()
         .map(|(path, state)| (unit_name_from_path(path), state.clone()))
@@ -324,6 +329,7 @@ fn resolve_unit_file_states(
             let state = known_states
                 .get(name.as_str())
                 .cloned()
+                .or_else(|| resolve_missing(&name))
                 .unwrap_or_else(|| " ".to_string());
             (name, state)
         })
@@ -351,7 +357,14 @@ impl ServiceRepository for SystemdServiceAdapter {
     ) -> Result<HashMap<String, String>, Box<dyn std::error::Error>> {
         let proxy = self.manager_proxy()?;
         let unit_files: Vec<(String, String)> = proxy.call("ListUnitFiles", &())?;
-        Ok(resolve_unit_file_states(services, unit_files))
+        let mut fallbacks_remaining = MAX_UNIT_FILE_STATE_FALLBACKS;
+        Ok(resolve_unit_file_states(services, unit_files, |name| {
+            if fallbacks_remaining == 0 {
+                return None;
+            }
+            fallbacks_remaining -= 1;
+            proxy.call("GetUnitFileState", &name).ok()
+        }))
     }
 
     fn list_services(&self, filter: bool) -> Result<Vec<Service>, Box<dyn std::error::Error>> {

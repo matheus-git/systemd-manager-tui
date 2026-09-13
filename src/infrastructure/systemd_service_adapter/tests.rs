@@ -68,11 +68,46 @@ fn resolves_unit_file_states_with_a_blank_for_units_without_a_file() {
             "/usr/lib/systemd/system/known.service".to_string(),
             "enabled".to_string(),
         )],
+        |_| None,
     );
 
     assert_eq!(
         states.get("known.service").map(String::as_str),
         Some("enabled")
+    );
+    assert_eq!(
+        states.get("transient.service").map(String::as_str),
+        Some(" ")
+    );
+}
+
+#[test]
+fn resolves_only_missing_unit_files_with_the_fallback() {
+    let mut queried = Vec::new();
+    let states = resolve_unit_file_states(
+        vec![
+            loaded_service("known.service"),
+            loaded_service("alias.service"),
+            loaded_service("transient.service"),
+        ],
+        vec![(
+            "/usr/lib/systemd/system/known.service".to_string(),
+            "enabled".to_string(),
+        )],
+        |name| {
+            queried.push(name.to_string());
+            (name == "alias.service").then(|| "alias".to_string())
+        },
+    );
+
+    assert_eq!(queried, ["alias.service", "transient.service"]);
+    assert_eq!(
+        states.get("known.service").map(String::as_str),
+        Some("enabled")
+    );
+    assert_eq!(
+        states.get("alias.service").map(String::as_str),
+        Some("alias")
     );
     assert_eq!(
         states.get("transient.service").map(String::as_str),
