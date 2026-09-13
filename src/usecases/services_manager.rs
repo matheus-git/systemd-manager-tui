@@ -193,8 +193,9 @@ impl ServicesManager {
 impl Drop for ServicesManager {
     fn drop(&mut self) {
         let _ = self.unit_file_query_tx.send(UnitFileQuery::Shutdown);
-        if let Some(handle) = self.unit_file_query_handle.take() {
-            let _ = handle.join();
-        }
+        // A read-only ListUnitFiles request may still be blocked in D-Bus. Its
+        // repository and result sender are owned through Arc, so detaching it is
+        // safe and avoids delaying process exit for an optional cache refresh.
+        let _ = self.unit_file_query_handle.take();
     }
 }

@@ -24,9 +24,8 @@ use crate::domain::service::Service;
 use crate::infrastructure::systemd_service_adapter::ConnectionType;
 use crate::terminal::app::{Actions, AppEvent, ServiceRequestContext};
 
-use rayon::prelude::*;
-
 const PADDING: Padding = Padding::new(1, 1, 1, 1);
+const WORKER_SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(25);
 
 pub const LOADING_PLACEHOLDER: &str = "Loading";
 
@@ -37,7 +36,7 @@ fn resolve_file<'a>(service: &'a Service, states: Option<&'a HashMap<String, Str
     states
         .and_then(|states| states.get(service.name()))
         .map(|service_state| service_state.as_str())
-        .unwrap_or_else(|| service.state().file())
+        .unwrap_or(LOADING_PLACEHOLDER)
 }
 
 fn build_service_row(
@@ -95,7 +94,7 @@ fn generate_rows(
     service_uptime: Option<(&str, &str)>,
 ) -> Vec<Row<'static>> {
     services
-        .par_iter()
+        .iter()
         .map(|service| build_service_row(service, states, service_uptime))
         .collect()
 }
@@ -282,7 +281,7 @@ impl TableServices {
                     break;
                 }
                 let message = match event_rx.lock() {
-                    Ok(receiver) => receiver.recv_timeout(Duration::from_millis(100)),
+                    Ok(receiver) => receiver.recv_timeout(WORKER_SHUTDOWN_POLL_INTERVAL),
                     Err(error) => {
                         let _ = sender.send(AppEvent::Error(format!(
                             "Unit-file result channel failed: {error}"
@@ -389,7 +388,7 @@ impl TableServices {
                 if shutdown.load(Ordering::Acquire) {
                     break;
                 }
-                match rx.recv_timeout(Duration::from_millis(100)) {
+                match rx.recv_timeout(WORKER_SHUTDOWN_POLL_INTERVAL) {
                     Ok(request) => {
                         let mut context = request;
                         // Drain stale requests, keep only the latest
@@ -861,9 +860,10 @@ impl Drop for TableServices {
         if let Some(handle) = self.query_listener_handle.take() {
             let _ = handle.join();
         }
-        if let Some(handle) = self.timestamp_worker_handle.take() {
-            let _ = handle.join();
-        }
+        // Timestamp lookup is read-only and may be inside a blocking D-Bus call.
+        // Dropping the handle detaches it so an optional refresh cannot hold up
+        // Ctrl+C; the worker owns every resource it still needs.
+        let _ = self.timestamp_worker_handle.take();
     }
 }
 

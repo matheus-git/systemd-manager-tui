@@ -361,7 +361,7 @@ impl ServiceRepository for SystemdServiceAdapter {
 
         let services: Vec<Service> = if filter {
             units
-                .into_par_iter()
+                .into_iter()
                 .map(
                     |(name, description, load_state, active_state, sub_state, ..)| {
                         let service_state = ServiceState::new(
@@ -377,7 +377,7 @@ impl ServiceRepository for SystemdServiceAdapter {
                 .collect::<Vec<_>>()
         } else {
             units
-                .into_par_iter()
+                .into_iter()
                 .filter(|(name, ..)| name.ends_with(".service"))
                 .map(
                     |(name, description, load_state, active_state, sub_state, ..)| {

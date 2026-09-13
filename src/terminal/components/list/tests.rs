@@ -162,6 +162,26 @@ fn file_state_resolution_prefers_loaded_state_map() {
 }
 
 #[test]
+fn unresolved_file_state_uses_loading_placeholder_before_background_loading_finishes() {
+    let unit = Service::new(
+        "transient.service".into(),
+        String::new(),
+        ServiceState::new(
+            "loaded".into(),
+            "active".into(),
+            "running".into(),
+            LOADING_PLACEHOLDER.into(),
+        ),
+    );
+
+    assert_eq!(
+        resolve_file(&unit, Some(&HashMap::new())),
+        LOADING_PLACEHOLDER
+    );
+    assert_eq!(resolve_file(&unit, None), LOADING_PLACEHOLDER);
+}
+
+#[test]
 fn explicit_service_file_state_wins_over_loaded_state_map() {
     let unit = service("demo.service", "active");
     let states = HashMap::from([("demo.service".to_string(), "masked".to_string())]);

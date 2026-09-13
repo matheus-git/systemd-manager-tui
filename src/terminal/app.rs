@@ -35,6 +35,8 @@ use super::components::filter::{Filter, InputMode};
 use super::components::list::{ServiceAction, TableServices};
 use super::components::log::ServiceLog;
 
+const INPUT_POLL_INTERVAL: Duration = Duration::from_millis(25);
+
 #[derive(PartialEq)]
 enum Status {
     List,
@@ -159,11 +161,11 @@ impl App {
                     break;
                 }
                 if !event_listener_enabled.load(Ordering::Relaxed) {
-                    thread::sleep(Duration::from_millis(50));
+                    thread::sleep(INPUT_POLL_INTERVAL);
                     continue;
                 }
 
-                match event::poll(Duration::from_millis(100)) {
+                match event::poll(INPUT_POLL_INTERVAL) {
                     Ok(true) => match event::read() {
                         Ok(Event::Key(key_event)) if key_event.kind == KeyEventKind::Press => {
                             if event_tx.send(AppEvent::Key(key_event)).is_err() {
@@ -328,6 +330,11 @@ impl App {
                 }
             }
         }
+
+        // Restore the user's screen before worker Drop implementations wait for
+        // their threads. Shutdown remains orderly, but the TUI disappears as
+        // soon as Ctrl+C is handled.
+        ratatui::restore();
 
         Ok(())
     }
