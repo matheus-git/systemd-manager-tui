@@ -71,6 +71,25 @@ fn background_state_errors_are_returned_to_the_caller() {
 }
 
 #[test]
+fn unit_file_lookup_reuses_the_services_from_the_foreground_query() {
+    let fake =
+        FakeRepository::with_services(vec![service("demo.service", "active", "enabled")], vec![]);
+    let observer = fake.clone();
+    let manager = ServicesManager::new(Box::new(fake));
+    let (sender, receiver) = mpsc::channel();
+
+    manager
+        .list_services(false, list_context(6), Arc::new(sender))
+        .unwrap();
+    assert!(matches!(
+        receiver.recv_timeout(Duration::from_secs(1)),
+        Ok(QueryUnitFile::Finished(context, _)) if context == list_context(6)
+    ));
+
+    assert_eq!(observer.calls(), ["list:false", "states:1"]);
+}
+
+#[test]
 fn service_only_listing_does_not_add_unit_files() {
     let fake = FakeRepository::with_services(
         vec![service("runtime.service", "active", "enabled")],

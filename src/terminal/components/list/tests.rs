@@ -162,6 +162,26 @@ fn file_state_resolution_prefers_loaded_state_map() {
 }
 
 #[test]
+fn unresolved_file_state_uses_loading_placeholder_before_background_loading_finishes() {
+    let unit = Service::new(
+        "transient.service".into(),
+        String::new(),
+        ServiceState::new(
+            "loaded".into(),
+            "active".into(),
+            "running".into(),
+            LOADING_PLACEHOLDER.into(),
+        ),
+    );
+
+    assert_eq!(
+        resolve_file(&unit, Some(&HashMap::new())),
+        LOADING_PLACEHOLDER
+    );
+    assert_eq!(resolve_file(&unit, None), LOADING_PLACEHOLDER);
+}
+
+#[test]
 fn explicit_service_file_state_wins_over_loaded_state_map() {
     let unit = service("demo.service", "active");
     let states = HashMap::from([("demo.service".to_string(), "masked".to_string())]);
@@ -362,6 +382,43 @@ fn unit_file_states_are_applied_only_for_the_current_list_request() {
 }
 
 #[test]
+fn background_workers_start_once_and_are_signalled_on_drop() {
+    let (mut table, receiver) = table_with_receiver();
+    let shutdown = table.workers_shutdown.clone();
+
+    table.spawn_query_listener();
+    table.spawn_timestamp_worker();
+    let query_thread = table.query_listener_handle.as_ref().unwrap().thread().id();
+    let timestamp_thread = table
+        .timestamp_worker_handle
+        .as_ref()
+        .unwrap()
+        .thread()
+        .id();
+
+    table.spawn_query_listener();
+    table.spawn_timestamp_worker();
+
+    assert_eq!(
+        table.query_listener_handle.as_ref().unwrap().thread().id(),
+        query_thread
+    );
+    assert_eq!(
+        table
+            .timestamp_worker_handle
+            .as_ref()
+            .unwrap()
+            .thread()
+            .id(),
+        timestamp_thread
+    );
+    assert!(receiver.try_recv().is_err());
+
+    drop(table);
+    assert!(shutdown.load(Ordering::Acquire));
+}
+
+#[test]
 fn successful_service_action_updates_row_and_unlocks_input() {
     let fake = FakeRepository::default();
     let observer = fake.clone();
@@ -399,6 +456,33 @@ fn failed_service_action_reports_error_and_unlocks_input() {
     ));
     assert!(observer.calls().contains(&"list:false".to_string()));
     assert!(!table.ignore_key_events);
+}
+
+#[test]
+fn failed_refresh_keeps_the_current_list_and_selection() {
+    let fake = FakeRepository::default();
+    fake.fail("list");
+    let (mut table, receiver) = table_with_repository(fake);
+    let existing = service("existing.service", "active");
+    table.services = vec![existing.clone()];
+    table.filtered_services = vec![existing];
+    table.table_state.select(Some(0));
+
+    table.fetch_and_refresh("existing");
+
+    assert_eq!(table.services.len(), 1);
+    assert_eq!(table.services[0].name(), "existing.service");
+    assert_eq!(
+        table.get_selected_service().unwrap().name(),
+        "existing.service"
+    );
+    assert!(matches!(
+        receiver.recv().unwrap(),
+        AppEvent::Error(message)
+            if message.contains("system connection")
+                && message.contains("list failed")
+                && message.contains("current list was kept")
+    ));
 }
 
 #[test]

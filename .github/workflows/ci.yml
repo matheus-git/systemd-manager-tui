@@ -25,6 +25,11 @@ jobs:
       - name: Run tests
         run: cargo test --all-targets --locked
 
+      - name: Validate packaging script
+        run: |
+          bash -n build.sh
+          ./build.sh --help > /dev/null
+
   clippy:
     name: Clippy
     runs-on: ubuntu-latest

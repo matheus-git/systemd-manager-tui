@@ -125,3 +125,67 @@ fn shortcuts_panel_renders_context_actions_and_global_exit() {
     assert!(rendered.contains("Custom action: x"));
     assert!(rendered.contains("Exit: Ctrl + c"));
 }
+
+#[test]
+fn ctrl_c_hides_the_cursor_and_stops_the_app() {
+    let mut app = test_app();
+    let backend = TestBackend::new(20, 5);
+    let expected_hidden_backend = backend.clone();
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal.show_cursor().unwrap();
+
+    let handled = app
+        .handle_quit_key(
+            KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
+            &mut terminal,
+        )
+        .unwrap();
+
+    assert!(handled);
+    assert!(!app.running);
+    assert_eq!(terminal.backend(), &expected_hidden_backend);
+}
+
+#[test]
+fn ctrl_shift_c_also_uses_the_controlled_shutdown_path() {
+    let mut app = test_app();
+    let backend = TestBackend::new(20, 5);
+    let expected_hidden_backend = backend.clone();
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal.show_cursor().unwrap();
+
+    let handled = app
+        .handle_quit_key(
+            KeyEvent::new(
+                KeyCode::Char('C'),
+                KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+            ),
+            &mut terminal,
+        )
+        .unwrap();
+
+    assert!(handled);
+    assert!(!app.running);
+    assert_eq!(terminal.backend(), &expected_hidden_backend);
+}
+
+#[test]
+fn plain_c_does_not_stop_the_app_or_change_cursor_visibility() {
+    let mut app = test_app();
+    let backend = TestBackend::new(20, 5);
+    let mut visible_backend = backend.clone();
+    visible_backend.show_cursor().unwrap();
+    let mut terminal = Terminal::new(backend).unwrap();
+    terminal.show_cursor().unwrap();
+
+    let handled = app
+        .handle_quit_key(
+            KeyEvent::new(KeyCode::Char('c'), KeyModifiers::NONE),
+            &mut terminal,
+        )
+        .unwrap();
+
+    assert!(!handled);
+    assert!(app.running);
+    assert_eq!(terminal.backend(), &visible_backend);
+}

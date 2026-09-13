@@ -12,10 +12,11 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::error::Error;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
-use std::thread;
+use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use crate::Config;
@@ -23,9 +24,8 @@ use crate::domain::service::Service;
 use crate::infrastructure::systemd_service_adapter::ConnectionType;
 use crate::terminal::app::{Actions, AppEvent, ServiceRequestContext};
 
-use rayon::prelude::*;
-
 const PADDING: Padding = Padding::new(1, 1, 1, 1);
+const WORKER_SHUTDOWN_POLL_INTERVAL: Duration = Duration::from_millis(25);
 
 pub const LOADING_PLACEHOLDER: &str = "Loading";
 
@@ -36,7 +36,7 @@ fn resolve_file<'a>(service: &'a Service, states: Option<&'a HashMap<String, Str
     states
         .and_then(|states| states.get(service.name()))
         .map(|service_state| service_state.as_str())
-        .unwrap_or_else(|| service.state().file())
+        .unwrap_or(LOADING_PLACEHOLDER)
 }
 
 fn build_service_row(
@@ -94,7 +94,7 @@ fn generate_rows(
     service_uptime: Option<(&str, &str)>,
 ) -> Vec<Row<'static>> {
     services
-        .par_iter()
+        .iter()
         .map(|service| build_service_row(service, states, service_uptime))
         .collect()
 }
@@ -209,9 +209,16 @@ pub struct TableServices {
     active_connection: ConnectionType,
     list_generation: u64,
     current_list_context: Arc<Mutex<ListRequestContext>>,
+    workers_shutdown: Arc<AtomicBool>,
+    query_listener_handle: Option<JoinHandle<()>>,
+    timestamp_worker_handle: Option<JoinHandle<()>>,
 }
 
 impl TableServices {
+    fn dispatch(&self, action: Actions) {
+        let _ = self.sender.send(AppEvent::Action(action));
+    }
+
     pub fn new(sender: Sender<AppEvent>, usecase: Rc<RefCell<ServicesManager>>) -> Self {
         let (event_tx, event_rx) = mpsc::channel::<QueryUnitFile>();
         let (timestamp_request_tx, timestamp_request_rx) = mpsc::channel::<ServiceRequestContext>();
@@ -245,26 +252,36 @@ impl TableServices {
             active_connection: ConnectionType::System,
             list_generation: 0,
             current_list_context: Arc::new(Mutex::new(initial_context)),
+            workers_shutdown: Arc::new(AtomicBool::new(false)),
+            query_listener_handle: None,
+            timestamp_worker_handle: None,
         }
     }
 
     pub fn init(&mut self, config: &Config) {
-        self.fetch_services();
+        let _ = self.fetch_services();
         self.spawn_query_listener();
         self.spawn_timestamp_worker();
         self.refresh(&config.filter);
     }
 
-    fn spawn_query_listener(&self) {
+    fn spawn_query_listener(&mut self) {
+        if self.query_listener_handle.is_some() {
+            return;
+        }
         let event_rx = self.event_rx.clone();
         let sender = self.sender.clone();
         let states = self.states.clone();
         let current_context = self.current_list_context.clone();
+        let shutdown = self.workers_shutdown.clone();
 
-        thread::spawn(move || {
+        self.query_listener_handle = Some(thread::spawn(move || {
             loop {
+                if shutdown.load(Ordering::Acquire) {
+                    break;
+                }
                 let message = match event_rx.lock() {
-                    Ok(receiver) => receiver.recv(),
+                    Ok(receiver) => receiver.recv_timeout(WORKER_SHUTDOWN_POLL_INTERVAL),
                     Err(error) => {
                         let _ = sender.send(AppEvent::Error(format!(
                             "Unit-file result channel failed: {error}"
@@ -311,10 +328,11 @@ impl TableServices {
                             break;
                         }
                     }
-                    Err(_) => break,
+                    Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
                 }
             }
-        });
+        }));
     }
 
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
@@ -352,6 +370,9 @@ impl TableServices {
     }
 
     fn spawn_timestamp_worker(&mut self) {
+        if self.timestamp_worker_handle.is_some() {
+            return;
+        }
         let Some(rx) = self.timestamp_request_rx.take() else {
             let _ = self.sender.send(AppEvent::Error(
                 "Timestamp worker was already started".to_string(),
@@ -360,29 +381,40 @@ impl TableServices {
         };
         let repo = self.usecase.borrow().repository_handle();
         let sender = self.sender.clone();
+        let shutdown = self.workers_shutdown.clone();
 
-        thread::spawn(move || {
-            while let Ok(request) = rx.recv() {
-                let mut context = request;
-                // Drain stale requests, keep only the latest
-                while let Ok(request) = rx.try_recv() {
-                    context = request;
+        self.timestamp_worker_handle = Some(thread::spawn(move || {
+            loop {
+                if shutdown.load(Ordering::Acquire) {
+                    break;
                 }
-                let ts = match repo.lock() {
-                    Ok(repo) => repo
-                        .get_active_enter_timestamp(&context.service_name)
-                        .ok()
-                        .filter(|&t| t > 0),
-                    Err(error) => {
-                        let _ = sender.send(AppEvent::Error(format!(
-                            "Timestamp repository lock failed: {error}"
-                        )));
-                        break;
+                match rx.recv_timeout(WORKER_SHUTDOWN_POLL_INTERVAL) {
+                    Ok(request) => {
+                        let mut context = request;
+                        // Drain stale requests, keep only the latest
+                        while let Ok(request) = rx.try_recv() {
+                            context = request;
+                        }
+                        let ts = match repo.lock() {
+                            Ok(repo) => repo
+                                .get_active_enter_timestamp(&context.service_name)
+                                .ok()
+                                .filter(|&t| t > 0),
+                            Err(error) => {
+                                let _ = sender.send(AppEvent::Error(format!(
+                                    "Timestamp repository lock failed: {error}"
+                                )));
+                                break;
+                            }
+                        };
+                        let _ =
+                            sender.send(AppEvent::Action(Actions::UpdateTimestamp(context, ts)));
                     }
-                };
-                let _ = sender.send(AppEvent::Action(Actions::UpdateTimestamp(context, ts)));
+                    Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                }
             }
-        });
+        }));
     }
 
     fn refresh_selected_timestamp(&mut self) {
@@ -492,7 +524,7 @@ impl TableServices {
         }
     }
 
-    fn fetch_services(&mut self) {
+    fn fetch_services(&mut self) -> bool {
         self.list_generation = self.list_generation.wrapping_add(1);
         let context = ListRequestContext {
             connection: self.active_connection,
@@ -501,11 +533,23 @@ impl TableServices {
         if let Ok(mut current) = self.current_list_context.lock() {
             *current = context;
         }
-        self.services = self
-            .usecase
-            .borrow()
-            .list_services(self.filter_all, context, self.event_tx.clone())
-            .unwrap_or_default();
+        let result =
+            self.usecase
+                .borrow()
+                .list_services(self.filter_all, context, self.event_tx.clone());
+        match result {
+            Ok(services) => {
+                self.services = services;
+                true
+            }
+            Err(error) => {
+                let _ = self.sender.send(AppEvent::Error(format!(
+                    "Could not refresh services from the {} connection: {error}. The current list was kept.",
+                    self.active_connection
+                )));
+                false
+            }
+        }
     }
 
     pub fn set_active_connection(&mut self, connection: ConnectionType) {
@@ -524,8 +568,13 @@ impl TableServices {
     }
 
     fn fetch_and_refresh(&mut self, filter_text: &str) {
-        self.fetch_services();
-        self.refresh(filter_text);
+        if self.fetch_services() {
+            self.refresh(filter_text);
+        }
+    }
+
+    pub fn refresh_current(&mut self) {
+        self.fetch_and_refresh(&self.old_filter_text.clone());
     }
 
     fn filter(&self, filter_text: &str, services: &[Service]) -> Vec<Service> {
@@ -558,59 +607,31 @@ impl TableServices {
 
         match key.code {
             KeyCode::Char('r') => {
-                self.sender
-                    .send(AppEvent::Action(Actions::ServiceAction(
-                        ServiceAction::Restart,
-                    )))
-                    .unwrap();
+                self.dispatch(Actions::ServiceAction(ServiceAction::Restart));
                 return;
             }
             KeyCode::Char('s') => {
-                self.sender
-                    .send(AppEvent::Action(Actions::ServiceAction(
-                        ServiceAction::Start,
-                    )))
-                    .unwrap();
+                self.dispatch(Actions::ServiceAction(ServiceAction::Start));
                 return;
             }
             KeyCode::Char('x') => {
-                self.sender
-                    .send(AppEvent::Action(Actions::ServiceAction(
-                        ServiceAction::Stop,
-                    )))
-                    .unwrap();
+                self.dispatch(Actions::ServiceAction(ServiceAction::Stop));
                 return;
             }
             KeyCode::Char('e') => {
-                self.sender
-                    .send(AppEvent::Action(Actions::ServiceAction(
-                        ServiceAction::Enable,
-                    )))
-                    .unwrap();
+                self.dispatch(Actions::ServiceAction(ServiceAction::Enable));
                 return;
             }
             KeyCode::Char('d') => {
-                self.sender
-                    .send(AppEvent::Action(Actions::ServiceAction(
-                        ServiceAction::Disable,
-                    )))
-                    .unwrap();
+                self.dispatch(Actions::ServiceAction(ServiceAction::Disable));
                 return;
             }
             KeyCode::Char('u') => {
-                self.sender
-                    .send(AppEvent::Action(Actions::ServiceAction(
-                        ServiceAction::RefreshAll,
-                    )))
-                    .unwrap();
+                self.dispatch(Actions::ServiceAction(ServiceAction::RefreshAll));
                 return;
             }
             KeyCode::Char('f') => {
-                self.sender
-                    .send(AppEvent::Action(Actions::ServiceAction(
-                        ServiceAction::ToggleFilter,
-                    )))
-                    .unwrap();
+                self.dispatch(Actions::ServiceAction(ServiceAction::ToggleFilter));
                 return;
             }
             KeyCode::Char('a') => {
@@ -626,17 +647,11 @@ impl TableServices {
                 return;
             }
             KeyCode::Char('m') => {
-                self.sender
-                    .send(AppEvent::Action(Actions::ServiceAction(
-                        ServiceAction::ToggleMask,
-                    )))
-                    .unwrap();
+                self.dispatch(Actions::ServiceAction(ServiceAction::ToggleMask));
                 return;
             }
             KeyCode::Char('?') => {
-                self.sender
-                    .send(AppEvent::Action(Actions::ShowHelp))
-                    .unwrap();
+                self.dispatch(Actions::ShowHelp);
                 return;
             }
             _ => {}
@@ -653,12 +668,10 @@ impl TableServices {
             KeyCode::PageDown => self.select_page_down(),
             KeyCode::PageUp => self.select_page_up(),
             KeyCode::Char('c') => {
-                self.sender
-                    .send(AppEvent::Action(Actions::GoDetails))
-                    .unwrap();
+                self.dispatch(Actions::GoDetails);
             }
             KeyCode::Char('v') => {
-                self.sender.send(AppEvent::Action(Actions::GoLog)).unwrap();
+                self.dispatch(Actions::GoLog);
             }
             _ => {}
         }
@@ -692,17 +705,8 @@ impl TableServices {
 
         let jump = 10;
         if let Some(selected_index) = self.table_state.selected() {
-            let selected_index =
-                isize::try_from(selected_index).expect("Failed to convert selected index to isize");
-            let new_index = selected_index - jump as isize;
-            let wrapped_index = if new_index < 0 {
-                let len = isize::try_from(self.filtered_services.len())
-                    .expect("Failed to convert table length to isize");
-                usize::try_from(len + new_index % len)
-                    .expect("Failed to convert calculated circular index to usize")
-            } else {
-                usize::try_from(new_index).expect("Failed to convert new_index to usize")
-            };
+            let len = self.filtered_services.len();
+            let wrapped_index = (selected_index + len - jump % len) % len;
             self.table_state.select(Some(wrapped_index));
         } else {
             self.table_state.select(Some(0));
@@ -756,7 +760,9 @@ impl TableServices {
                     let state_opt = match self.states.lock() {
                         Ok(guard) => guard.get(service.name()).cloned(),
                         Err(e) => {
-                            self.sender.send(AppEvent::Error(e.to_string())).unwrap();
+                            let _ = self.sender.send(AppEvent::Error(format!(
+                                "Could not read the service state: {e}"
+                            )));
                             return;
                         }
                     };
@@ -771,7 +777,7 @@ impl TableServices {
                             }
                         }
 
-                        self.fetch_services();
+                        let _ = self.fetch_services();
                         self.fetch_and_refresh(&self.old_filter_text.clone());
                     }
                 }
@@ -816,7 +822,7 @@ impl TableServices {
                 // Re-read the unit list before returning control so the synchronous UI
                 // reflects the freshest state available.
                 self.fetch_and_refresh(&self.old_filter_text.clone());
-                self.sender.send(AppEvent::Error(e.to_string())).unwrap();
+                let _ = self.sender.send(AppEvent::Error(e.to_string()));
             }
         }
     }
@@ -845,6 +851,19 @@ impl TableServices {
         }
 
         help_text
+    }
+}
+
+impl Drop for TableServices {
+    fn drop(&mut self) {
+        self.workers_shutdown.store(true, Ordering::Release);
+        if let Some(handle) = self.query_listener_handle.take() {
+            let _ = handle.join();
+        }
+        // Timestamp lookup is read-only and may be inside a blocking D-Bus call.
+        // Dropping the handle detaches it so an optional refresh cannot hold up
+        // Ctrl+C; the worker owns every resource it still needs.
+        let _ = self.timestamp_worker_handle.take();
     }
 }
 

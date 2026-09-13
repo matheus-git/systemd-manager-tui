@@ -41,7 +41,15 @@ impl ServiceDetails {
 
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
         if let Some(service_arc) = &self.service {
-            let service = service_arc.lock().unwrap();
+            let service = match service_arc.lock() {
+                Ok(service) => service,
+                Err(error) => {
+                    let _ = self.sender.send(AppEvent::Error(format!(
+                        "Could not render service details: {error}"
+                    )));
+                    return;
+                }
+            };
             let paragraph = self.generate_styled_unit_file_paragraph();
             let paragraph = paragraph
                 .block(
@@ -89,11 +97,11 @@ impl ServiceDetails {
         match key.code {
             code if right_keys.contains(&code) => {
                 self.reset();
-                self.sender.send(AppEvent::Action(Actions::GoLog)).unwrap();
+                let _ = self.sender.send(AppEvent::Action(Actions::GoLog));
             }
             code if left_keys.contains(&code) => {
                 self.reset();
-                self.sender.send(AppEvent::Action(Actions::GoLog)).unwrap();
+                let _ = self.sender.send(AppEvent::Action(Actions::GoLog));
             }
             code if up_keys.contains(&code) => {
                 self.scroll = self.scroll.saturating_sub(1);
@@ -108,9 +116,9 @@ impl ServiceDetails {
                 self.scroll += 10;
             }
             KeyCode::Char('e') => {
-                self.sender
-                    .send(AppEvent::Action(Actions::EditCurrentService))
-                    .unwrap();
+                let _ = self
+                    .sender
+                    .send(AppEvent::Action(Actions::EditCurrentService));
             }
             KeyCode::Char('q') | KeyCode::Esc => {
                 self.exit();
@@ -142,14 +150,22 @@ impl ServiceDetails {
 
     fn exit(&mut self) {
         self.reset();
-        self.sender.send(AppEvent::Action(Actions::GoList)).unwrap();
+        let _ = self.sender.send(AppEvent::Action(Actions::GoList));
     }
 
     pub fn fetch_unit_file(&mut self) {
         let maybe_service = self.service.clone();
 
         if let Some(service_arc) = maybe_service {
-            let service = service_arc.lock().unwrap();
+            let service = match service_arc.lock() {
+                Ok(service) => service,
+                Err(error) => {
+                    let _ = self.sender.send(AppEvent::Error(format!(
+                        "Could not read the selected service: {error}"
+                    )));
+                    return;
+                }
+            };
 
             let result = self.usecase.borrow().systemctl_cat(&service);
 
@@ -158,7 +174,7 @@ impl ServiceDetails {
                     self.unit_file = content;
                 }
                 Err(e) => {
-                    self.sender.send(AppEvent::Error(e.to_string())).unwrap();
+                    let _ = self.sender.send(AppEvent::Error(e.to_string()));
                 }
             }
         }

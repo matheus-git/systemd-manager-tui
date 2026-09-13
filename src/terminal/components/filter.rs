@@ -161,12 +161,12 @@ impl Filter {
     }
 
     fn submit_message(&mut self) {
-        self.sender
-            .send(AppEvent::Action(Actions::Filter(self.input.clone())))
-            .unwrap();
-        self.sender
-            .send(AppEvent::Action(Actions::UpdateIgnoreListKeys(false)))
-            .unwrap();
+        let _ = self
+            .sender
+            .send(AppEvent::Action(Actions::Filter(self.input.clone())));
+        let _ = self
+            .sender
+            .send(AppEvent::Action(Actions::UpdateIgnoreListKeys(false)));
         self.input_mode = InputMode::Normal;
     }
 
@@ -174,9 +174,9 @@ impl Filter {
         match self.input_mode {
             InputMode::Normal => match key.code {
                 KeyCode::Char('i') | KeyCode::Char('/') => {
-                    self.sender
-                        .send(AppEvent::Action(Actions::UpdateIgnoreListKeys(true)))
-                        .unwrap();
+                    let _ = self
+                        .sender
+                        .send(AppEvent::Action(Actions::UpdateIgnoreListKeys(true)));
                     self.input_mode = InputMode::Editing;
                     if self.input.is_empty() {
                         self.character_index = 0;
@@ -185,12 +185,12 @@ impl Filter {
 
                 KeyCode::Esc => {
                     self.input = String::new();
-                    self.sender
-                        .send(AppEvent::Action(Actions::Filter(self.input.clone())))
-                        .unwrap();
-                    self.sender
-                        .send(AppEvent::Action(Actions::UpdateIgnoreListKeys(false)))
-                        .unwrap();
+                    let _ = self
+                        .sender
+                        .send(AppEvent::Action(Actions::Filter(self.input.clone())));
+                    let _ = self
+                        .sender
+                        .send(AppEvent::Action(Actions::UpdateIgnoreListKeys(false)));
                 }
                 _ => {}
             },
@@ -238,16 +238,16 @@ impl Filter {
                     KeyCode::Left => self.move_cursor_left(),
                     KeyCode::Right => self.move_cursor_right(),
                     KeyCode::Esc => {
-                        self.sender
-                            .send(AppEvent::Action(Actions::UpdateIgnoreListKeys(false)))
-                            .unwrap();
+                        let _ = self
+                            .sender
+                            .send(AppEvent::Action(Actions::UpdateIgnoreListKeys(false)));
                         self.input_mode = InputMode::Normal;
                     }
                     _ => {}
                 }
-                self.sender
-                    .send(AppEvent::Action(Actions::Filter(self.input.clone())))
-                    .unwrap();
+                let _ = self
+                    .sender
+                    .send(AppEvent::Action(Actions::Filter(self.input.clone())));
             }
             InputMode::Editing => {}
         }

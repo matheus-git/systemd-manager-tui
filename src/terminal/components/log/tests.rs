@@ -73,6 +73,21 @@ fn fetch_dispatches_log_update_event() {
 }
 
 #[test]
+fn log_failure_is_reported_without_panicking() {
+    let fake = FakeRepository::default();
+    fake.fail("log");
+    let (mut log, receiver) = log_with(fake);
+
+    log.fetch_log_and_dispatch(request_context("broken.service"));
+
+    assert!(matches!(
+        receiver.recv().unwrap(),
+        AppEvent::Error(message)
+            if message.contains("broken.service") && message.contains("log failed")
+    ));
+}
+
+#[test]
 fn auto_refresh_changes_border_and_shortcut_label() {
     let (mut log, _receiver) = log_with(FakeRepository::default());
 
@@ -105,6 +120,20 @@ fn auto_refresh_state_is_visible_in_rendered_border_color() {
         Color::Rgb(255, 165, 0)
     );
     log.set_auto_refresh(false);
+}
+
+#[test]
+fn auto_refresh_owns_exactly_one_stoppable_worker() {
+    let (mut log, _receiver) = log_with(FakeRepository::default());
+    let toggle = KeyEvent::new(KeyCode::Char('a'), crossterm::event::KeyModifiers::NONE);
+
+    log.on_key_event(toggle);
+    assert!(log.auto_refresh_worker.is_some());
+    assert!(*log.auto_refresh.lock().unwrap());
+
+    log.on_key_event(toggle);
+    assert!(log.auto_refresh_worker.is_none());
+    assert!(!*log.auto_refresh.lock().unwrap());
 }
 
 #[test]

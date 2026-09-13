@@ -6,6 +6,8 @@ use crossterm::{
 };
 use ratatui::DefaultTerminal;
 use ratatui::Frame;
+use ratatui::Terminal;
+use ratatui::backend::Backend;
 use ratatui::layout::{Alignment, Constraint, Layout, Margin, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -16,7 +18,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
-use std::thread;
+use std::thread::{self, JoinHandle};
 use std::time::Duration;
 use std::{
     io::{self},
@@ -24,7 +26,7 @@ use std::{
 };
 
 use crate::Config;
-use crate::infrastructure::systemd_service_adapter::ConnectionType;
+use crate::infrastructure::systemd_service_adapter::{CompletedOperation, ConnectionType};
 use crate::terminal::components::list::ActiveFilterState;
 use crate::usecases::services_manager::ServicesManager;
 
@@ -32,6 +34,8 @@ use super::components::details::ServiceDetails;
 use super::components::filter::{Filter, InputMode};
 use super::components::list::{ServiceAction, TableServices};
 use super::components::log::ServiceLog;
+
+const INPUT_POLL_INTERVAL: Duration = Duration::from_millis(25);
 
 #[derive(PartialEq)]
 enum Status {
@@ -57,6 +61,7 @@ pub enum Actions {
     ShowHelp,
     Redraw,
     UpdateTimestamp(ServiceRequestContext, Option<u64>),
+    OperationCompleted(CompletedOperation),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -91,6 +96,8 @@ pub struct App {
     running: bool,
     status: Status,
     event_listener_enabled: Arc<AtomicBool>,
+    event_listener_shutdown: Arc<AtomicBool>,
+    event_listener_handle: Option<JoinHandle<()>>,
     table_service: TableServices,
     filter: Filter,
     service_log: ServiceLog,
@@ -117,6 +124,8 @@ impl App {
             running: true,
             status: Status::List,
             event_listener_enabled: Arc::new(AtomicBool::new(true)),
+            event_listener_shutdown: Arc::new(AtomicBool::new(false)),
+            event_listener_handle: None,
             table_service,
             filter,
             service_log,
@@ -132,24 +141,31 @@ impl App {
 
     pub fn init(&mut self, config: Config) {
         self.table_service.init(&config);
-        self.event_tx
-            .send(AppEvent::Action(Actions::Filter(config.filter)))
-            .unwrap();
+        let _ = self
+            .event_tx
+            .send(AppEvent::Action(Actions::Filter(config.filter)));
         self.spawn_key_event_listener();
     }
 
-    fn spawn_key_event_listener(&self) {
+    fn spawn_key_event_listener(&mut self) {
+        if self.event_listener_handle.is_some() {
+            return;
+        }
         let event_tx = self.event_tx.clone();
         let event_listener_enabled = self.event_listener_enabled.clone();
+        let shutdown = self.event_listener_shutdown.clone();
 
-        thread::spawn(move || {
+        self.event_listener_handle = Some(thread::spawn(move || {
             loop {
+                if shutdown.load(Ordering::Acquire) {
+                    break;
+                }
                 if !event_listener_enabled.load(Ordering::Relaxed) {
-                    thread::sleep(Duration::from_millis(50));
+                    thread::sleep(INPUT_POLL_INTERVAL);
                     continue;
                 }
 
-                match event::poll(Duration::from_millis(100)) {
+                match event::poll(INPUT_POLL_INTERVAL) {
                     Ok(true) => match event::read() {
                         Ok(Event::Key(key_event)) if key_event.kind == KeyEventKind::Press => {
                             if event_tx.send(AppEvent::Key(key_event)).is_err() {
@@ -173,17 +189,17 @@ impl App {
                     }
                 }
             }
-        });
+        }));
     }
 
-    pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
+    pub fn run(mut self, terminal: &mut DefaultTerminal) -> Result<()> {
         self.running = true;
 
         while self.running {
             match self.status {
-                Status::Log => self.draw_log_status(&mut terminal)?,
-                Status::List => self.draw_list_status(&mut terminal)?,
-                Status::Details => self.draw_details_status(&mut terminal)?,
+                Status::Log => self.draw_log_status(terminal)?,
+                Status::List => self.draw_list_status(terminal)?,
+                Status::Details => self.draw_details_status(terminal)?,
             }
 
             let use_timeout =
@@ -205,7 +221,7 @@ impl App {
                         if self.show_help {
                             self.show_help = false;
                         } else {
-                            self.on_key_event(key, &mut terminal)?;
+                            self.on_key_event(key, terminal)?;
                             self.service_log.on_key_event(key);
                         }
                     }
@@ -221,7 +237,7 @@ impl App {
                                 self.table_service.set_selected_index(0);
                             }
                         } else {
-                            self.on_key_event(key, &mut terminal)?;
+                            self.on_key_event(key, terminal)?;
                             self.on_key_horizontal_event(
                                 key,
                                 self.filter.input_mode == InputMode::Editing,
@@ -234,7 +250,7 @@ impl App {
                         if self.show_help {
                             self.show_help = false;
                         } else {
-                            self.on_key_event(key, &mut terminal)?;
+                            self.on_key_event(key, terminal)?;
                             self.details.on_key_event(key);
                         }
                     }
@@ -274,6 +290,17 @@ impl App {
                 AppEvent::Action(Actions::UpdateTimestamp(context, ts)) => {
                     self.table_service.update_timestamp(context, ts);
                 }
+                AppEvent::Action(Actions::OperationCompleted(completion)) => {
+                    if completion.connection == self.active_connection {
+                        self.table_service.refresh_current();
+                        if completion.result != "done" {
+                            self.event_tx.send(AppEvent::Error(format!(
+                                "systemd finished {} for '{}' with result '{}' after the earlier timeout",
+                                completion.action, completion.service, completion.result
+                            )))?;
+                        }
+                    }
+                }
                 AppEvent::Action(Actions::UpdateDetails | Actions::Redraw) => {}
                 AppEvent::Action(Actions::RefreshDetails) => {
                     if self.status == Status::Details {
@@ -290,19 +317,24 @@ impl App {
                 }
                 AppEvent::Action(Actions::EditCurrentService) => {
                     if let Some(service) = &self.table_service.get_selected_service() {
-                        self.edit_unit(&mut terminal, service.name())?;
+                        self.edit_unit(terminal, service.name())?;
                         self.event_tx
                             .send(AppEvent::Action(Actions::RefreshDetails))?;
                     }
                 }
                 AppEvent::Error(error_msg) => {
-                    self.error_popup(&mut terminal, &error_msg)?;
+                    self.error_popup(terminal, &error_msg)?;
                 }
                 AppEvent::Action(Actions::ShowHelp) => {
                     self.show_help = !self.show_help;
                 }
             }
         }
+
+        // Restore the user's screen before worker Drop implementations wait for
+        // their threads. Shutdown remains orderly, but the TUI disappears as
+        // soon as Ctrl+C is handled.
+        ratatui::restore();
 
         Ok(())
     }
@@ -649,8 +681,7 @@ impl App {
                 .map(|line| line.spans.iter().map(ratatui::prelude::Span::width).sum())
                 .max()
                 .unwrap_or(0);
-            let shortcuts_width =
-                u16::try_from(shortcuts_width).expect("Failed to convert shortcuts_width to u16");
+            let shortcuts_width = u16::try_from(shortcuts_width).unwrap_or(u16::MAX);
             if help_area.width > shortcuts_width {
                 help_text.push(Line::raw(""));
             }
@@ -672,13 +703,8 @@ impl App {
     }
 
     fn on_key_event(&mut self, key: KeyEvent, terminal: &mut DefaultTerminal) -> Result<()> {
-        if let KeyEvent {
-            modifiers: KeyModifiers::CONTROL,
-            code: KeyCode::Char('c' | 'C'),
-            ..
-        } = key
-        {
-            self.quit();
+        if self.handle_quit_key(key, terminal)? {
+            return Ok(());
         }
         if let KeyEvent {
             modifiers: KeyModifiers::CONTROL,
@@ -689,6 +715,24 @@ impl App {
             self.suspend_tui(terminal)?;
         }
         Ok(())
+    }
+
+    fn handle_quit_key<B: Backend>(
+        &mut self,
+        key: KeyEvent,
+        terminal: &mut Terminal<B>,
+    ) -> Result<bool> {
+        if matches!(key.code, KeyCode::Char('c' | 'C'))
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+        {
+            // The filter may have made the cursor visible in the last rendered frame.
+            // Hide it before shutdown work starts so it cannot remain visible on the
+            // alternate screen while workers are being joined.
+            terminal.hide_cursor()?;
+            self.quit();
+            return Ok(true);
+        }
+        Ok(false)
     }
 
     fn suspend_tui(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
@@ -741,14 +785,10 @@ impl App {
             .borrow_mut()
             .change_repository_connection(requested_connection)
         {
-            self.event_tx
-                .send(AppEvent::Error(
-                    format!(
+            let _ = self.event_tx.send(AppEvent::Error(format!(
                         "Failed to switch from {} to {requested_connection}: {err}. The {} connection remains active.",
                         self.active_connection, self.active_connection
-                    ),
-                ))
-                .expect("Failed to change connection type");
+                    )));
             return;
         }
 
@@ -757,9 +797,7 @@ impl App {
         self.table_service
             .set_active_connection(requested_connection);
         self.table_service.invalidate_timestamp();
-        self.event_tx
-            .send(AppEvent::Action(Actions::ResetList))
-            .expect("Failed to send ResetList event");
+        let _ = self.event_tx.send(AppEvent::Action(Actions::ResetList));
     }
 
     fn service_context(&self, service: &crate::domain::service::Service) -> ServiceRequestContext {
@@ -779,6 +817,15 @@ impl App {
 
     fn quit(&mut self) {
         self.running = false;
+    }
+}
+
+impl Drop for App {
+    fn drop(&mut self) {
+        self.event_listener_shutdown.store(true, Ordering::Release);
+        if let Some(handle) = self.event_listener_handle.take() {
+            let _ = handle.join();
+        }
     }
 }
 
