@@ -49,6 +49,77 @@ fn render_loading(frame: &mut Frame, area: Rect) {
     frame.render_widget(loading, horizontal[1]);
 }
 
+#[cfg(test)]
+#[allow(clippy::items_after_test_module)]
+mod tests {
+    use super::*;
+    use crate::test_support::{service, FakeRepository};
+    use ratatui::backend::TestBackend;
+    use ratatui::Terminal;
+    use std::sync::mpsc;
+
+    fn log_with(repository: FakeRepository) -> (ServiceLog, mpsc::Receiver<AppEvent>) {
+        let (sender, receiver) = mpsc::channel();
+        let manager = ServicesManager::new(Box::new(repository));
+        (ServiceLog::new(sender, Rc::new(RefCell::new(manager))), receiver)
+    }
+
+    fn rendered_text(log: &mut ServiceLog, width: u16, height: u16) -> String {
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| log.render(frame, frame.area())).unwrap();
+        terminal.backend().buffer().content().iter().map(|cell| cell.symbol()).collect()
+    }
+
+    #[test]
+    fn empty_log_renders_loading_state() {
+        let (mut log, _receiver) = log_with(FakeRepository::default());
+
+        assert!(rendered_text(&mut log, 40, 8).contains("Loading..."));
+    }
+
+    #[test]
+    fn renders_service_name_and_latest_log_lines() {
+        let (mut log, _receiver) = log_with(FakeRepository::default());
+        log.update("demo.service".into(), "first\nsecond\nthird".into());
+
+        let screen = rendered_text(&mut log, 40, 5);
+
+        assert!(screen.contains("demo.service log"));
+        assert!(screen.contains("first"));
+        assert!(screen.contains("third"));
+    }
+
+    #[test]
+    fn fetch_dispatches_log_update_event() {
+        let fake = FakeRepository::with_content("journal output", "", 0);
+        let observer = fake.clone();
+        let (mut log, receiver) = log_with(fake);
+        let unit = service("demo.service", "active", "enabled");
+
+        log.fetch_log_and_dispatch(&unit);
+
+        assert!(matches!(
+            receiver.recv().unwrap(),
+            AppEvent::Action(Actions::Updatelog((name, content)))
+                if name == "demo.service" && content == "journal output"
+        ));
+        assert_eq!(observer.calls(), ["log:demo.service"]);
+    }
+
+    #[test]
+    fn auto_refresh_changes_border_and_shortcut_label() {
+        let (mut log, _receiver) = log_with(FakeRepository::default());
+
+        log.set_auto_refresh(true);
+
+        assert!(matches!(log.border_color, BorderColor::Orange));
+        let shortcuts = log.shortcuts();
+        assert!(shortcuts.iter().any(|line| line.to_string().contains("Disable auto-refresh")));
+        log.set_auto_refresh(false);
+    }
+}
+
 enum BorderColor {
     White,
     Orange,

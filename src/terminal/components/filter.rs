@@ -300,3 +300,36 @@ impl Filter {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ratatui::backend::{Backend, TestBackend};
+    use ratatui::Terminal;
+    use std::sync::mpsc::{self, Receiver};
+
+    fn filter_with_input(input: &str) -> (Filter, Receiver<AppEvent>) {
+        let (sender, receiver) = mpsc::channel();
+        (Filter::new(sender, input.to_string()), receiver)
+    }
+
+    #[test]
+    fn renders_filter_and_cursor_to_test_backend() {
+        let (mut filter, _receiver) = filter_with_input("docker");
+        filter.input_mode = InputMode::Editing;
+        let backend = TestBackend::new(40, 4);
+        let mut terminal = Terminal::new(backend).unwrap();
+
+        terminal.draw(|frame| filter.draw(frame, frame.area())).unwrap();
+
+        let rendered = terminal.backend().buffer().content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(rendered.contains("docker"));
+        assert_eq!(
+            terminal.backend_mut().get_cursor_position().unwrap(),
+            Position::new(7, 2)
+        );
+    }
+}
