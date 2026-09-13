@@ -188,14 +188,14 @@ impl App {
         }));
     }
 
-    pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
+    pub fn run(mut self, terminal: &mut DefaultTerminal) -> Result<()> {
         self.running = true;
 
         while self.running {
             match self.status {
-                Status::Log => self.draw_log_status(&mut terminal)?,
-                Status::List => self.draw_list_status(&mut terminal)?,
-                Status::Details => self.draw_details_status(&mut terminal)?,
+                Status::Log => self.draw_log_status(terminal)?,
+                Status::List => self.draw_list_status(terminal)?,
+                Status::Details => self.draw_details_status(terminal)?,
             }
 
             let use_timeout =
@@ -217,7 +217,7 @@ impl App {
                         if self.show_help {
                             self.show_help = false;
                         } else {
-                            self.on_key_event(key, &mut terminal)?;
+                            self.on_key_event(key, terminal)?;
                             self.service_log.on_key_event(key);
                         }
                     }
@@ -233,7 +233,7 @@ impl App {
                                 self.table_service.set_selected_index(0);
                             }
                         } else {
-                            self.on_key_event(key, &mut terminal)?;
+                            self.on_key_event(key, terminal)?;
                             self.on_key_horizontal_event(
                                 key,
                                 self.filter.input_mode == InputMode::Editing,
@@ -246,7 +246,7 @@ impl App {
                         if self.show_help {
                             self.show_help = false;
                         } else {
-                            self.on_key_event(key, &mut terminal)?;
+                            self.on_key_event(key, terminal)?;
                             self.details.on_key_event(key);
                         }
                     }
@@ -313,13 +313,13 @@ impl App {
                 }
                 AppEvent::Action(Actions::EditCurrentService) => {
                     if let Some(service) = &self.table_service.get_selected_service() {
-                        self.edit_unit(&mut terminal, service.name())?;
+                        self.edit_unit(terminal, service.name())?;
                         self.event_tx
                             .send(AppEvent::Action(Actions::RefreshDetails))?;
                     }
                 }
                 AppEvent::Error(error_msg) => {
-                    self.error_popup(&mut terminal, &error_msg)?;
+                    self.error_popup(terminal, &error_msg)?;
                 }
                 AppEvent::Action(Actions::ShowHelp) => {
                     self.show_help = !self.show_help;

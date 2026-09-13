@@ -63,7 +63,7 @@ impl Drop for TerminalRestoreGuard {
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
     let args: Config = Args::parse().into();
-    let terminal = ratatui::init();
+    let mut terminal = ratatui::init();
     let _terminal_restore_guard = TerminalRestoreGuard;
 
     let (event_tx, event_rx) = mpsc::channel::<AppEvent>();
@@ -102,5 +102,5 @@ fn main() -> color_eyre::Result<()> {
         usecase,
     );
     app.init(args);
-    app.run(terminal)
+    app.run(&mut terminal)
 }
