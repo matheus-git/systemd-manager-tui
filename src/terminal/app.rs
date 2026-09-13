@@ -6,6 +6,8 @@ use crossterm::{
 };
 use ratatui::DefaultTerminal;
 use ratatui::Frame;
+use ratatui::Terminal;
+use ratatui::backend::Backend;
 use ratatui::layout::{Alignment, Constraint, Layout, Margin, Rect};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -694,17 +696,7 @@ impl App {
     }
 
     fn on_key_event(&mut self, key: KeyEvent, terminal: &mut DefaultTerminal) -> Result<()> {
-        if let KeyEvent {
-            modifiers: KeyModifiers::CONTROL,
-            code: KeyCode::Char('c' | 'C'),
-            ..
-        } = key
-        {
-            // The filter may have made the cursor visible in the last rendered frame.
-            // Hide it before shutdown work starts so it cannot remain visible on the
-            // alternate screen while workers are being joined.
-            terminal.hide_cursor()?;
-            self.quit();
+        if self.handle_quit_key(key, terminal)? {
             return Ok(());
         }
         if let KeyEvent {
@@ -716,6 +708,24 @@ impl App {
             self.suspend_tui(terminal)?;
         }
         Ok(())
+    }
+
+    fn handle_quit_key<B: Backend>(
+        &mut self,
+        key: KeyEvent,
+        terminal: &mut Terminal<B>,
+    ) -> Result<bool> {
+        if matches!(key.code, KeyCode::Char('c' | 'C'))
+            && key.modifiers.contains(KeyModifiers::CONTROL)
+        {
+            // The filter may have made the cursor visible in the last rendered frame.
+            // Hide it before shutdown work starts so it cannot remain visible on the
+            // alternate screen while workers are being joined.
+            terminal.hide_cursor()?;
+            self.quit();
+            return Ok(true);
+        }
+        Ok(false)
     }
 
     fn suspend_tui(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
