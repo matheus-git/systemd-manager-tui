@@ -12,10 +12,11 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::error::Error;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex};
-use std::thread;
+use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use crate::Config;
@@ -209,6 +210,9 @@ pub struct TableServices {
     active_connection: ConnectionType,
     list_generation: u64,
     current_list_context: Arc<Mutex<ListRequestContext>>,
+    workers_shutdown: Arc<AtomicBool>,
+    query_listener_handle: Option<JoinHandle<()>>,
+    timestamp_worker_handle: Option<JoinHandle<()>>,
 }
 
 impl TableServices {
@@ -249,6 +253,9 @@ impl TableServices {
             active_connection: ConnectionType::System,
             list_generation: 0,
             current_list_context: Arc::new(Mutex::new(initial_context)),
+            workers_shutdown: Arc::new(AtomicBool::new(false)),
+            query_listener_handle: None,
+            timestamp_worker_handle: None,
         }
     }
 
@@ -259,16 +266,23 @@ impl TableServices {
         self.refresh(&config.filter);
     }
 
-    fn spawn_query_listener(&self) {
+    fn spawn_query_listener(&mut self) {
+        if self.query_listener_handle.is_some() {
+            return;
+        }
         let event_rx = self.event_rx.clone();
         let sender = self.sender.clone();
         let states = self.states.clone();
         let current_context = self.current_list_context.clone();
+        let shutdown = self.workers_shutdown.clone();
 
-        thread::spawn(move || {
+        self.query_listener_handle = Some(thread::spawn(move || {
             loop {
+                if shutdown.load(Ordering::Acquire) {
+                    break;
+                }
                 let message = match event_rx.lock() {
-                    Ok(receiver) => receiver.recv(),
+                    Ok(receiver) => receiver.recv_timeout(Duration::from_millis(100)),
                     Err(error) => {
                         let _ = sender.send(AppEvent::Error(format!(
                             "Unit-file result channel failed: {error}"
@@ -315,10 +329,11 @@ impl TableServices {
                             break;
                         }
                     }
-                    Err(_) => break,
+                    Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
                 }
             }
-        });
+        }));
     }
 
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
@@ -364,29 +379,40 @@ impl TableServices {
         };
         let repo = self.usecase.borrow().repository_handle();
         let sender = self.sender.clone();
+        let shutdown = self.workers_shutdown.clone();
 
-        thread::spawn(move || {
-            while let Ok(request) = rx.recv() {
-                let mut context = request;
-                // Drain stale requests, keep only the latest
-                while let Ok(request) = rx.try_recv() {
-                    context = request;
+        self.timestamp_worker_handle = Some(thread::spawn(move || {
+            loop {
+                if shutdown.load(Ordering::Acquire) {
+                    break;
                 }
-                let ts = match repo.lock() {
-                    Ok(repo) => repo
-                        .get_active_enter_timestamp(&context.service_name)
-                        .ok()
-                        .filter(|&t| t > 0),
-                    Err(error) => {
-                        let _ = sender.send(AppEvent::Error(format!(
-                            "Timestamp repository lock failed: {error}"
-                        )));
-                        break;
+                match rx.recv_timeout(Duration::from_millis(100)) {
+                    Ok(request) => {
+                        let mut context = request;
+                        // Drain stale requests, keep only the latest
+                        while let Ok(request) = rx.try_recv() {
+                            context = request;
+                        }
+                        let ts = match repo.lock() {
+                            Ok(repo) => repo
+                                .get_active_enter_timestamp(&context.service_name)
+                                .ok()
+                                .filter(|&t| t > 0),
+                            Err(error) => {
+                                let _ = sender.send(AppEvent::Error(format!(
+                                    "Timestamp repository lock failed: {error}"
+                                )));
+                                break;
+                            }
+                        };
+                        let _ =
+                            sender.send(AppEvent::Action(Actions::UpdateTimestamp(context, ts)));
                     }
-                };
-                let _ = sender.send(AppEvent::Action(Actions::UpdateTimestamp(context, ts)));
+                    Err(mpsc::RecvTimeoutError::Timeout) => continue,
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                }
             }
-        });
+        }));
     }
 
     fn refresh_selected_timestamp(&mut self) {
@@ -823,6 +849,18 @@ impl TableServices {
         }
 
         help_text
+    }
+}
+
+impl Drop for TableServices {
+    fn drop(&mut self) {
+        self.workers_shutdown.store(true, Ordering::Release);
+        if let Some(handle) = self.query_listener_handle.take() {
+            let _ = handle.join();
+        }
+        if let Some(handle) = self.timestamp_worker_handle.take() {
+            let _ = handle.join();
+        }
     }
 }
 

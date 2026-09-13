@@ -123,6 +123,20 @@ fn auto_refresh_state_is_visible_in_rendered_border_color() {
 }
 
 #[test]
+fn auto_refresh_owns_exactly_one_stoppable_worker() {
+    let (mut log, _receiver) = log_with(FakeRepository::default());
+    let toggle = KeyEvent::new(KeyCode::Char('a'), crossterm::event::KeyModifiers::NONE);
+
+    log.on_key_event(toggle);
+    assert!(log.auto_refresh_worker.is_some());
+    assert!(*log.auto_refresh.lock().unwrap());
+
+    log.on_key_event(toggle);
+    assert!(log.auto_refresh_worker.is_none());
+    assert!(!*log.auto_refresh.lock().unwrap());
+}
+
+#[test]
 fn scrolling_changes_the_visible_log_window() {
     let (mut log, _receiver) = log_with(FakeRepository::default());
     log.update(

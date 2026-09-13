@@ -16,7 +16,7 @@ use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
-use std::thread;
+use std::thread::{self, JoinHandle};
 use std::time::Duration;
 use std::{
     io::{self},
@@ -92,6 +92,8 @@ pub struct App {
     running: bool,
     status: Status,
     event_listener_enabled: Arc<AtomicBool>,
+    event_listener_shutdown: Arc<AtomicBool>,
+    event_listener_handle: Option<JoinHandle<()>>,
     table_service: TableServices,
     filter: Filter,
     service_log: ServiceLog,
@@ -118,6 +120,8 @@ impl App {
             running: true,
             status: Status::List,
             event_listener_enabled: Arc::new(AtomicBool::new(true)),
+            event_listener_shutdown: Arc::new(AtomicBool::new(false)),
+            event_listener_handle: None,
             table_service,
             filter,
             service_log,
@@ -139,12 +143,19 @@ impl App {
         self.spawn_key_event_listener();
     }
 
-    fn spawn_key_event_listener(&self) {
+    fn spawn_key_event_listener(&mut self) {
+        if self.event_listener_handle.is_some() {
+            return;
+        }
         let event_tx = self.event_tx.clone();
         let event_listener_enabled = self.event_listener_enabled.clone();
+        let shutdown = self.event_listener_shutdown.clone();
 
-        thread::spawn(move || {
+        self.event_listener_handle = Some(thread::spawn(move || {
             loop {
+                if shutdown.load(Ordering::Acquire) {
+                    break;
+                }
                 if !event_listener_enabled.load(Ordering::Relaxed) {
                     thread::sleep(Duration::from_millis(50));
                     continue;
@@ -174,7 +185,7 @@ impl App {
                     }
                 }
             }
-        });
+        }));
     }
 
     pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
@@ -784,6 +795,15 @@ impl App {
 
     fn quit(&mut self) {
         self.running = false;
+    }
+}
+
+impl Drop for App {
+    fn drop(&mut self) {
+        self.event_listener_shutdown.store(true, Ordering::Release);
+        if let Some(handle) = self.event_listener_handle.take() {
+            let _ = handle.join();
+        }
     }
 }
 

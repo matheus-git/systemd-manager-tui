@@ -10,9 +10,9 @@ use ratatui::{
 use rayon::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::mpsc::Sender;
+use std::sync::mpsc::{self, RecvTimeoutError, Sender};
 use std::sync::{Arc, Mutex};
-use std::thread;
+use std::thread::{self, JoinHandle};
 use std::time::Duration;
 use textwrap::wrap;
 
@@ -72,8 +72,14 @@ pub struct ServiceLog {
     scroll: u16,
     sender: Sender<AppEvent>,
     auto_refresh: Arc<Mutex<bool>>,
+    auto_refresh_worker: Option<LogRefreshWorker>,
     usecase: Rc<RefCell<ServicesManager>>,
     log: String,
+}
+
+struct LogRefreshWorker {
+    stop_tx: Sender<()>,
+    handle: JoinHandle<()>,
 }
 
 impl ServiceLog {
@@ -84,6 +90,7 @@ impl ServiceLog {
             scroll: 0,
             sender,
             auto_refresh: Arc::new(Mutex::new(false)),
+            auto_refresh_worker: None,
             usecase,
             log: String::new(),
         }
@@ -127,16 +134,12 @@ impl ServiceLog {
         frame.render_widget(log_list, area);
     }
 
-    fn toogle_auto_refresh(&mut self) {
-        let new_value = {
-            if let Ok(auto) = self.auto_refresh.lock() {
-                !*auto
-            } else {
-                return;
-            }
-        };
-
-        self.set_auto_refresh(new_value);
+    fn toggle_auto_refresh(&mut self) {
+        if self.auto_refresh_worker.is_some() {
+            self.stop_auto_refresh();
+        } else {
+            self.start_auto_refresh();
+        }
     }
 
     fn set_auto_refresh(&mut self, value: bool) {
@@ -179,8 +182,7 @@ impl ServiceLog {
                 self.scroll = self.scroll.saturating_sub(10);
             }
             KeyCode::Char('a') => {
-                self.toogle_auto_refresh();
-                self.auto_refresh_thread();
+                self.toggle_auto_refresh();
             }
             KeyCode::Char('q') | KeyCode::Esc => {
                 self.reset();
@@ -213,7 +215,7 @@ impl ServiceLog {
     }
 
     pub fn reset(&mut self) {
-        self.set_auto_refresh(false);
+        self.stop_auto_refresh();
         self.scroll = 0;
         self.log = String::new();
     }
@@ -222,29 +224,35 @@ impl ServiceLog {
         let _ = self.sender.send(AppEvent::Action(Actions::GoList));
     }
 
-    pub fn auto_refresh_thread(&mut self) {
-        let auto_refresh = Arc::clone(&self.auto_refresh);
+    fn start_auto_refresh(&mut self) {
+        if self.auto_refresh_worker.is_some() {
+            return;
+        }
+
+        self.set_auto_refresh(true);
         let sender = self.sender.clone();
-        thread::spawn(move || {
+        let (stop_tx, stop_rx) = mpsc::channel();
+        let handle = thread::spawn(move || {
             loop {
-                thread::sleep(Duration::from_millis(1000));
-                let is_active = match auto_refresh.lock() {
-                    Ok(is_active) => *is_active,
-                    Err(error) => {
-                        let _ = sender.send(AppEvent::Error(format!(
-                            "Log auto-refresh state failed: {error}"
-                        )));
-                        break;
+                match stop_rx.recv_timeout(Duration::from_secs(1)) {
+                    Ok(()) | Err(RecvTimeoutError::Disconnected) => break,
+                    Err(RecvTimeoutError::Timeout) => {
+                        if sender.send(AppEvent::Action(Actions::RefreshLog)).is_err() {
+                            break;
+                        }
                     }
-                };
-                if !is_active {
-                    break;
-                }
-                if sender.send(AppEvent::Action(Actions::RefreshLog)).is_err() {
-                    break;
                 }
             }
         });
+        self.auto_refresh_worker = Some(LogRefreshWorker { stop_tx, handle });
+    }
+
+    fn stop_auto_refresh(&mut self) {
+        self.set_auto_refresh(false);
+        if let Some(worker) = self.auto_refresh_worker.take() {
+            let _ = worker.stop_tx.send(());
+            let _ = worker.handle.join();
+        }
     }
 
     pub fn fetch_log_and_dispatch(&mut self, context: ServiceRequestContext) {
@@ -265,5 +273,11 @@ impl ServiceLog {
     pub fn update(&mut self, service_name: String, log: String) {
         self.service_name = service_name;
         self.log = log;
+    }
+}
+
+impl Drop for ServiceLog {
+    fn drop(&mut self) {
+        self.stop_auto_refresh();
     }
 }
