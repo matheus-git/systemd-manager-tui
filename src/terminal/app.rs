@@ -700,7 +700,12 @@ impl App {
             ..
         } = key
         {
+            // The filter may have made the cursor visible in the last rendered frame.
+            // Hide it before shutdown work starts so it cannot remain visible on the
+            // alternate screen while workers are being joined.
+            terminal.hide_cursor()?;
             self.quit();
+            return Ok(());
         }
         if let KeyEvent {
             modifiers: KeyModifiers::CONTROL,
