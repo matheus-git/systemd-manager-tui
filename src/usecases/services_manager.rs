@@ -4,12 +4,24 @@ use crate::infrastructure::systemd_service_adapter::ConnectionType;
 use crate::terminal::components::list::{ListRequestContext, QueryUnitFile};
 use std::collections::HashSet;
 use std::error::Error;
+use std::sync::mpsc;
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::thread;
+use std::thread::{self, JoinHandle};
+
+enum UnitFileQuery {
+    Fetch {
+        services: Vec<Service>,
+        context: ListRequestContext,
+        tx: Arc<Sender<QueryUnitFile>>,
+    },
+    Shutdown,
+}
 
 pub struct ServicesManager {
     repository: Arc<Mutex<Box<dyn ServiceRepository>>>,
+    unit_file_query_tx: Sender<UnitFileQuery>,
+    unit_file_query_handle: Option<JoinHandle<()>>,
 }
 
 #[cfg(test)]
@@ -24,8 +36,52 @@ impl ServicesManager {
     }
 
     pub fn new(repository: Box<dyn ServiceRepository>) -> Self {
+        let repository = Arc::new(Mutex::new(repository));
+        let (unit_file_query_tx, unit_file_query_rx) = mpsc::channel();
+        let worker_repository = repository.clone();
+        let unit_file_query_handle = Some(thread::spawn(move || {
+            loop {
+                let mut request = match unit_file_query_rx.recv() {
+                    Ok(UnitFileQuery::Fetch {
+                        services,
+                        context,
+                        tx,
+                    }) => (services, context, tx),
+                    Ok(UnitFileQuery::Shutdown) | Err(_) => break,
+                };
+
+                while let Ok(next) = unit_file_query_rx.try_recv() {
+                    match next {
+                        UnitFileQuery::Fetch {
+                            services,
+                            context,
+                            tx,
+                        } => request = (services, context, tx),
+                        UnitFileQuery::Shutdown => return,
+                    }
+                }
+
+                let (services, context, tx) = request;
+                let result = worker_repository
+                    .lock()
+                    .map_err(|error| error.to_string())
+                    .and_then(|repository| {
+                        repository
+                            .unit_files_state(services)
+                            .map_err(|error| error.to_string())
+                    });
+                let message = match result {
+                    Ok(states) => QueryUnitFile::Finished(context, states),
+                    Err(error) => QueryUnitFile::Error(context, error),
+                };
+                let _ = tx.send(message);
+            }
+        }));
+
         Self {
-            repository: Arc::new(Mutex::new(repository)),
+            repository,
+            unit_file_query_tx,
+            unit_file_query_handle,
         }
     }
 
@@ -95,24 +151,20 @@ impl ServicesManager {
 
         all.sort_by_key(|a| a.name().to_ascii_lowercase());
 
-        let repo = Arc::clone(&self.repository);
-        thread::spawn(move || {
-            let result = repo
-                .lock()
-                .map_err(|error| error.to_string())
-                .and_then(|repo| {
-                    let services = repo
-                        .list_services(filter)
-                        .map_err(|error| error.to_string())?;
-                    repo.unit_files_state(services)
-                        .map_err(|error| error.to_string())
-                });
-            let message = match result {
-                Ok(states) => QueryUnitFile::Finished(context, states),
-                Err(error) => QueryUnitFile::Error(context, error),
-            };
-            let _ = tx.send(message);
-        });
+        if self
+            .unit_file_query_tx
+            .send(UnitFileQuery::Fetch {
+                services: all.clone(),
+                context,
+                tx: tx.clone(),
+            })
+            .is_err()
+        {
+            let _ = tx.send(QueryUnitFile::Error(
+                context,
+                "Unit-file query worker is not available".to_string(),
+            ));
+        }
 
         Ok(all)
     }
@@ -135,5 +187,14 @@ impl ServicesManager {
 
     pub fn repository_handle(&self) -> Arc<Mutex<Box<dyn ServiceRepository>>> {
         Arc::clone(&self.repository)
+    }
+}
+
+impl Drop for ServicesManager {
+    fn drop(&mut self) {
+        let _ = self.unit_file_query_tx.send(UnitFileQuery::Shutdown);
+        if let Some(handle) = self.unit_file_query_handle.take() {
+            let _ = handle.join();
+        }
     }
 }
