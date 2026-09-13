@@ -720,11 +720,11 @@ impl App {
                 }
             }
 
-            KeyEvent { code, .. } if right_keys.contains(&code) => {
-                if !is_filtering && self.status == Status::List {
-                    let requested_tab_index = (self.selected_tab_index + 1) % 2;
-                    self.update_connection_and_reset(requested_tab_index);
-                }
+            KeyEvent { code, .. }
+                if right_keys.contains(&code) && !is_filtering && self.status == Status::List =>
+            {
+                let requested_tab_index = (self.selected_tab_index + 1) % 2;
+                self.update_connection_and_reset(requested_tab_index);
             }
 
             _ => {}
