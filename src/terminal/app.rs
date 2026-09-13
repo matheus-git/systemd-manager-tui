@@ -141,12 +141,28 @@ impl App {
                     continue;
                 }
 
-                if event::poll(Duration::from_millis(100)).unwrap_or(false)
-                    && let Ok(Event::Key(key_event)) = event::read()
-                    && key_event.kind == KeyEventKind::Press
-                    && event_tx.send(AppEvent::Key(key_event)).is_err()
-                {
-                    break;
+                match event::poll(Duration::from_millis(100)) {
+                    Ok(true) => match event::read() {
+                        Ok(Event::Key(key_event)) if key_event.kind == KeyEventKind::Press => {
+                            if event_tx.send(AppEvent::Key(key_event)).is_err() {
+                                break;
+                            }
+                        }
+                        Ok(_) => {}
+                        Err(error) => {
+                            let _ = event_tx.send(AppEvent::Error(format!(
+                                "Failed to read terminal event: {error}"
+                            )));
+                            break;
+                        }
+                    },
+                    Ok(false) => {}
+                    Err(error) => {
+                        let _ = event_tx.send(AppEvent::Error(format!(
+                            "Failed to poll terminal events: {error}"
+                        )));
+                        break;
+                    }
                 }
             }
         });

@@ -118,11 +118,21 @@ impl ServicesManager {
 
         let repo = Arc::clone(&self.repository);
         thread::spawn(move || {
-            let repo = repo.lock().unwrap();
-            let services_runtime = repo.list_services(filter).expect("");
-            if let Ok(states) = repo.unit_files_state(services_runtime) {
-                let _ = tx.send(QueryUnitFile::Finished(states));
-            }
+            let result = repo
+                .lock()
+                .map_err(|error| error.to_string())
+                .and_then(|repo| {
+                    let services = repo
+                        .list_services(filter)
+                        .map_err(|error| error.to_string())?;
+                    repo.unit_files_state(services)
+                        .map_err(|error| error.to_string())
+                });
+            let message = match result {
+                Ok(states) => QueryUnitFile::Finished(states),
+                Err(error) => QueryUnitFile::Error(error),
+            };
+            let _ = tx.send(message);
         });
 
         Ok(all)

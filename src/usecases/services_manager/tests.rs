@@ -22,9 +22,13 @@ fn lists_sorts_and_deduplicates_runtime_and_file_units() {
 
     let names: Vec<_> = services.iter().map(Service::name).collect();
     assert_eq!(names, ["alpha.service", "beta.service", "zeta.service"]);
-    let QueryUnitFile::Finished(states) = receiver
+    let states = match receiver
         .recv_timeout(Duration::from_secs(1))
-        .expect("unit file states were not returned");
+        .expect("unit file states were not returned")
+    {
+        QueryUnitFile::Finished(states) => states,
+        QueryUnitFile::Error(error) => panic!("unit file lookup failed: {error}"),
+    };
     assert_eq!(
         states.get("alpha.service").map(String::as_str),
         Some("enabled")
@@ -33,6 +37,22 @@ fn lists_sorts_and_deduplicates_runtime_and_file_units() {
         states.get("zeta.service").map(String::as_str),
         Some("enabled")
     );
+}
+
+#[test]
+fn background_state_errors_are_returned_to_the_caller() {
+    let fake =
+        FakeRepository::with_services(vec![service("demo.service", "active", "enabled")], vec![]);
+    fake.fail("states");
+    let manager = ServicesManager::new(Box::new(fake));
+    let (sender, receiver) = mpsc::channel();
+
+    manager.list_services(false, Arc::new(sender)).unwrap();
+
+    assert!(matches!(
+        receiver.recv_timeout(Duration::from_secs(1)),
+        Ok(QueryUnitFile::Error(error)) if error == "states failed"
+    ));
 }
 
 #[test]

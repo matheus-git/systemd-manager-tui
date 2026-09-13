@@ -233,12 +233,20 @@ impl ServiceLog {
         thread::spawn(move || {
             loop {
                 thread::sleep(Duration::from_millis(1000));
-                if let Ok(is_active) = auto_refresh.lock() {
-                    if *is_active {
-                        sender.send(AppEvent::Action(Actions::RefreshLog)).unwrap();
-                    } else {
+                let is_active = match auto_refresh.lock() {
+                    Ok(is_active) => *is_active,
+                    Err(error) => {
+                        let _ = sender.send(AppEvent::Error(format!(
+                            "Log auto-refresh state failed: {error}"
+                        )));
                         break;
                     }
+                };
+                if !is_active {
+                    break;
+                }
+                if sender.send(AppEvent::Action(Actions::RefreshLog)).is_err() {
+                    break;
                 }
             }
         });
