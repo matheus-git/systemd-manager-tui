@@ -6,30 +6,15 @@
 //! `cargo test infrastructure::systemd_service_adapter::tests -- --ignored --test-threads=1`
 
 use super::{
-    ConnectionType, OperationTimeout, ServiceAction, SystemdServiceAdapter, wait_for_operation,
+    ConnectionType, OperationTimeout, ServiceAction, SystemdServiceAdapter, wait_for_job_completion,
 };
-use crate::domain::service::Service;
 use crate::domain::service_repository::ServiceRepository;
-use crate::domain::service_state::ServiceState;
 use std::error::Error;
 use std::io;
 use std::process::{self, Command, Output};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const INTEGRATION_TIMEOUT: Duration = Duration::from_secs(10);
-
-fn service_with_active_state(active: &str) -> Service {
-    Service::new(
-        "demo.service".to_string(),
-        String::new(),
-        ServiceState::new(
-            "loaded".to_string(),
-            active.to_string(),
-            String::new(),
-            String::new(),
-        ),
-    )
-}
 
 fn command_error(command: &str, output: &Output) -> io::Error {
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -142,6 +127,9 @@ fn user_bus_controls_an_isolated_transient_service() -> Result<(), Box<dyn Error
     assert_eq!(loaded.state().load(), "loaded");
     assert_eq!(loaded.state().active(), "active");
 
+    let started = adapter.start_service(&unit.name)?;
+    assert_eq!(started.state().active(), "active");
+
     let before_restart = adapter.get_active_enter_timestamp(&unit.name)?;
     let restarted = adapter.restart_service(&unit.name)?;
     let after_restart = adapter.get_active_enter_timestamp(&unit.name)?;
@@ -150,6 +138,9 @@ fn user_bus_controls_an_isolated_transient_service() -> Result<(), Box<dyn Error
     assert_eq!(restarted.state().active(), "active");
     assert!(!restarted.state().active().ends_with("ing"));
     assert!(after_restart >= before_restart);
+
+    let stopped = adapter.stop_service(&unit.name)?;
+    assert_eq!(stopped.state().active(), "inactive");
     Ok(())
 }
 
@@ -169,36 +160,31 @@ fn operation_timeout_identifies_context_and_systemd_uncertainty() {
 }
 
 #[test]
-fn wait_for_operation_returns_after_service_settles() {
+fn wait_for_job_completion_waits_until_the_job_disappears() {
     let mut polls = 0;
-    let service = wait_for_operation(
+    wait_for_job_completion(
         "demo.service",
         ServiceAction::Start,
         Duration::from_secs(1),
         Duration::ZERO,
         || {
             polls += 1;
-            Ok(service_with_active_state(if polls == 1 {
-                "activating"
-            } else {
-                "active"
-            }))
+            Ok(polls == 1)
         },
     )
     .unwrap();
 
     assert_eq!(polls, 2);
-    assert_eq!(service.state().active(), "active");
 }
 
 #[test]
-fn wait_for_operation_stops_at_the_configured_timeout() {
-    let error = wait_for_operation(
+fn wait_for_job_completion_stops_at_the_configured_timeout() {
+    let error = wait_for_job_completion(
         "demo.service",
         ServiceAction::Stop,
         Duration::ZERO,
         Duration::ZERO,
-        || Ok(service_with_active_state("deactivating")),
+        || Ok(true),
     )
     .unwrap_err();
     let timeout = error.downcast_ref::<OperationTimeout>().unwrap();

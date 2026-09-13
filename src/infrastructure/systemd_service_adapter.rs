@@ -14,7 +14,6 @@ use zbus::blocking::{Connection, Proxy};
 use zbus::proxy::MethodFlags;
 use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 
-const SLEEP_DURATION: u64 = 100;
 const POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -54,21 +53,20 @@ impl fmt::Display for OperationTimeout {
 
 impl std::error::Error for OperationTimeout {}
 
-fn wait_for_operation<F>(
+fn wait_for_job_completion<F>(
     service_name: &str,
     action: ServiceAction,
     timeout: Duration,
     poll_interval: Duration,
-    mut get_service: F,
-) -> Result<Service, Box<dyn std::error::Error>>
+    mut job_is_pending: F,
+) -> Result<(), Box<dyn std::error::Error>>
 where
-    F: FnMut() -> Result<Service, Box<dyn std::error::Error>>,
+    F: FnMut() -> Result<bool, Box<dyn std::error::Error>>,
 {
     let started_at = Instant::now();
     loop {
-        let service = get_service()?;
-        if !service.state().active().ends_with("ing") {
-            return Ok(service);
+        if !job_is_pending()? {
+            return Ok(());
         }
         if started_at.elapsed() >= timeout {
             return Err(Box::new(OperationTimeout {
@@ -91,6 +89,15 @@ type SystemdUnit = (
     OwnedObjectPath,
     u32,
     String,
+    OwnedObjectPath,
+);
+
+type SystemdJob = (
+    u32,
+    String,
+    String,
+    String,
+    OwnedObjectPath,
     OwnedObjectPath,
 );
 
@@ -141,6 +148,51 @@ impl SystemdServiceAdapter {
         )?;
         Ok(proxy)
     }
+
+    fn run_unit_job(
+        &self,
+        name: &str,
+        action: ServiceAction,
+        method: &str,
+    ) -> Result<Service, Box<dyn std::error::Error>> {
+        let proxy = self.manager_proxy()?;
+        let reply: Option<OwnedObjectPath> = proxy.call_with_flags(
+            method,
+            MethodFlags::AllowInteractiveAuth.into(),
+            &(name, "replace"),
+        )?;
+        let job_path = reply.ok_or_else(|| format!("No job returned from {method}"))?;
+
+        wait_for_job_completion(name, action, self.operation_timeout, POLL_INTERVAL, || {
+            let jobs: Vec<SystemdJob> = proxy.call("ListJobs", &())?;
+            Ok(jobs.iter().any(|job| job.4 == job_path))
+        })?;
+
+        match self.get_unit(name) {
+            Ok(service) => Ok(service),
+            Err(error) if action == ServiceAction::Stop && is_no_such_unit(error.as_ref()) => {
+                Ok(Service::new(
+                    name.to_string(),
+                    String::new(),
+                    ServiceState::new(
+                        "not-found".to_string(),
+                        "inactive".to_string(),
+                        "dead".to_string(),
+                        "unknown".to_string(),
+                    ),
+                ))
+            }
+            Err(error) => Err(error),
+        }
+    }
+}
+
+fn is_no_such_unit(error: &(dyn std::error::Error + 'static)) -> bool {
+    matches!(
+        error.downcast_ref::<Error>(),
+        Some(Error::MethodError(name, _, _))
+            if name.as_str() == "org.freedesktop.systemd1.NoSuchUnit"
+    )
 }
 
 impl ServiceRepository for SystemdServiceAdapter {
@@ -301,54 +353,15 @@ impl ServiceRepository for SystemdServiceAdapter {
     }
 
     fn start_service(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
-        let proxy = self.manager_proxy()?;
-        let reply: Option<OwnedObjectPath> = proxy.call_with_flags(
-            "StartUnit",
-            MethodFlags::AllowInteractiveAuth.into(),
-            &(name, "replace"),
-        )?;
-        reply.ok_or("No reply from StartUnit")?;
-        wait_for_operation(
-            name,
-            ServiceAction::Start,
-            self.operation_timeout,
-            POLL_INTERVAL,
-            || self.get_unit(name),
-        )
+        self.run_unit_job(name, ServiceAction::Start, "StartUnit")
     }
 
     fn stop_service(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
-        let proxy = self.manager_proxy()?;
-        let reply: Option<OwnedObjectPath> = proxy.call_with_flags(
-            "StopUnit",
-            MethodFlags::AllowInteractiveAuth.into(),
-            &(name.to_string(), "replace"),
-        )?;
-        reply.ok_or("No reply from StopUnit")?;
-        wait_for_operation(
-            name,
-            ServiceAction::Stop,
-            self.operation_timeout,
-            POLL_INTERVAL,
-            || self.get_unit(name),
-        )
+        self.run_unit_job(name, ServiceAction::Stop, "StopUnit")
     }
 
     fn restart_service(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
-        let proxy = self.manager_proxy()?;
-        let reply: Option<OwnedObjectPath> = proxy.call_with_flags(
-            "RestartUnit",
-            MethodFlags::AllowInteractiveAuth.into(),
-            &(name, "replace"),
-        )?;
-        reply.ok_or("No reply from Start")?;
-        wait_for_operation(
-            name,
-            ServiceAction::Restart,
-            self.operation_timeout,
-            POLL_INTERVAL,
-            || self.get_unit(name),
-        )
+        self.run_unit_job(name, ServiceAction::Restart, "RestartUnit")
     }
 
     fn enable_service(&self, name: &str) -> Result<Service, Box<dyn std::error::Error>> {
@@ -360,7 +373,6 @@ impl ServiceRepository for SystemdServiceAdapter {
             &(vec![name], false, false),
         )?;
         reply.ok_or("No reply from EnableUnitFiles")?;
-        thread::sleep(Duration::from_millis(SLEEP_DURATION));
         self.get_unit(name)
     }
 
@@ -372,7 +384,6 @@ impl ServiceRepository for SystemdServiceAdapter {
             &(vec![name], false),
         )?;
         reply.ok_or("No reply from DisableUnitFiles")?;
-        thread::sleep(Duration::from_millis(SLEEP_DURATION));
         self.get_unit(name)
     }
 
@@ -384,7 +395,6 @@ impl ServiceRepository for SystemdServiceAdapter {
             &(vec![name], false, true),
         )?;
         reply.ok_or("No reply from MaskUnitFiles")?;
-        thread::sleep(Duration::from_millis(SLEEP_DURATION));
         self.get_unit(name)
     }
 
@@ -396,7 +406,6 @@ impl ServiceRepository for SystemdServiceAdapter {
             &(vec![name], false),
         )?;
         reply.ok_or("No reply from UnmaskUnitFiles")?;
-        thread::sleep(Duration::from_millis(SLEEP_DURATION));
         self.get_unit(name)
     }
 
@@ -407,7 +416,6 @@ impl ServiceRepository for SystemdServiceAdapter {
             MethodFlags::AllowInteractiveAuth.into(),
             &(),
         )?;
-        thread::sleep(Duration::from_millis(SLEEP_DURATION));
         Ok(())
     }
 
