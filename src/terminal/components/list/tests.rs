@@ -324,6 +324,7 @@ fn successful_service_action_updates_row_and_unlocks_input() {
 fn failed_service_action_reports_error_and_unlocks_input() {
     let fake = FakeRepository::default();
     fake.fail("start");
+    let observer = fake.clone();
     let (mut table, receiver) = table_with_repository(fake);
     let unit = service("broken.service", "inactive");
     table.services = vec![unit.clone()];
@@ -337,6 +338,7 @@ fn failed_service_action_reports_error_and_unlocks_input() {
         receiver.recv().unwrap(),
         AppEvent::Error(message) if message == "start failed"
     ));
+    assert!(observer.calls().contains(&"list:false".to_string()));
     assert!(!table.ignore_key_events);
 }
 

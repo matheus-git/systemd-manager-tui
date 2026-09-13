@@ -752,6 +752,10 @@ impl TableServices {
                 self.refresh(&self.old_filter_text.clone());
             }
             Err(e) => {
+                // A timeout only bounds our wait; systemd may still complete the job.
+                // Re-read the unit list before returning control so the synchronous UI
+                // reflects the freshest state available.
+                self.fetch_and_refresh(&self.old_filter_text.clone());
                 self.sender.send(AppEvent::Error(e.to_string())).unwrap();
             }
         }
