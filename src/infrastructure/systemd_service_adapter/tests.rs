@@ -5,12 +5,16 @@
 //!
 //! `cargo test infrastructure::systemd_service_adapter::tests -- --ignored --test-threads=1`
 
-use super::{ConnectionType, SystemdServiceAdapter};
+use super::{
+    ConnectionType, OperationTimeout, ServiceAction, SystemdJobFailed, SystemdServiceAdapter,
+};
 use crate::domain::service_repository::ServiceRepository;
 use std::error::Error;
 use std::io;
 use std::process::{self, Command, Output};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+const INTEGRATION_TIMEOUT: Duration = Duration::from_secs(10);
 
 fn command_error(command: &str, output: &Output) -> io::Error {
     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -71,7 +75,7 @@ impl Drop for TransientUserUnit {
 #[test]
 #[ignore = "requires access to a running systemd system bus"]
 fn system_bus_lists_services_and_reads_a_real_unit() -> Result<(), Box<dyn Error>> {
-    let adapter = SystemdServiceAdapter::new(ConnectionType::System)?;
+    let adapter = SystemdServiceAdapter::new(ConnectionType::System, INTEGRATION_TIMEOUT)?;
     let services = adapter.list_services(false)?;
 
     let listed = services
@@ -89,7 +93,7 @@ fn system_bus_lists_services_and_reads_a_real_unit() -> Result<(), Box<dyn Error
 #[test]
 #[ignore = "requires access to a running systemd system bus"]
 fn system_bus_lists_unit_files_and_resolves_their_states() -> Result<(), Box<dyn Error>> {
-    let adapter = SystemdServiceAdapter::new(ConnectionType::System)?;
+    let adapter = SystemdServiceAdapter::new(ConnectionType::System, INTEGRATION_TIMEOUT)?;
     let services: Vec<_> = adapter
         .list_service_files()?
         .into_iter()
@@ -116,12 +120,15 @@ fn system_bus_lists_unit_files_and_resolves_their_states() -> Result<(), Box<dyn
 #[ignore = "requires a running systemd user manager and systemd-run"]
 fn user_bus_controls_an_isolated_transient_service() -> Result<(), Box<dyn Error>> {
     let unit = TransientUserUnit::start()?;
-    let adapter = SystemdServiceAdapter::new(ConnectionType::Session)?;
+    let adapter = SystemdServiceAdapter::new(ConnectionType::Session, INTEGRATION_TIMEOUT)?;
 
     let loaded = adapter.get_unit(&unit.name)?;
     assert_eq!(loaded.name(), unit.name);
     assert_eq!(loaded.state().load(), "loaded");
     assert_eq!(loaded.state().active(), "active");
+
+    let started = adapter.start_service(&unit.name)?;
+    assert_eq!(started.state().active(), "active");
 
     let before_restart = adapter.get_active_enter_timestamp(&unit.name)?;
     let restarted = adapter.restart_service(&unit.name)?;
@@ -131,5 +138,37 @@ fn user_bus_controls_an_isolated_transient_service() -> Result<(), Box<dyn Error
     assert_eq!(restarted.state().active(), "active");
     assert!(!restarted.state().active().ends_with("ing"));
     assert!(after_restart >= before_restart);
+
+    let stopped = adapter.stop_service(&unit.name)?;
+    assert_eq!(stopped.state().active(), "inactive");
     Ok(())
+}
+
+#[test]
+fn operation_timeout_identifies_context_and_systemd_uncertainty() {
+    let error = OperationTimeout {
+        service: "demo.service".to_string(),
+        action: ServiceAction::Restart,
+        timeout: Duration::from_millis(250),
+    };
+
+    let message = error.to_string();
+    assert!(message.contains("demo.service"));
+    assert!(message.contains("restart"));
+    assert!(message.contains("250ms"));
+    assert!(message.contains("may still be in progress"));
+}
+
+#[test]
+fn job_failure_identifies_the_operation_and_systemd_result() {
+    let error = SystemdJobFailed {
+        service: "demo.service".to_string(),
+        action: ServiceAction::Start,
+        result: "dependency".to_string(),
+    };
+
+    let message = error.to_string();
+    assert!(message.contains("start"));
+    assert!(message.contains("demo.service"));
+    assert!(message.contains("dependency"));
 }

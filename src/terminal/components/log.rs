@@ -1,23 +1,22 @@
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::{
+    Frame,
     layout::{Alignment, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, List, ListItem},
-    Frame,
+    widgets::{Block, Borders, List, ListItem, Paragraph},
 };
+use rayon::prelude::*;
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration;
-use std::rc::Rc;
-use std::cell::RefCell;
 use textwrap::wrap;
-use rayon::prelude::*;
 
-use crate::domain::service::Service;
-use crate::terminal::app::{Actions, AppEvent};
+use crate::terminal::app::{Actions, AppEvent, ServiceRequestContext};
 use crate::usecases::services_manager::ServicesManager;
 
 fn render_loading(frame: &mut Frame, area: Rect) {
@@ -78,7 +77,7 @@ pub struct ServiceLog {
 }
 
 impl ServiceLog {
-    pub fn new(sender: Sender<AppEvent>,  usecase: Rc<RefCell<ServicesManager>>) -> Self {
+    pub fn new(sender: Sender<AppEvent>, usecase: Rc<RefCell<ServicesManager>>) -> Self {
         Self {
             border_color: BorderColor::White,
             service_name: String::new(),
@@ -90,9 +89,8 @@ impl ServiceLog {
         }
     }
 
-
     pub fn render(&mut self, frame: &mut Frame, area: Rect) {
-        if self.log.is_empty()  {
+        if self.log.is_empty() {
             render_loading(frame, area);
             return;
         }
@@ -103,7 +101,7 @@ impl ServiceLog {
             .log
             .lines()
             .flat_map(|line| {
-                wrap(line,width)
+                wrap(line, width)
                     .into_par_iter()
                     .map(|wrapped| ListItem::new(Span::raw(wrapped.into_owned())))
                     .collect::<Vec<_>>()
@@ -113,21 +111,18 @@ impl ServiceLog {
         let total_lines = log_lines.len();
         let height = area.height.saturating_sub(2) as usize;
 
-        let start = total_lines
-            .saturating_sub(height + self.scroll as usize);
+        let start = total_lines.saturating_sub(height + self.scroll as usize);
         let end = (start + height).min(total_lines);
 
         let log_lines: Vec<ListItem> = log_lines[start..end].to_vec();
 
-        let log_list = 
-            List::new(log_lines)
-                .block(
-                    Block::default()
-                        .title(format!(" {} log ", self.service_name))
-                        .borders(Borders::ALL)
-                        .border_style(Style::default().fg(self.border_color.to_color()))
-                        .title_alignment(Alignment::Center),
-                );
+        let log_list = List::new(log_lines).block(
+            Block::default()
+                .title(format!(" {} log ", self.service_name))
+                .borders(Borders::ALL)
+                .border_style(Style::default().fg(self.border_color.to_color()))
+                .title_alignment(Alignment::Center),
+        );
 
         frame.render_widget(log_list, area);
     }
@@ -165,11 +160,15 @@ impl ServiceLog {
         match key.code {
             code if right_keys.contains(&code) => {
                 self.reset();
-                self.sender.send(AppEvent::Action(Actions::GoDetails)).unwrap();
+                self.sender
+                    .send(AppEvent::Action(Actions::GoDetails))
+                    .unwrap();
             }
             code if left_keys.contains(&code) => {
                 self.reset();
-                self.sender.send(AppEvent::Action(Actions::GoDetails)).unwrap();
+                self.sender
+                    .send(AppEvent::Action(Actions::GoDetails))
+                    .unwrap();
             }
             code if up_keys.contains(&code) => {
                 self.scroll = self.scroll.saturating_add(1);
@@ -233,25 +232,30 @@ impl ServiceLog {
         thread::spawn(move || {
             loop {
                 thread::sleep(Duration::from_millis(1000));
-                if let Ok(is_active) = auto_refresh.lock() {
-                    if *is_active {
-                        sender.send(AppEvent::Action(Actions::RefreshLog)).unwrap();
-                    } else {
+                let is_active = match auto_refresh.lock() {
+                    Ok(is_active) => *is_active,
+                    Err(error) => {
+                        let _ = sender.send(AppEvent::Error(format!(
+                            "Log auto-refresh state failed: {error}"
+                        )));
                         break;
                     }
+                };
+                if !is_active {
+                    break;
+                }
+                if sender.send(AppEvent::Action(Actions::RefreshLog)).is_err() {
+                    break;
                 }
             }
         });
     }
 
-    pub fn fetch_log_and_dispatch(&mut self, service: &Service) {
+    pub fn fetch_log_and_dispatch(&mut self, context: ServiceRequestContext) {
         let event_tx = self.sender.clone();
-        if let Ok(log) = self.usecase.borrow().get_log(service) {
+        if let Ok(log) = self.usecase.borrow().get_log(&context.service_name) {
             event_tx
-                .send(AppEvent::Action(Actions::Updatelog((
-                    service.name().to_string(),
-                    log,
-                ))))
+                .send(AppEvent::Action(Actions::UpdateLog(context, log)))
                 .expect("Failed to send Updatelog event");
         }
     }
@@ -260,5 +264,4 @@ impl ServiceLog {
         self.service_name = service_name;
         self.log = log;
     }
-
 }

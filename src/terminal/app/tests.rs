@@ -1,29 +1,31 @@
 use super::*;
 use crate::test_support::FakeRepository;
-use ratatui::backend::TestBackend;
 use ratatui::Terminal;
+use ratatui::backend::TestBackend;
 use std::sync::mpsc;
 
 fn test_app() -> App {
+    test_app_with_repository(FakeRepository::default()).0
+}
+
+fn test_app_with_repository(repository: FakeRepository) -> (App, FakeRepository) {
     let (event_tx, event_rx) = mpsc::channel();
-    let manager = Rc::new(RefCell::new(ServicesManager::new(Box::new(
-        FakeRepository::default(),
-    ))));
+    let observer = repository.clone();
+    let manager = Rc::new(RefCell::new(ServicesManager::new(Box::new(repository))));
     let table = TableServices::new(event_tx.clone(), manager.clone());
     let filter = Filter::new(event_tx.clone(), String::new());
     let log = ServiceLog::new(event_tx.clone(), manager.clone());
     let details = ServiceDetails::new(event_tx.clone(), manager.clone());
 
-    App::new(
-        event_tx, event_rx, table, filter, log, details, manager,
+    (
+        App::new(event_tx, event_rx, table, filter, log, details, manager),
+        observer,
     )
 }
 
 #[test]
 fn translates_known_dbus_errors() {
-    let message = get_user_friendly_error(
-        "org.freedesktop.DBus.Error.AccessDenied: rejected",
-    );
+    let message = get_user_friendly_error("org.freedesktop.DBus.Error.AccessDenied: rejected");
 
     assert!(message.contains("Access denied"));
 }
@@ -31,6 +33,31 @@ fn translates_known_dbus_errors() {
 #[test]
 fn preserves_unknown_errors() {
     assert_eq!(get_user_friendly_error("custom failure"), "custom failure");
+}
+
+#[test]
+fn connection_change_commits_active_context_only_after_success() {
+    let (mut app, observer) = test_app_with_repository(FakeRepository::default());
+
+    app.update_connection_and_reset(1);
+
+    assert_eq!(app.active_connection, ConnectionType::Session);
+    assert_eq!(app.selected_tab_index, 1);
+    assert_eq!(observer.calls(), ["connection:session"]);
+}
+
+#[test]
+fn failed_connection_change_preserves_previous_active_context() {
+    let repository = FakeRepository::default();
+    repository.fail("connection");
+    let (mut app, observer) = test_app_with_repository(repository);
+
+    app.update_connection_and_reset(1);
+
+    assert_eq!(app.active_connection, ConnectionType::System);
+    assert_eq!(app.selected_tab_index, 0);
+    assert_eq!(observer.calls(), ["connection:session"]);
+    assert!(matches!(app.event_rx.recv().unwrap(), AppEvent::Error(_)));
 }
 
 #[test]
@@ -68,10 +95,12 @@ fn help_popup_is_rendered_with_sections_and_highlighted_title() {
     assert!(rendered.contains("Navigation:"));
     assert!(rendered.contains("Service Control:"));
     assert!(rendered.contains("Ctrl+c - Quit"));
-    assert!(buffer
-        .content()
-        .iter()
-        .any(|cell| cell.symbol() == "S" && cell.fg == Color::Cyan));
+    assert!(
+        buffer
+            .content()
+            .iter()
+            .any(|cell| cell.symbol() == "S" && cell.fg == Color::Cyan)
+    );
 }
 
 #[test]
@@ -96,4 +125,3 @@ fn shortcuts_panel_renders_context_actions_and_global_exit() {
     assert!(rendered.contains("Custom action: x"));
     assert!(rendered.contains("Exit: Ctrl + c"));
 }
-

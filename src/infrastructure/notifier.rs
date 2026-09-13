@@ -1,11 +1,11 @@
-use zbus::blocking::{Connection, MessageIterator};
-use zbus::MatchRule;
-use zbus::message::Type;
-use zbus::zvariant::{Value, OwnedValue};
-use zbus::Error;
 use std::collections::HashMap;
 use std::thread;
 use std::time::Duration;
+use zbus::Error;
+use zbus::MatchRule;
+use zbus::blocking::{Connection, MessageIterator};
+use zbus::message::Type;
+use zbus::zvariant::{OwnedValue, Value};
 
 const SLEEP_DURATION: u64 = 300;
 
@@ -13,7 +13,7 @@ pub fn start_notifier() {
     thread::spawn(|| {
         let connection = match Connection::system() {
             Ok(connection) => connection,
-            Err(_e) => return
+            Err(_e) => return,
         };
 
         let notifier = match Notifier::new(connection) {
@@ -23,16 +23,15 @@ pub fn start_notifier() {
             }
         };
 
-        if let Err(_e) = notifier.watch_failed_services() {
-        }
+        if let Err(_e) = notifier.watch_failed_services() {}
     });
 
     thread::spawn(|| {
-         let connection = match Connection::session() {
+        let connection = match Connection::session() {
             Ok(connection) => connection,
-            Err(_e) => return
+            Err(_e) => return,
         };
-        
+
         let notifier = match Notifier::new(connection) {
             Ok(notifier) => notifier,
             Err(_e) => {
@@ -40,20 +39,17 @@ pub fn start_notifier() {
             }
         };
 
-        if let Err(_e) = notifier.watch_failed_services() {
-        }
+        if let Err(_e) = notifier.watch_failed_services() {}
     });
 }
 
 pub struct Notifier {
-    connection: Connection
+    connection: Connection,
 }
 
 impl Notifier {
     pub fn new(connection: Connection) -> Result<Self, Error> {
-        Ok(Self {
-            connection
-        })
+        Ok(Self { connection })
     }
 
     pub fn watch_failed_services(&self) -> Result<(), Box<dyn std::error::Error>> {
@@ -64,19 +60,15 @@ impl Notifier {
             .member("PropertiesChanged")?
             .build();
 
-        let mut iter = MessageIterator::for_match_rule(
-            rule,
-            &self.connection,
-            Some(64),
-        )?;
+        let mut iter = MessageIterator::for_match_rule(rule, &self.connection, Some(64))?;
 
         loop {
             let msg = match iter.next() {
                 Some(Ok(m)) => m,
                 _ => {
                     thread::sleep(Duration::from_millis(SLEEP_DURATION));
-                    continue
-                },
+                    continue;
+                }
             };
 
             let (interface, changed, _invalidated): (
@@ -90,19 +82,17 @@ impl Notifier {
             }
 
             if let Some(state_val) = changed.get("ActiveState")
-                && let Ok(state) = <&str>::try_from(state_val) 
-                    && state == "failed" 
-                        && let Some(path) = msg.header().path() {
-                            let name = decode_unit_path(path.as_str());
-                            self.send_notification(&format!("{} {}", name, state))?;
+                && let Ok(state) = <&str>::try_from(state_val)
+                && state == "failed"
+                && let Some(path) = msg.header().path()
+            {
+                let name = decode_unit_path(path.as_str());
+                self.send_notification(&format!("{} {}", name, state))?;
             }
         }
     }
-    
-    fn send_notification(
-        &self,
-        summary: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+
+    fn send_notification(&self, summary: &str) -> Result<(), Box<dyn std::error::Error>> {
         let body = "Systemd reported a failure";
 
         let notification_connection = Connection::session()?;
@@ -135,12 +125,14 @@ fn decode_unit_path(path: &str) -> String {
     let mut i = 0;
 
     while i < bytes.len() {
-        if bytes[i] == b'_' && i + 2 < bytes.len() 
-            && let Ok(hex) = std::str::from_utf8(&bytes[i + 1..i + 3]) 
-                && let Ok(val) = u8::from_str_radix(hex, 16) {
-                    out.push(val as char);
-                    i += 3;
-                    continue;
+        if bytes[i] == b'_'
+            && i + 2 < bytes.len()
+            && let Ok(hex) = std::str::from_utf8(&bytes[i + 1..i + 3])
+            && let Ok(val) = u8::from_str_radix(hex, 16)
+        {
+            out.push(val as char);
+            i += 3;
+            continue;
         }
 
         out.push(bytes[i] as char);

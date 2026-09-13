@@ -1,6 +1,6 @@
 use super::*;
-use ratatui::backend::{Backend, TestBackend};
 use ratatui::Terminal;
+use ratatui::backend::{Backend, TestBackend};
 use std::sync::mpsc::{self, Receiver};
 
 fn filter_with_input(input: &str) -> (Filter, Receiver<AppEvent>) {
@@ -15,9 +15,14 @@ fn renders_filter_and_cursor_to_test_backend() {
     let backend = TestBackend::new(40, 4);
     let mut terminal = Terminal::new(backend).unwrap();
 
-    terminal.draw(|frame| filter.draw(frame, frame.area())).unwrap();
+    terminal
+        .draw(|frame| filter.draw(frame, frame.area()))
+        .unwrap();
 
-    let rendered = terminal.backend().buffer().content()
+    let rendered = terminal
+        .backend()
+        .buffer()
+        .content()
         .iter()
         .map(|cell| cell.symbol())
         .collect::<String>();
@@ -98,7 +103,9 @@ fn editing_mode_changes_visual_help_and_input_color() {
     let backend = TestBackend::new(50, 4);
     let mut terminal = Terminal::new(backend).unwrap();
 
-    terminal.draw(|frame| filter.draw(frame, frame.area())).unwrap();
+    terminal
+        .draw(|frame| filter.draw(frame, frame.area()))
+        .unwrap();
 
     let buffer = terminal.backend().buffer();
     let rendered = buffer
@@ -108,10 +115,12 @@ fn editing_mode_changes_visual_help_and_input_color() {
         .collect::<String>();
     assert!(rendered.contains("Esc"));
     assert!(rendered.contains("Enter"));
-    assert!(buffer
-        .content()
-        .iter()
-        .any(|cell| cell.symbol() == "d" && cell.fg == Color::Yellow));
+    assert!(
+        buffer
+            .content()
+            .iter()
+            .any(|cell| cell.symbol() == "d" && cell.fg == Color::Yellow)
+    );
 }
 
 #[test]
@@ -178,4 +187,3 @@ fn backspace_deletes_character_before_cursor() {
         AppEvent::Action(Actions::Filter(value)) if value == "acd"
     ));
 }
-

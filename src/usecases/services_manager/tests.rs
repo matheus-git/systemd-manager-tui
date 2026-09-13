@@ -1,7 +1,14 @@
 use super::*;
-use crate::test_support::{service, FakeRepository};
+use crate::test_support::{FakeRepository, service};
 use std::sync::mpsc;
 use std::time::Duration;
+
+fn list_context(generation: u64) -> ListRequestContext {
+    ListRequestContext {
+        connection: ConnectionType::System,
+        generation,
+    }
+}
 
 #[test]
 fn lists_sorts_and_deduplicates_runtime_and_file_units() {
@@ -18,15 +25,49 @@ fn lists_sorts_and_deduplicates_runtime_and_file_units() {
     let manager = ServicesManager::new(Box::new(fake));
     let (sender, receiver) = mpsc::channel();
 
-    let services = manager.list_services(true, Arc::new(sender)).unwrap();
+    let services = manager
+        .list_services(true, list_context(1), Arc::new(sender))
+        .unwrap();
 
     let names: Vec<_> = services.iter().map(Service::name).collect();
     assert_eq!(names, ["alpha.service", "beta.service", "zeta.service"]);
-    let QueryUnitFile::Finished(states) = receiver
+    let states = match receiver
         .recv_timeout(Duration::from_secs(1))
-        .expect("unit file states were not returned");
-    assert_eq!(states.get("alpha.service").map(String::as_str), Some("enabled"));
-    assert_eq!(states.get("zeta.service").map(String::as_str), Some("enabled"));
+        .expect("unit file states were not returned")
+    {
+        QueryUnitFile::Finished(context, states) => {
+            assert_eq!(context, list_context(1));
+            states
+        }
+        QueryUnitFile::Error(_, error) => panic!("unit file lookup failed: {error}"),
+    };
+    assert_eq!(
+        states.get("alpha.service").map(String::as_str),
+        Some("enabled")
+    );
+    assert_eq!(
+        states.get("zeta.service").map(String::as_str),
+        Some("enabled")
+    );
+}
+
+#[test]
+fn background_state_errors_are_returned_to_the_caller() {
+    let fake =
+        FakeRepository::with_services(vec![service("demo.service", "active", "enabled")], vec![]);
+    fake.fail("states");
+    let manager = ServicesManager::new(Box::new(fake));
+    let (sender, receiver) = mpsc::channel();
+
+    manager
+        .list_services(false, list_context(2), Arc::new(sender))
+        .unwrap();
+
+    assert!(matches!(
+        receiver.recv_timeout(Duration::from_secs(1)),
+        Ok(QueryUnitFile::Error(context, error))
+            if context == list_context(2) && error == "states failed"
+    ));
 }
 
 #[test]
@@ -38,7 +79,9 @@ fn service_only_listing_does_not_add_unit_files() {
     let manager = ServicesManager::new(Box::new(fake));
     let (sender, _receiver) = mpsc::channel();
 
-    let services = manager.list_services(false, Arc::new(sender)).unwrap();
+    let services = manager
+        .list_services(false, list_context(3), Arc::new(sender))
+        .unwrap();
 
     assert_eq!(services.len(), 1);
     assert_eq!(services[0].name(), "runtime.service");
@@ -111,17 +154,29 @@ fn delegates_log_unit_file_timestamp_and_connection() {
     let mut manager = ServicesManager::new(Box::new(fake));
     let unit = service("demo.service", "active", "enabled");
 
-    assert_eq!(manager.get_log(&unit).unwrap(), "journal output");
+    assert_eq!(manager.get_log(unit.name()).unwrap(), "journal output");
     assert!(manager.systemctl_cat(&unit).unwrap().contains("ExecStart"));
-    manager.change_repository_connection(ConnectionType::Session).unwrap();
+    manager
+        .change_repository_connection(ConnectionType::Session)
+        .unwrap();
     assert_eq!(
-        manager.repository_handle().lock().unwrap().get_active_enter_timestamp(unit.name()).unwrap(),
+        manager
+            .repository_handle()
+            .lock()
+            .unwrap()
+            .get_active_enter_timestamp(unit.name())
+            .unwrap(),
         42
     );
 
     assert_eq!(
         observer.calls(),
-        ["log:demo.service", "cat:demo.service", "connection:session", "timestamp:demo.service"]
+        [
+            "log:demo.service",
+            "cat:demo.service",
+            "connection:session",
+            "timestamp:demo.service"
+        ]
     );
 }
 
@@ -133,7 +188,9 @@ fn list_failure_is_returned_without_attempting_file_lookup() {
     let manager = ServicesManager::new(Box::new(fake));
     let (sender, _receiver) = mpsc::channel();
 
-    let error = manager.list_services(true, Arc::new(sender)).unwrap_err();
+    let error = manager
+        .list_services(true, list_context(4), Arc::new(sender))
+        .unwrap_err();
 
     assert_eq!(error.to_string(), "list failed");
     assert_eq!(observer.calls(), ["list:true"]);
@@ -161,7 +218,10 @@ fn log_and_unit_file_failures_are_propagated() {
     let manager = ServicesManager::new(Box::new(fake));
     let unit = service("broken.service", "active", "enabled");
 
-    assert_eq!(manager.get_log(&unit).unwrap_err().to_string(), "log failed");
+    assert_eq!(
+        manager.get_log(unit.name()).unwrap_err().to_string(),
+        "log failed"
+    );
     assert_eq!(
         manager.systemctl_cat(&unit).unwrap_err().to_string(),
         "cat failed"
@@ -181,7 +241,9 @@ fn service_sorting_is_case_insensitive() {
     let manager = ServicesManager::new(Box::new(fake));
     let (sender, _receiver) = mpsc::channel();
 
-    let services = manager.list_services(false, Arc::new(sender)).unwrap();
+    let services = manager
+        .list_services(false, list_context(5), Arc::new(sender))
+        .unwrap();
     let names: Vec<_> = services.iter().map(Service::name).collect();
 
     assert_eq!(names, ["alpha.service", "Beta.service", "Zulu.service"]);

@@ -2,32 +2,35 @@ use color_eyre::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use crossterm::{
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, LeaveAlternateScreen, EnterAlternateScreen},
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use std::{io::{self}, process::Command};
-use ratatui::layout::{Alignment, Constraint, Margin, Layout, Rect};
-use ratatui::style::{Color, Modifier, Style};
-use ratatui::text::{Line, Span};
-use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Tabs, Padding};
 use ratatui::DefaultTerminal;
 use ratatui::Frame;
+use ratatui::layout::{Alignment, Constraint, Layout, Margin, Rect};
+use ratatui::style::{Color, Modifier, Style};
+use ratatui::text::{Line, Span};
+use ratatui::widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph, Tabs};
+use rayon::prelude::*;
+use std::cell::RefCell;
+use std::rc::Rc;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
 use std::time::Duration;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::cell::RefCell;
-use std::rc::Rc;
-use rayon::prelude::*;
+use std::{
+    io::{self},
+    process::Command,
+};
 
+use crate::Config;
 use crate::infrastructure::systemd_service_adapter::ConnectionType;
 use crate::terminal::components::list::ActiveFilterState;
 use crate::usecases::services_manager::ServicesManager;
-use crate::Config;
 
 use super::components::details::ServiceDetails;
 use super::components::filter::{Filter, InputMode};
-use super::components::list::{TableServices, ServiceAction};
+use super::components::list::{ServiceAction, TableServices};
 use super::components::log::ServiceLog;
 
 #[derive(PartialEq)]
@@ -44,7 +47,7 @@ pub enum Actions {
     ResetList,
     GoLog,
     GoDetails,
-    Updatelog((String, String)),
+    UpdateLog(ServiceRequestContext, String),
     #[allow(dead_code)]
     UpdateDetails,
     Filter(String),
@@ -53,7 +56,13 @@ pub enum Actions {
     ServiceAction(ServiceAction),
     ShowHelp,
     Redraw,
-    UpdateTimestamp(String, Option<u64>),
+    UpdateTimestamp(ServiceRequestContext, Option<u64>),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ServiceRequestContext {
+    pub connection: ConnectionType,
+    pub service_name: String,
 }
 
 pub enum AppEvent {
@@ -90,18 +99,19 @@ pub struct App {
     event_rx: Receiver<AppEvent>,
     event_tx: Sender<AppEvent>,
     selected_tab_index: usize,
+    active_connection: ConnectionType,
     show_help: bool,
 }
 
 impl App {
     pub fn new(
-        event_tx: Sender<AppEvent>, 
-        event_rx: Receiver<AppEvent>, 
+        event_tx: Sender<AppEvent>,
+        event_rx: Receiver<AppEvent>,
         table_service: TableServices,
         filter: Filter,
         service_log: ServiceLog,
         details: ServiceDetails,
-        usecases: Rc<RefCell<ServicesManager>>
+        usecases: Rc<RefCell<ServicesManager>>,
     ) -> Self {
         Self {
             running: true,
@@ -115,13 +125,16 @@ impl App {
             event_rx,
             event_tx,
             selected_tab_index: 0,
+            active_connection: ConnectionType::System,
             show_help: false,
         }
     }
 
     pub fn init(&mut self, config: Config) {
         self.table_service.init(&config);
-        self.event_tx.send(AppEvent::Action(Actions::Filter(config.filter))).unwrap();
+        self.event_tx
+            .send(AppEvent::Action(Actions::Filter(config.filter)))
+            .unwrap();
         self.spawn_key_event_listener();
     }
 
@@ -136,13 +149,29 @@ impl App {
                     continue;
                 }
 
-                if event::poll(Duration::from_millis(100)).unwrap_or(false) 
-                    && let Ok(Event::Key(key_event)) = event::read() 
-                        && key_event.kind == KeyEventKind::Press
-                            && event_tx.send(AppEvent::Key(key_event)).is_err()
-                        {
+                match event::poll(Duration::from_millis(100)) {
+                    Ok(true) => match event::read() {
+                        Ok(Event::Key(key_event)) if key_event.kind == KeyEventKind::Press => {
+                            if event_tx.send(AppEvent::Key(key_event)).is_err() {
+                                break;
+                            }
+                        }
+                        Ok(_) => {}
+                        Err(error) => {
+                            let _ = event_tx.send(AppEvent::Error(format!(
+                                "Failed to read terminal event: {error}"
+                            )));
                             break;
                         }
+                    },
+                    Ok(false) => {}
+                    Err(error) => {
+                        let _ = event_tx.send(AppEvent::Error(format!(
+                            "Failed to poll terminal events: {error}"
+                        )));
+                        break;
+                    }
+                }
             }
         });
     }
@@ -157,8 +186,8 @@ impl App {
                 Status::Details => self.draw_details_status(&mut terminal)?,
             }
 
-            let use_timeout = self.status == Status::List
-                && self.table_service.has_active_runtime();
+            let use_timeout =
+                self.status == Status::List && self.table_service.has_active_runtime();
 
             let event = if use_timeout {
                 match self.event_rx.recv_timeout(Duration::from_secs(1)) {
@@ -186,12 +215,17 @@ impl App {
                             // Ensure the table is active and can receive key events
                             self.table_service.set_ignore_key_events(false);
                             // If no item is selected and list is not empty, select first item
-                            if self.table_service.table_state.selected().is_none() && !self.table_service.is_filtered_list_empty() {
+                            if self.table_service.table_state.selected().is_none()
+                                && !self.table_service.is_filtered_list_empty()
+                            {
                                 self.table_service.set_selected_index(0);
                             }
                         } else {
                             self.on_key_event(key, &mut terminal)?;
-                            self.on_key_horizontal_event(key, self.filter.input_mode == InputMode::Editing);
+                            self.on_key_horizontal_event(
+                                key,
+                                self.filter.input_mode == InputMode::Editing,
+                            );
                             self.table_service.on_key_event(key);
                             self.filter.on_key_event(key);
                         }
@@ -216,13 +250,17 @@ impl App {
                     self.table_service.set_selected_index(0);
                     self.table_service.refresh(&input);
                 }
-                AppEvent::Action(Actions::Updatelog(data)) => {
-                    self.service_log.update(data.0, data.1);
+                AppEvent::Action(Actions::UpdateLog(context, log)) => {
+                    if self.status == Status::Log && self.is_current_service_context(&context) {
+                        self.service_log.update(context.service_name, log);
+                    }
                 }
                 AppEvent::Action(Actions::RefreshLog) => {
-                    if self.status == Status::Log 
-                        && let Some(service) = self.table_service.get_selected_service() {
-                            self.service_log.fetch_log_and_dispatch(&service);
+                    if self.status == Status::Log
+                        && let Some(service) = self.table_service.get_selected_service()
+                    {
+                        self.service_log
+                            .fetch_log_and_dispatch(self.service_context(&service));
                     }
                 }
                 AppEvent::Action(Actions::GoLog) => {
@@ -232,9 +270,9 @@ impl App {
                 AppEvent::Action(Actions::GoList) => self.status = Status::List,
                 AppEvent::Action(Actions::ResetList) => {
                     self.table_service.set_usecase(self.usecases.clone());
-                },
-                AppEvent::Action(Actions::UpdateTimestamp(name, ts)) => {
-                    self.table_service.update_timestamp(name, ts);
+                }
+                AppEvent::Action(Actions::UpdateTimestamp(context, ts)) => {
+                    self.table_service.update_timestamp(context, ts);
                 }
                 AppEvent::Action(Actions::UpdateDetails | Actions::Redraw) => {}
                 AppEvent::Action(Actions::RefreshDetails) => {
@@ -253,7 +291,8 @@ impl App {
                 AppEvent::Action(Actions::EditCurrentService) => {
                     if let Some(service) = &self.table_service.get_selected_service() {
                         self.edit_unit(&mut terminal, service.name())?;
-                        self.event_tx.send(AppEvent::Action(Actions::RefreshDetails))?;
+                        self.event_tx
+                            .send(AppEvent::Action(Actions::RefreshDetails))?;
                     }
                 }
                 AppEvent::Error(error_msg) => {
@@ -261,7 +300,7 @@ impl App {
                 }
                 AppEvent::Action(Actions::ShowHelp) => {
                     self.show_help = !self.show_help;
-                },
+                }
             }
         }
 
@@ -278,7 +317,6 @@ impl App {
         })?;
         Ok(())
     }
-
 
     fn edit_unit(&self, terminal: &mut DefaultTerminal, unit_name: &str) -> Result<()> {
         self.event_listener_enabled.store(false, Ordering::Relaxed);
@@ -304,25 +342,23 @@ impl App {
 
         let mut cmd = Command::new("systemctl");
 
-        cmd
-            .arg("edit")
-            .arg("--full");
+        cmd.arg("edit").arg("--full");
 
-        if self.selected_tab_index==1{
-            cmd
-                .arg("--user");
+        if self.selected_tab_index == 1 {
+            cmd.arg("--user");
         }
 
-        let status = cmd
-            .arg(unit_name)
-            .status();
+        let status = cmd.arg(unit_name).status();
 
         match status {
-            Ok(s) if s.success() => {},
+            Ok(s) if s.success() => {}
             Ok(_s) => {
                 self.resume_tui(terminal)?;
-                self.error_popup(terminal, "'systemctl edit' failed. Try running the program with sudo!")?;
-            },
+                self.error_popup(
+                    terminal,
+                    "'systemctl edit' failed. Try running the program with sudo!",
+                )?;
+            }
             Err(e) => {
                 self.resume_tui(terminal)?;
                 self.error_popup(terminal, &format!("Error executing systemctl: {e}"))?;
@@ -359,15 +395,27 @@ impl App {
         let text = vec![
             Line::from(vec![Span::styled(
                 "SYSTEMD MANAGER TUI - HELP",
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
             )]),
             Line::from(""),
-            Line::from(vec![Span::styled("Navigation:", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
+            Line::from(vec![Span::styled(
+                "Navigation:",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )]),
             Line::from("↑/k - Move up    ↓/j - Move down"),
             Line::from("←/h - Previous tab    →/l - Next tab"),
             Line::from("PageUp/PageDown - Jump 10 items"),
             Line::from(""),
-            Line::from(vec![Span::styled("Filter:", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
+            Line::from(vec![Span::styled(
+                "Filter:",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )]),
             Line::from("Ctrl+u - Delete until the start of the input "),
             Line::from("Ctrl+k - Delete until the end of the input "),
             Line::from("Alt+b or Ctrl+← - Go backwards a word "),
@@ -376,22 +424,42 @@ impl App {
             Line::from("Ctrl+a or Home - Go to the end of input  "),
             Line::from("Ctrl+w or Ctrl+Backspace - Delete a word backwards "),
             Line::from(""),
-            Line::from(vec![Span::styled("Service Control:", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
+            Line::from(vec![Span::styled(
+                "Service Control:",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )]),
             Line::from("s - Start service    x - Stop service"),
             Line::from("r - Restart service"),
             Line::from("e - Enable service    d - Disable service"),
             Line::from("m - Mask/Unmask service"),
             Line::from(""),
-            Line::from(vec![Span::styled("View & Filter list:", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
+            Line::from(vec![Span::styled(
+                "View & Filter list:",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )]),
             Line::from("f - Toggle all/services filter"),
             Line::from("a - Cycle filter (all→active→inactive→failed)"),
             Line::from("u - Refresh service list"),
             Line::from(""),
-            Line::from(vec![Span::styled("Information:", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
+            Line::from(vec![Span::styled(
+                "Information:",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )]),
             Line::from("v - View service logs"),
             Line::from("c - View unit file details"),
             Line::from(""),
-            Line::from(vec![Span::styled("Application:", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD))]),
+            Line::from(vec![Span::styled(
+                "Application:",
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )]),
             Line::from("Ctrl+z - Suspend"),
             Line::from("Ctrl+c - Quit"),
             Line::from(""),
@@ -407,16 +475,19 @@ impl App {
                     .borders(Borders::ALL)
                     .border_type(BorderType::Rounded)
                     .border_style(Style::default().fg(Color::Cyan))
-                    .padding(Padding::new(1,1,0,0))
+                    .padding(Padding::new(1, 1, 0, 0))
                     .title("Help"),
             )
             .alignment(Alignment::Left)
             .wrap(ratatui::widgets::Wrap { trim: true });
 
-        frame.render_widget(help_block, popup_area.inner(Margin {
-            vertical: 0,
-            horizontal: 1
-        }));
+        frame.render_widget(
+            help_block,
+            popup_area.inner(Margin {
+                vertical: 0,
+                horizontal: 1,
+            }),
+        );
     }
 
     #[allow(clippy::unused_self)]
@@ -474,10 +545,7 @@ impl App {
         Ok(())
     }
 
-    fn draw_details_status(
-        &mut self,
-        terminal: &mut DefaultTerminal,
-    ) -> Result<()> {
+    fn draw_details_status(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
         terminal.draw(|frame| {
             let area = frame.area();
 
@@ -491,10 +559,7 @@ impl App {
         Ok(())
     }
 
-    fn draw_log_status(
-        &mut self,
-        terminal: &mut DefaultTerminal,
-    ) -> Result<()> {
+    fn draw_log_status(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
         terminal.draw(|frame| {
             let area = frame.area();
 
@@ -508,10 +573,7 @@ impl App {
         Ok(())
     }
 
-    fn draw_list_status(
-        &mut self,
-        terminal: &mut DefaultTerminal,
-    ) -> Result<()> {
+    fn draw_list_status(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
         terminal.draw(|frame| {
             let area = frame.area();
 
@@ -525,29 +587,31 @@ impl App {
 
             let filter_state = &self.table_service.get_active_filter_state();
 
-            let system_tab = if self.selected_tab_index == 0 && *filter_state != ActiveFilterState::All {
-                Line::from(vec![
-                    Span::raw("System units"),
-                    Span::styled(
-                        format!(" (Filter: {})", filter_state.as_str()),
-                        Style::default().fg(Color::Gray)
-                    )
-                ])
-            } else {
-                Line::from("System units")
-            };
+            let system_tab =
+                if self.selected_tab_index == 0 && *filter_state != ActiveFilterState::All {
+                    Line::from(vec![
+                        Span::raw("System units"),
+                        Span::styled(
+                            format!(" (Filter: {})", filter_state.as_str()),
+                            Style::default().fg(Color::Gray),
+                        ),
+                    ])
+                } else {
+                    Line::from("System units")
+                };
 
-            let session_tab = if self.selected_tab_index == 1 && *filter_state != ActiveFilterState::All{
-                Line::from(vec![
-                    Span::raw("Session units"),
-                    Span::styled(
-                        format!(" (Filter: {})", filter_state.as_str()),
-                        Style::default().fg(Color::Gray)
-                    )
-                ])
-            } else {
-                Line::from("Session units")
-            };
+            let session_tab =
+                if self.selected_tab_index == 1 && *filter_state != ActiveFilterState::All {
+                    Line::from(vec![
+                        Span::raw("Session units"),
+                        Span::styled(
+                            format!(" (Filter: {})", filter_state.as_str()),
+                            Style::default().fg(Color::Gray),
+                        ),
+                    ])
+                } else {
+                    Line::from("Session units")
+                };
 
             let tabs = Tabs::new(vec![system_tab, session_tab])
                 .select(self.selected_tab_index)
@@ -579,12 +643,14 @@ impl App {
 
         if shortcuts_lens > 0 {
             help_text.push(Line::raw(""));
-            let shortcuts_width = shortcuts.to_owned()
+            let shortcuts_width = shortcuts
+                .to_owned()
                 .par_iter()
-                .map(|line|  line.spans.iter().map(ratatui::prelude::Span::width).sum())
+                .map(|line| line.spans.iter().map(ratatui::prelude::Span::width).sum())
                 .max()
                 .unwrap_or(0);
-            let shortcuts_width = u16::try_from(shortcuts_width).expect("Failed to convert shortcuts_width to u16");
+            let shortcuts_width =
+                u16::try_from(shortcuts_width).expect("Failed to convert shortcuts_width to u16");
             if help_area.width > shortcuts_width {
                 help_text.push(Line::raw(""));
             }
@@ -606,26 +672,26 @@ impl App {
     }
 
     fn on_key_event(&mut self, key: KeyEvent, terminal: &mut DefaultTerminal) -> Result<()> {
-         if let KeyEvent {
-                 modifiers: KeyModifiers::CONTROL,
-                 code: KeyCode::Char('c' | 'C'),
-                 ..
-             } = key {
-             self.quit();
-         }
-         if let KeyEvent {
-                 modifiers: KeyModifiers::CONTROL,
-                 code: KeyCode::Char('z'),
-                 ..
-             } = key {
-             self.suspend_tui(terminal)?;
-         }
+        if let KeyEvent {
+            modifiers: KeyModifiers::CONTROL,
+            code: KeyCode::Char('c' | 'C'),
+            ..
+        } = key
+        {
+            self.quit();
+        }
+        if let KeyEvent {
+            modifiers: KeyModifiers::CONTROL,
+            code: KeyCode::Char('z'),
+            ..
+        } = key
+        {
+            self.suspend_tui(terminal)?;
+        }
         Ok(())
     }
 
-    fn suspend_tui(&mut self, 
-        terminal: &mut DefaultTerminal,
-    ) -> Result<()> {
+    fn suspend_tui(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
         disable_raw_mode()?;
         execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
         terminal.show_cursor()?;
@@ -643,51 +709,72 @@ impl App {
         let left_keys = [KeyCode::Left, KeyCode::Char('h')];
         let right_keys = [KeyCode::Right, KeyCode::Char('l')];
         match key {
-            KeyEvent {
-                code,
-                ..
-            } if left_keys.contains(&code) => {
-                if !is_filtering && self. status == Status::List {
-                    self.selected_tab_index = if self.selected_tab_index == 0 {
+            KeyEvent { code, .. } if left_keys.contains(&code) => {
+                if !is_filtering && self.status == Status::List {
+                    let requested_tab_index = if self.selected_tab_index == 0 {
                         1
                     } else {
                         self.selected_tab_index - 1
                     };
-
-                    self.update_connection_and_reset();
+                    self.update_connection_and_reset(requested_tab_index);
                 }
             }
 
-            KeyEvent { code, .. } if right_keys.contains(&code) => {
-                if !is_filtering && self.status == Status::List {
-                    self.selected_tab_index = (self.selected_tab_index + 1) % 2;
-                    self.update_connection_and_reset();
-                }
+            KeyEvent { code, .. }
+                if right_keys.contains(&code) && !is_filtering && self.status == Status::List =>
+            {
+                let requested_tab_index = (self.selected_tab_index + 1) % 2;
+                self.update_connection_and_reset(requested_tab_index);
             }
 
             _ => {}
         }
     }
-    fn update_connection_and_reset(&mut self) {
-        self.table_service.invalidate_timestamp();
-
-        let conn_type = match self.selected_tab_index {
+    fn update_connection_and_reset(&mut self, requested_tab_index: usize) {
+        let requested_connection = match requested_tab_index {
             0 => ConnectionType::System,
             _ => ConnectionType::Session,
         };
 
-        if let Err(_err) = self.usecases
+        if let Err(err) = self
+            .usecases
             .borrow_mut()
-            .change_repository_connection(conn_type)
+            .change_repository_connection(requested_connection)
         {
-            self.event_tx.send(AppEvent::Error("Failed to change connection type with D-Bus. Try run without sudo".to_string())).expect("Failed to change connection type");
-            self.selected_tab_index = 0;
-            return
+            self.event_tx
+                .send(AppEvent::Error(
+                    format!(
+                        "Failed to switch from {} to {requested_connection}: {err}. The {} connection remains active.",
+                        self.active_connection, self.active_connection
+                    ),
+                ))
+                .expect("Failed to change connection type");
+            return;
         }
 
+        self.active_connection = requested_connection;
+        self.selected_tab_index = requested_tab_index;
+        self.table_service
+            .set_active_connection(requested_connection);
+        self.table_service.invalidate_timestamp();
         self.event_tx
             .send(AppEvent::Action(Actions::ResetList))
             .expect("Failed to send ResetList event");
+    }
+
+    fn service_context(&self, service: &crate::domain::service::Service) -> ServiceRequestContext {
+        ServiceRequestContext {
+            connection: self.active_connection,
+            service_name: service.name().to_string(),
+        }
+    }
+
+    fn is_current_service_context(&self, context: &ServiceRequestContext) -> bool {
+        context.connection == self.active_connection
+            && self
+                .table_service
+                .get_selected_service()
+                .is_some_and(|service| service.name() == context.service_name)
     }
 
     fn quit(&mut self) {

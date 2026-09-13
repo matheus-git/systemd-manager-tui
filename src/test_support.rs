@@ -45,7 +45,11 @@ impl FakeRepository {
     }
 
     pub fn fail(&self, operation: &str) {
-        self.state.lock().unwrap().failures.insert(operation.to_string());
+        self.state
+            .lock()
+            .unwrap()
+            .failures
+            .insert(operation.to_string());
     }
 
     pub fn calls(&self) -> Vec<String> {
@@ -72,7 +76,12 @@ pub fn service(name: &str, active: &str, file: &str) -> Service {
     Service::new(
         name.to_string(),
         format!("Description for {name}"),
-        ServiceState::new("loaded".into(), active.into(), "running".into(), file.into()),
+        ServiceState::new(
+            "loaded".into(),
+            active.into(),
+            "running".into(),
+            file.into(),
+        ),
     )
 }
 
@@ -82,9 +91,15 @@ impl ServiceRepository for FakeRepository {
         Ok(self.state.lock().unwrap().runtime_services.clone())
     }
 
-    fn unit_files_state(&self, services: Vec<Service>) -> Result<HashMap<String, String>, Box<dyn Error>> {
+    fn unit_files_state(
+        &self,
+        services: Vec<Service>,
+    ) -> Result<HashMap<String, String>, Box<dyn Error>> {
         self.record("states", &services.len().to_string())?;
-        Ok(services.into_iter().map(|s| (s.name().to_string(), s.state().file().to_string())).collect())
+        Ok(services
+            .into_iter()
+            .map(|s| (s.name().to_string(), s.state().file().to_string()))
+            .collect())
     }
 
     fn list_service_files(&self) -> Result<Vec<Service>, Box<dyn Error>> {
@@ -92,23 +107,43 @@ impl ServiceRepository for FakeRepository {
         Ok(self.state.lock().unwrap().file_services.clone())
     }
 
-    fn get_unit(&self, name: &str) -> Result<Service, Box<dyn Error>> { self.service_result("get", name) }
+    fn get_unit(&self, name: &str) -> Result<Service, Box<dyn Error>> {
+        self.service_result("get", name)
+    }
     fn get_service_log(&self, name: &str) -> Result<String, Box<dyn Error>> {
         self.record("log", name)?;
         Ok(self.state.lock().unwrap().log.clone())
     }
-    fn start_service(&self, name: &str) -> Result<Service, Box<dyn Error>> { self.service_result("start", name) }
-    fn stop_service(&self, name: &str) -> Result<Service, Box<dyn Error>> { self.service_result("stop", name) }
-    fn restart_service(&self, name: &str) -> Result<Service, Box<dyn Error>> { self.service_result("restart", name) }
-    fn enable_service(&self, name: &str) -> Result<Service, Box<dyn Error>> { self.service_result("enable", name) }
-    fn disable_service(&self, name: &str) -> Result<Service, Box<dyn Error>> { self.service_result("disable", name) }
-    fn mask_service(&self, name: &str) -> Result<Service, Box<dyn Error>> { self.service_result("mask", name) }
-    fn unmask_service(&self, name: &str) -> Result<Service, Box<dyn Error>> { self.service_result("unmask", name) }
-    fn reload_daemon(&self) -> Result<(), Box<dyn Error>> { self.record("reload", "") }
-    fn change_connection(&mut self, connection_type: ConnectionType) -> Result<(), zbus::Error> {
-        let name = match connection_type { ConnectionType::System => "system", ConnectionType::Session => "session" };
-        let _ = self.record("connection", name);
-        Ok(())
+    fn start_service(&self, name: &str) -> Result<Service, Box<dyn Error>> {
+        self.service_result("start", name)
+    }
+    fn stop_service(&self, name: &str) -> Result<Service, Box<dyn Error>> {
+        self.service_result("stop", name)
+    }
+    fn restart_service(&self, name: &str) -> Result<Service, Box<dyn Error>> {
+        self.service_result("restart", name)
+    }
+    fn enable_service(&self, name: &str) -> Result<Service, Box<dyn Error>> {
+        self.service_result("enable", name)
+    }
+    fn disable_service(&self, name: &str) -> Result<Service, Box<dyn Error>> {
+        self.service_result("disable", name)
+    }
+    fn mask_service(&self, name: &str) -> Result<Service, Box<dyn Error>> {
+        self.service_result("mask", name)
+    }
+    fn unmask_service(&self, name: &str) -> Result<Service, Box<dyn Error>> {
+        self.service_result("unmask", name)
+    }
+    fn reload_daemon(&self) -> Result<(), Box<dyn Error>> {
+        self.record("reload", "")
+    }
+    fn change_connection(&mut self, connection_type: ConnectionType) -> Result<(), Box<dyn Error>> {
+        let name = match connection_type {
+            ConnectionType::System => "system",
+            ConnectionType::Session => "session",
+        };
+        self.record("connection", name)
     }
     fn systemctl_cat(&self, name: &str) -> Result<String, Box<dyn Error>> {
         self.record("cat", name)?;
