@@ -18,6 +18,8 @@ use zbus::proxy::MethodFlags;
 use zbus::zvariant::{OwnedObjectPath, OwnedValue};
 use zbus::{Error, MatchRule, MessageStream};
 
+const LATE_COMPLETION_WATCH_TIMEOUT: Duration = Duration::from_secs(300);
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ServiceAction {
     Start,
@@ -235,7 +237,20 @@ impl SystemdServiceAdapter {
                     let service = name.to_string();
                     let job_path = job_path.clone();
                     thread::spawn(move || {
-                        while let Some(Ok(message)) = future::block_on(events.next()) {
+                        let started_at = Instant::now();
+                        loop {
+                            let remaining =
+                                LATE_COMPLETION_WATCH_TIMEOUT.saturating_sub(started_at.elapsed());
+                            let message = future::block_on(future::race(
+                                async { events.next().await },
+                                async {
+                                    Timer::after(remaining).await;
+                                    None
+                                },
+                            ));
+                            let Some(Ok(message)) = message else {
+                                break;
+                            };
                             let Ok((_id, removed_path, _unit, result)) = message
                                 .body()
                                 .deserialize::<(u32, OwnedObjectPath, String, String)>()
