@@ -12,6 +12,7 @@ use crate::domain::service_repository::ServiceRepository;
 use std::error::Error;
 use std::io;
 use std::process::{self, Command, Output};
+use std::sync::mpsc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 const INTEGRATION_TIMEOUT: Duration = Duration::from_secs(10);
@@ -141,6 +142,28 @@ fn user_bus_controls_an_isolated_transient_service() -> Result<(), Box<dyn Error
 
     let stopped = adapter.stop_service(&unit.name)?;
     assert_eq!(stopped.state().active(), "inactive");
+    Ok(())
+}
+
+#[test]
+#[ignore = "requires a running systemd user manager and systemd-run"]
+fn timed_out_job_reports_its_later_completion() -> Result<(), Box<dyn Error>> {
+    let unit = TransientUserUnit::start()?;
+    let (sender, receiver) = mpsc::channel();
+    let adapter = SystemdServiceAdapter::new_with_completion_sender(
+        ConnectionType::Session,
+        Duration::ZERO,
+        Some(sender),
+    )?;
+
+    let error = adapter.restart_service(&unit.name).unwrap_err();
+    assert!(error.downcast_ref::<OperationTimeout>().is_some());
+
+    let completion = receiver.recv_timeout(Duration::from_secs(2))?;
+    assert_eq!(completion.connection, ConnectionType::Session);
+    assert_eq!(completion.service, unit.name);
+    assert_eq!(completion.action, ServiceAction::Restart);
+    assert_eq!(completion.result, "done");
     Ok(())
 }
 

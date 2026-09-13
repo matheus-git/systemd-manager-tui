@@ -545,6 +545,10 @@ impl TableServices {
         }
     }
 
+    pub fn refresh_current(&mut self) {
+        self.fetch_and_refresh(&self.old_filter_text.clone());
+    }
+
     fn filter(&self, filter_text: &str, services: &[Service]) -> Vec<Service> {
         let lower_filter = filter_text.to_lowercase();
 

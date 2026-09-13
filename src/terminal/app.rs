@@ -24,7 +24,7 @@ use std::{
 };
 
 use crate::Config;
-use crate::infrastructure::systemd_service_adapter::ConnectionType;
+use crate::infrastructure::systemd_service_adapter::{CompletedOperation, ConnectionType};
 use crate::terminal::components::list::ActiveFilterState;
 use crate::usecases::services_manager::ServicesManager;
 
@@ -57,6 +57,7 @@ pub enum Actions {
     ShowHelp,
     Redraw,
     UpdateTimestamp(ServiceRequestContext, Option<u64>),
+    OperationCompleted(CompletedOperation),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -273,6 +274,17 @@ impl App {
                 }
                 AppEvent::Action(Actions::UpdateTimestamp(context, ts)) => {
                     self.table_service.update_timestamp(context, ts);
+                }
+                AppEvent::Action(Actions::OperationCompleted(completion)) => {
+                    if completion.connection == self.active_connection {
+                        self.table_service.refresh_current();
+                        if completion.result != "done" {
+                            self.event_tx.send(AppEvent::Error(format!(
+                                "systemd finished {} for '{}' with result '{}' after the earlier timeout",
+                                completion.action, completion.service, completion.result
+                            )))?;
+                        }
+                    }
                 }
                 AppEvent::Action(Actions::UpdateDetails | Actions::Redraw) => {}
                 AppEvent::Action(Actions::RefreshDetails) => {

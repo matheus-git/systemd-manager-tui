@@ -9,6 +9,8 @@ use std::collections::HashMap;
 use std::fmt;
 use std::io::{self};
 use std::process::Command;
+use std::sync::mpsc::Sender;
+use std::thread;
 use std::time::{Duration, Instant};
 use zbus::blocking::{Connection, MessageIterator, Proxy};
 use zbus::message::Type;
@@ -72,13 +74,24 @@ impl fmt::Display for SystemdJobFailed {
 
 impl std::error::Error for SystemdJobFailed {}
 
+#[derive(Debug)]
+pub struct CompletedOperation {
+    pub connection: ConnectionType,
+    pub service: String,
+    pub action: ServiceAction,
+    pub result: String,
+}
+
+enum JobWaitOutcome {
+    Finished(String),
+    TimedOut(Box<MessageStream>),
+}
+
 fn wait_for_job_result(
-    service_name: &str,
-    action: ServiceAction,
     timeout: Duration,
     job_path: &OwnedObjectPath,
     mut events: MessageStream,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<JobWaitOutcome, Box<dyn std::error::Error>> {
     let started_at = Instant::now();
     loop {
         let remaining = timeout.saturating_sub(started_at.elapsed());
@@ -87,11 +100,7 @@ fn wait_for_job_result(
             None
         }));
         let Some(message) = message else {
-            return Err(Box::new(OperationTimeout {
-                service: service_name.to_string(),
-                action,
-                timeout,
-            }));
+            return Ok(JobWaitOutcome::TimedOut(Box::new(events)));
         };
         let message = message?;
         let (_id, removed_path, _unit, result): (u32, OwnedObjectPath, String, String) =
@@ -99,15 +108,7 @@ fn wait_for_job_result(
         if removed_path != *job_path {
             continue;
         }
-        return if result == "done" {
-            Ok(())
-        } else {
-            Err(Box::new(SystemdJobFailed {
-                service: service_name.to_string(),
-                action,
-                result,
-            }))
-        };
+        return Ok(JobWaitOutcome::Finished(result));
     }
 }
 
@@ -143,12 +144,21 @@ pub struct SystemdServiceAdapter {
     connection: Connection,
     active_connection: ConnectionType,
     operation_timeout: Duration,
+    completion_tx: Option<Sender<CompletedOperation>>,
 }
 
 impl SystemdServiceAdapter {
     pub fn new(
         connection_type: ConnectionType,
         operation_timeout: Duration,
+    ) -> Result<Self, Error> {
+        Self::new_with_completion_sender(connection_type, operation_timeout, None)
+    }
+
+    pub fn new_with_completion_sender(
+        connection_type: ConnectionType,
+        operation_timeout: Duration,
+        completion_tx: Option<Sender<CompletedOperation>>,
     ) -> Result<Self, Error> {
         let connection = match connection_type {
             ConnectionType::Session => Connection::session()?,
@@ -160,7 +170,12 @@ impl SystemdServiceAdapter {
             connection,
             active_connection: connection_type,
             operation_timeout,
+            completion_tx,
         })
+    }
+
+    pub fn set_completion_sender(&mut self, completion_tx: Sender<CompletedOperation>) {
+        self.completion_tx = Some(completion_tx);
     }
 
     fn manager_proxy(&self) -> Result<Proxy<'static>, Box<dyn std::error::Error>> {
@@ -205,13 +220,47 @@ impl SystemdServiceAdapter {
         )?;
         let job_path = reply.ok_or_else(|| format!("No job returned from {method}"))?;
 
-        wait_for_job_result(
-            name,
-            action,
-            self.operation_timeout,
-            &job_path,
-            events.into_inner(),
-        )?;
+        match wait_for_job_result(self.operation_timeout, &job_path, events.into_inner())? {
+            JobWaitOutcome::Finished(result) if result == "done" => {}
+            JobWaitOutcome::Finished(result) => {
+                return Err(Box::new(SystemdJobFailed {
+                    service: name.to_string(),
+                    action,
+                    result,
+                }));
+            }
+            JobWaitOutcome::TimedOut(mut events) => {
+                if let Some(sender) = self.completion_tx.clone() {
+                    let connection = self.active_connection;
+                    let service = name.to_string();
+                    let job_path = job_path.clone();
+                    thread::spawn(move || {
+                        while let Some(Ok(message)) = future::block_on(events.next()) {
+                            let Ok((_id, removed_path, _unit, result)) = message
+                                .body()
+                                .deserialize::<(u32, OwnedObjectPath, String, String)>()
+                            else {
+                                continue;
+                            };
+                            if removed_path == job_path {
+                                let _ = sender.send(CompletedOperation {
+                                    connection,
+                                    service,
+                                    action,
+                                    result,
+                                });
+                                break;
+                            }
+                        }
+                    });
+                }
+                return Err(Box::new(OperationTimeout {
+                    service: name.to_string(),
+                    action,
+                    timeout: self.operation_timeout,
+                }));
+            }
+        }
 
         match self.get_unit(name) {
             Ok(service) => Ok(service),

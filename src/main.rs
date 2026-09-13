@@ -16,7 +16,7 @@ use std::rc::Rc;
 use std::sync::mpsc;
 use std::time::Duration;
 
-use terminal::app::AppEvent;
+use terminal::app::{Actions, AppEvent};
 
 use terminal::components::details::ServiceDetails;
 use terminal::components::filter::Filter;
@@ -67,10 +67,23 @@ fn main() -> color_eyre::Result<()> {
     let _terminal_restore_guard = TerminalRestoreGuard;
 
     let (event_tx, event_rx) = mpsc::channel::<AppEvent>();
+    let (completion_tx, completion_rx) = mpsc::channel();
+    let completion_event_tx = event_tx.clone();
+    std::thread::spawn(move || {
+        while let Ok(completion) = completion_rx.recv() {
+            if completion_event_tx
+                .send(AppEvent::Action(Actions::OperationCompleted(completion)))
+                .is_err()
+            {
+                break;
+            }
+        }
+    });
 
     start_notifier();
-    let systemd_adapter =
+    let mut systemd_adapter =
         SystemdServiceAdapter::new(ConnectionType::System, args.operation_timeout)?;
+    systemd_adapter.set_completion_sender(completion_tx);
     let usecase = Rc::new(RefCell::new(ServicesManager::new(Box::new(
         systemd_adapter,
     ))));
