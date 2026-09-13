@@ -10,7 +10,9 @@ use super::{
 };
 use crate::domain::service_repository::ServiceRepository;
 use std::error::Error;
+use std::fs;
 use std::io;
+use std::path::PathBuf;
 use std::process::{self, Command, Output};
 use std::sync::mpsc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -32,6 +34,10 @@ struct TransientUserUnit {
 
 impl TransientUserUnit {
     fn start() -> Result<Self, Box<dyn Error>> {
+        Self::start_with_command("/usr/bin/true")
+    }
+
+    fn start_with_command(command: &str) -> Result<Self, Box<dyn Error>> {
         let unique = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
         let name = format!(
             "systemd-manager-tui-integration-{}-{unique}.service",
@@ -50,7 +56,7 @@ impl TransientUserUnit {
                 "RemainAfterExit=yes",
                 "--quiet",
                 "--",
-                "/usr/bin/true",
+                command,
             ])
             .output()?;
 
@@ -65,12 +71,86 @@ impl TransientUserUnit {
 impl Drop for TransientUserUnit {
     fn drop(&mut self) {
         let _ = Command::new("systemctl")
+            .args(["--user", "unmask", "--", self.name.as_str()])
+            .output();
+        let _ = Command::new("systemctl")
             .args(["--user", "stop", "--", self.name.as_str()])
             .output();
         let _ = Command::new("systemctl")
             .args(["--user", "reset-failed", "--", self.name.as_str()])
             .output();
     }
+}
+
+struct InstalledUserUnit {
+    name: String,
+    source_path: PathBuf,
+    mask_path: PathBuf,
+}
+
+impl InstalledUserUnit {
+    fn new(command: &str) -> Result<Self, Box<dyn Error>> {
+        let unique = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+        let name = format!(
+            "systemd-manager-tui-installed-{}-{unique}.service",
+            process::id()
+        );
+        let source_dir = systemd_user_dir("user-shared")?;
+        let mask_dir = systemd_user_dir("user-configuration")?;
+        fs::create_dir_all(&source_dir)?;
+        fs::create_dir_all(&mask_dir)?;
+        let source_path = source_dir.join(&name);
+        let mask_path = mask_dir.join(&name);
+        fs::write(
+            &source_path,
+            format!(
+                "[Unit]\nDescription=systemd-manager-tui integration fixture\n\
+                 [Service]\nType=oneshot\nExecStart={command}\nRemainAfterExit=yes\n"
+            ),
+        )?;
+        reload_user_daemon()?;
+        Ok(Self {
+            name,
+            source_path,
+            mask_path,
+        })
+    }
+}
+
+impl Drop for InstalledUserUnit {
+    fn drop(&mut self) {
+        let _ = Command::new("systemctl")
+            .args(["--user", "unmask", "--", self.name.as_str()])
+            .output();
+        let _ = Command::new("systemctl")
+            .args(["--user", "stop", "--", self.name.as_str()])
+            .output();
+        let _ = Command::new("systemctl")
+            .args(["--user", "reset-failed", "--", self.name.as_str()])
+            .output();
+        let _ = fs::remove_file(&self.mask_path);
+        let _ = fs::remove_file(&self.source_path);
+        let _ = reload_user_daemon();
+    }
+}
+
+fn systemd_user_dir(kind: &str) -> Result<PathBuf, Box<dyn Error>> {
+    let output = Command::new("systemd-path").arg(kind).output()?;
+    if !output.status.success() {
+        return Err(command_error("systemd-path", &output).into());
+    }
+    let base = String::from_utf8(output.stdout)?.trim().to_string();
+    Ok(PathBuf::from(base).join("systemd/user"))
+}
+
+fn reload_user_daemon() -> Result<(), Box<dyn Error>> {
+    let output = Command::new("systemctl")
+        .args(["--user", "daemon-reload"])
+        .output()?;
+    if !output.status.success() {
+        return Err(command_error("systemctl --user daemon-reload", &output).into());
+    }
+    Ok(())
 }
 
 #[test]
@@ -147,6 +227,40 @@ fn user_bus_controls_an_isolated_transient_service() -> Result<(), Box<dyn Error
 
 #[test]
 #[ignore = "requires a running systemd user manager and systemd-run"]
+fn user_bus_reports_a_failed_job_result() -> Result<(), Box<dyn Error>> {
+    let unit = InstalledUserUnit::new("/usr/bin/false")?;
+    let adapter = SystemdServiceAdapter::new(ConnectionType::Session, INTEGRATION_TIMEOUT)?;
+
+    let error = adapter.restart_service(&unit.name).unwrap_err();
+    let failure = error
+        .downcast_ref::<SystemdJobFailed>()
+        .ok_or_else(|| io::Error::other(format!("expected SystemdJobFailed, got: {error}")))?;
+
+    assert_eq!(failure.service, unit.name);
+    assert_eq!(failure.action, ServiceAction::Restart);
+    assert_eq!(failure.result, "failed");
+    Ok(())
+}
+
+#[test]
+#[ignore = "requires a running systemd user manager and systemd-run"]
+fn masking_an_existing_unit_is_idempotent() -> Result<(), Box<dyn Error>> {
+    let unit = InstalledUserUnit::new("/usr/bin/true")?;
+    let adapter = SystemdServiceAdapter::new(ConnectionType::Session, INTEGRATION_TIMEOUT)?;
+
+    let masked = adapter.mask_service(&unit.name)?;
+    assert!(masked.state().file().starts_with("masked"));
+
+    let masked_again = adapter.mask_service(&unit.name)?;
+    assert!(masked_again.state().file().starts_with("masked"));
+
+    let unmasked = adapter.unmask_service(&unit.name)?;
+    assert!(!unmasked.state().file().starts_with("masked"));
+    Ok(())
+}
+
+#[test]
+#[ignore = "requires a running systemd user manager and systemd-run"]
 fn timed_out_job_reports_its_later_completion() -> Result<(), Box<dyn Error>> {
     let unit = TransientUserUnit::start()?;
     let (sender, receiver) = mpsc::channel();
@@ -164,6 +278,28 @@ fn timed_out_job_reports_its_later_completion() -> Result<(), Box<dyn Error>> {
     assert_eq!(completion.service, unit.name);
     assert_eq!(completion.action, ServiceAction::Restart);
     assert_eq!(completion.result, "done");
+    Ok(())
+}
+
+#[test]
+#[ignore = "requires running systemd user and system managers"]
+fn late_completion_keeps_the_connection_that_started_the_job() -> Result<(), Box<dyn Error>> {
+    let unit = TransientUserUnit::start()?;
+    let (sender, receiver) = mpsc::channel();
+    let mut adapter = SystemdServiceAdapter::new_with_completion_sender(
+        ConnectionType::Session,
+        Duration::ZERO,
+        Some(sender),
+    )?;
+
+    let error = adapter.restart_service(&unit.name).unwrap_err();
+    assert!(error.downcast_ref::<OperationTimeout>().is_some());
+    adapter.change_connection(ConnectionType::System)?;
+
+    let completion = receiver.recv_timeout(Duration::from_secs(2))?;
+    assert_eq!(completion.connection, ConnectionType::Session);
+    assert_eq!(completion.service, unit.name);
+    assert_eq!(completion.action, ServiceAction::Restart);
     Ok(())
 }
 
