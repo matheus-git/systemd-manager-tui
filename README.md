@@ -54,6 +54,10 @@ from binaries that already exist under `target/<triple>/release/`, use:
 ./build.sh --packages-only
 ```
 
+Before packaging, the script rejects stale binaries, verifies the ELF target architecture, and
+runs the binary's `--version` command when the target is native or a compatible QEMU runner is
+installed.
+
 To build or package only one architecture, combine an option with `--target`:
 
 ```sh

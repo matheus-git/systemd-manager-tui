@@ -17,6 +17,11 @@ declare -A RPM_ARCH=(
     [aarch64-unknown-linux-musl]="aarch64"
 )
 
+declare -A ELF_MACHINE=(
+    [x86_64-unknown-linux-musl]="Advanced Micro Devices X86-64"
+    [aarch64-unknown-linux-musl]="AArch64"
+)
+
 build_native=true
 build_cross=true
 build_deb=true
@@ -57,6 +62,52 @@ ensure_tool() {
     fi
     log "Installing ${crate}"
     cargo install "$crate" --locked
+}
+
+validate_binary() {
+    local target="$1"
+    local binary="target/${target}/release/${PACKAGE_NAME}"
+    local newer_input
+    local machine
+
+    if [[ ! -x "$binary" ]]; then
+        printf "Missing binary: %s. Build it before packaging.\n" "$binary" >&2
+        exit 1
+    fi
+
+    newer_input="$(find src Cargo.toml Cargo.lock -type f -newer "$binary" -print -quit)"
+    if [[ -n "$newer_input" ]]; then
+        printf "Stale binary: %s is older than %s. Rebuild before packaging.\n" \
+            "$binary" "$newer_input" >&2
+        exit 1
+    fi
+
+    if ! command -v readelf >/dev/null 2>&1; then
+        printf "Missing required tool: readelf (usually provided by binutils)\n" >&2
+        exit 1
+    fi
+    machine="$(readelf -h "$binary" | awk -F: '/Machine:/ { sub(/^[[:space:]]+/, "", $2); print $2; exit }')"
+    if [[ "$machine" != "${ELF_MACHINE[$target]}" ]]; then
+        printf "Wrong ELF machine for %s: expected '%s', found '%s'.\n" \
+            "$binary" "${ELF_MACHINE[$target]}" "$machine" >&2
+        exit 1
+    fi
+
+    case "$(uname -m):${target}" in
+        x86_64:x86_64-unknown-linux-musl | aarch64:aarch64-unknown-linux-musl)
+            "$binary" --version
+            ;;
+        *:aarch64-unknown-linux-musl)
+            if command -v qemu-aarch64 >/dev/null 2>&1; then
+                qemu-aarch64 "$binary" --version
+            else
+                log "ELF validated for ${target}; install qemu-aarch64 to execute it locally"
+            fi
+            ;;
+        *)
+            log "ELF validated for ${target}; execution requires a compatible host or runner"
+            ;;
+    esac
 }
 
 while (($# > 0)); do
@@ -121,14 +172,17 @@ if [[ "$build_cross" == true ]]; then
     done
 fi
 
+if [[ "$build_deb" == true || "$build_rpm" == true ]]; then
+    for target in "${TARGETS[@]}"; do
+        log "Validating binary for ${target}"
+        validate_binary "$target"
+    done
+fi
+
 if [[ "$build_deb" == true ]]; then
     ensure_tool cargo-deb cargo-deb
     for target in "${TARGETS[@]}"; do
         binary="target/${target}/release/${PACKAGE_NAME}"
-        if [[ ! -x "$binary" ]]; then
-            printf "Missing binary: %s. Run ./build.sh first.\n" "$binary" >&2
-            exit 1
-        fi
         deb_output="target/${target}/debian"
         mkdir -p "$deb_output"
         log "Generating DEB for ${target}"
@@ -140,11 +194,6 @@ if [[ "$build_rpm" == true ]]; then
     ensure_tool cargo-generate-rpm cargo-generate-rpm
     for target in "${TARGETS[@]}"; do
         binary="target/${target}/release/${PACKAGE_NAME}"
-        if [[ ! -x "$binary" ]]; then
-            printf "Missing binary: %s. Run ./build.sh first.\n" "$binary" >&2
-            exit 1
-        fi
-
         rpm_metadata="assets = [{ source = \"${binary}\", dest = \"/usr/bin/${PACKAGE_NAME}\", mode = \"755\" }]"
         log "Generating RPM for ${target} (${RPM_ARCH[$target]})"
         cargo generate-rpm \
