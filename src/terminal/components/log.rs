@@ -16,8 +16,7 @@ use std::thread;
 use std::time::Duration;
 use textwrap::wrap;
 
-use crate::domain::service::Service;
-use crate::terminal::app::{Actions, AppEvent};
+use crate::terminal::app::{Actions, AppEvent, ServiceRequestContext};
 use crate::usecases::services_manager::ServicesManager;
 
 fn render_loading(frame: &mut Frame, area: Rect) {
@@ -252,14 +251,11 @@ impl ServiceLog {
         });
     }
 
-    pub fn fetch_log_and_dispatch(&mut self, service: &Service) {
+    pub fn fetch_log_and_dispatch(&mut self, context: ServiceRequestContext) {
         let event_tx = self.sender.clone();
-        if let Ok(log) = self.usecase.borrow().get_log(service) {
+        if let Ok(log) = self.usecase.borrow().get_log(&context.service_name) {
             event_tx
-                .send(AppEvent::Action(Actions::Updatelog((
-                    service.name().to_string(),
-                    log,
-                ))))
+                .send(AppEvent::Action(Actions::UpdateLog(context, log)))
                 .expect("Failed to send Updatelog event");
         }
     }

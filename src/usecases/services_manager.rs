@@ -1,7 +1,7 @@
 use crate::domain::service::Service;
 use crate::domain::service_repository::ServiceRepository;
 use crate::infrastructure::systemd_service_adapter::ConnectionType;
-use crate::terminal::components::list::QueryUnitFile;
+use crate::terminal::components::list::{ListRequestContext, QueryUnitFile};
 use std::collections::HashSet;
 use std::error::Error;
 use std::sync::mpsc::Sender;
@@ -91,6 +91,7 @@ impl ServicesManager {
     pub fn list_services(
         &self,
         filter: bool,
+        context: ListRequestContext,
         tx: Arc<Sender<QueryUnitFile>>,
     ) -> Result<Vec<Service>, Box<dyn Error>> {
         let mut all = Vec::new();
@@ -129,8 +130,8 @@ impl ServicesManager {
                         .map_err(|error| error.to_string())
                 });
             let message = match result {
-                Ok(states) => QueryUnitFile::Finished(states),
-                Err(error) => QueryUnitFile::Error(error),
+                Ok(states) => QueryUnitFile::Finished(context, states),
+                Err(error) => QueryUnitFile::Error(context, error),
             };
             let _ = tx.send(message);
         });
@@ -138,11 +139,11 @@ impl ServicesManager {
         Ok(all)
     }
 
-    pub fn get_log(&self, service: &Service) -> Result<String, Box<dyn Error>> {
+    pub fn get_log(&self, service_name: &str) -> Result<String, Box<dyn Error>> {
         self.repository
             .lock()
             .unwrap()
-            .get_service_log(service.name())
+            .get_service_log(service_name)
     }
 
     pub fn change_repository_connection(

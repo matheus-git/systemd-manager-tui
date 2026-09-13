@@ -20,7 +20,8 @@ use std::time::{Duration, Instant};
 
 use crate::Config;
 use crate::domain::service::Service;
-use crate::terminal::app::{Actions, AppEvent};
+use crate::infrastructure::systemd_service_adapter::ConnectionType;
+use crate::terminal::app::{Actions, AppEvent, ServiceRequestContext};
 
 use rayon::prelude::*;
 
@@ -176,9 +177,15 @@ pub enum ServiceAction {
     ToggleMask,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ListRequestContext {
+    pub connection: ConnectionType,
+    pub generation: u64,
+}
+
 pub enum QueryUnitFile {
-    Finished(HashMap<String, String>),
-    Error(String),
+    Finished(ListRequestContext, HashMap<String, String>),
+    Error(ListRequestContext, String),
 }
 
 pub struct TableServices {
@@ -197,15 +204,22 @@ pub struct TableServices {
     active_enter_timestamp: Option<u64>,
     selected_service_name: Option<String>,
     last_timestamp_fetch: Option<Instant>,
-    timestamp_request_tx: Sender<String>,
-    timestamp_request_rx: Option<Receiver<String>>,
+    timestamp_request_tx: Sender<ServiceRequestContext>,
+    timestamp_request_rx: Option<Receiver<ServiceRequestContext>>,
+    active_connection: ConnectionType,
+    list_generation: u64,
+    current_list_context: Arc<Mutex<ListRequestContext>>,
 }
 
 impl TableServices {
     pub fn new(sender: Sender<AppEvent>, usecase: Rc<RefCell<ServicesManager>>) -> Self {
         let (event_tx, event_rx) = mpsc::channel::<QueryUnitFile>();
-        let (timestamp_request_tx, timestamp_request_rx) = mpsc::channel::<String>();
+        let (timestamp_request_tx, timestamp_request_rx) = mpsc::channel::<ServiceRequestContext>();
         let filter_all = false;
+        let initial_context = ListRequestContext {
+            connection: ConnectionType::System,
+            generation: 0,
+        };
 
         let mut table_state = TableState::default();
         table_state.select(Some(0));
@@ -228,15 +242,14 @@ impl TableServices {
             last_timestamp_fetch: None,
             timestamp_request_tx,
             timestamp_request_rx: Some(timestamp_request_rx),
+            active_connection: ConnectionType::System,
+            list_generation: 0,
+            current_list_context: Arc::new(Mutex::new(initial_context)),
         }
     }
 
     pub fn init(&mut self, config: &Config) {
-        self.services = self
-            .usecase
-            .borrow()
-            .list_services(self.filter_all, self.event_tx.clone())
-            .unwrap_or_default();
+        self.fetch_services();
         self.spawn_query_listener();
         self.spawn_timestamp_worker();
         self.refresh(&config.filter);
@@ -246,6 +259,7 @@ impl TableServices {
         let event_rx = self.event_rx.clone();
         let sender = self.sender.clone();
         let states = self.states.clone();
+        let current_context = self.current_list_context.clone();
 
         thread::spawn(move || {
             loop {
@@ -260,7 +274,19 @@ impl TableServices {
                 };
 
                 match message {
-                    Ok(QueryUnitFile::Finished(new_states)) => {
+                    Ok(QueryUnitFile::Finished(context, new_states)) => {
+                        let current = match current_context.lock() {
+                            Ok(current) => current,
+                            Err(error) => {
+                                let _ = sender.send(AppEvent::Error(format!(
+                                    "List request context failed: {error}"
+                                )));
+                                break;
+                            }
+                        };
+                        if *current != context {
+                            continue;
+                        }
                         match states.lock() {
                             Ok(mut states) => *states = new_states,
                             Err(error) => {
@@ -274,7 +300,13 @@ impl TableServices {
                             break;
                         }
                     }
-                    Ok(QueryUnitFile::Error(error)) => {
+                    Ok(QueryUnitFile::Error(context, error)) => {
+                        let is_current = current_context
+                            .lock()
+                            .is_ok_and(|current| *current == context);
+                        if !is_current {
+                            continue;
+                        }
                         if sender.send(AppEvent::Error(error)).is_err() {
                             break;
                         }
@@ -330,15 +362,15 @@ impl TableServices {
         let sender = self.sender.clone();
 
         thread::spawn(move || {
-            while let Ok(n) = rx.recv() {
-                let mut name = n;
+            while let Ok(request) = rx.recv() {
+                let mut context = request;
                 // Drain stale requests, keep only the latest
-                while let Ok(n) = rx.try_recv() {
-                    name = n;
+                while let Ok(request) = rx.try_recv() {
+                    context = request;
                 }
                 let ts = match repo.lock() {
                     Ok(repo) => repo
-                        .get_active_enter_timestamp(&name)
+                        .get_active_enter_timestamp(&context.service_name)
                         .ok()
                         .filter(|&t| t > 0),
                     Err(error) => {
@@ -348,7 +380,7 @@ impl TableServices {
                         break;
                     }
                 };
-                let _ = sender.send(AppEvent::Action(Actions::UpdateTimestamp(name, ts)));
+                let _ = sender.send(AppEvent::Action(Actions::UpdateTimestamp(context, ts)));
             }
         });
     }
@@ -375,12 +407,17 @@ impl TableServices {
         self.last_timestamp_fetch = Some(Instant::now());
 
         if let Some(s) = selected.as_ref().filter(|s| s.state().active() == "active") {
-            let _ = self.timestamp_request_tx.send(s.name().to_string());
+            let _ = self.timestamp_request_tx.send(ServiceRequestContext {
+                connection: self.active_connection,
+                service_name: s.name().to_string(),
+            });
         }
     }
 
-    pub fn update_timestamp(&mut self, name: String, ts: Option<u64>) {
-        if self.selected_service_name.as_deref() == Some(name.as_str()) {
+    pub fn update_timestamp(&mut self, context: ServiceRequestContext, ts: Option<u64>) {
+        if context.connection == self.active_connection
+            && self.selected_service_name.as_deref() == Some(context.service_name.as_str())
+        {
             self.active_enter_timestamp = ts;
             self.last_timestamp_fetch = Some(Instant::now());
         }
@@ -456,11 +493,34 @@ impl TableServices {
     }
 
     fn fetch_services(&mut self) {
+        self.list_generation = self.list_generation.wrapping_add(1);
+        let context = ListRequestContext {
+            connection: self.active_connection,
+            generation: self.list_generation,
+        };
+        if let Ok(mut current) = self.current_list_context.lock() {
+            *current = context;
+        }
         self.services = self
             .usecase
             .borrow()
-            .list_services(self.filter_all, self.event_tx.clone())
+            .list_services(self.filter_all, context, self.event_tx.clone())
             .unwrap_or_default();
+    }
+
+    pub fn set_active_connection(&mut self, connection: ConnectionType) {
+        self.active_connection = connection;
+        self.list_generation = self.list_generation.wrapping_add(1);
+        if let Ok(mut current) = self.current_list_context.lock() {
+            *current = ListRequestContext {
+                connection,
+                generation: self.list_generation,
+            };
+        }
+        if let Ok(mut states) = self.states.lock() {
+            states.clear();
+        }
+        self.invalidate_timestamp();
     }
 
     fn fetch_and_refresh(&mut self, filter_text: &str) {

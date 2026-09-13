@@ -8,6 +8,13 @@ use ratatui::backend::TestBackend;
 use std::collections::HashMap;
 use std::sync::mpsc;
 
+fn request_context(name: &str) -> ServiceRequestContext {
+    ServiceRequestContext {
+        connection: ConnectionType::System,
+        service_name: name.to_string(),
+    }
+}
+
 struct EmptyRepository;
 
 impl ServiceRepository for EmptyRepository {
@@ -294,12 +301,64 @@ fn timestamp_update_is_applied_only_to_current_selection() {
     let mut table = table();
     table.selected_service_name = Some("current.service".into());
 
-    table.update_timestamp("old.service".into(), Some(10));
+    table.update_timestamp(request_context("old.service"), Some(10));
     assert!(table.active_enter_timestamp.is_none());
 
-    table.update_timestamp("current.service".into(), Some(20));
+    table.update_timestamp(request_context("current.service"), Some(20));
     assert_eq!(table.active_enter_timestamp, Some(20));
     assert!(table.has_active_runtime());
+}
+
+#[test]
+fn timestamp_update_is_ignored_after_connection_changes() {
+    let mut table = table();
+    table.selected_service_name = Some("same-name.service".into());
+    table.set_active_connection(ConnectionType::Session);
+    table.selected_service_name = Some("same-name.service".into());
+
+    table.update_timestamp(request_context("same-name.service"), Some(20));
+
+    assert_eq!(table.active_enter_timestamp, None);
+}
+
+#[test]
+fn unit_file_states_are_applied_only_for_the_current_list_request() {
+    let (mut table, receiver) = table_with_receiver();
+    table.spawn_query_listener();
+    let stale_context = *table.current_list_context.lock().unwrap();
+    table.set_active_connection(ConnectionType::Session);
+    let current_context = *table.current_list_context.lock().unwrap();
+
+    table
+        .event_tx
+        .send(QueryUnitFile::Finished(
+            stale_context,
+            HashMap::from([("stale.service".into(), "enabled".into())]),
+        ))
+        .unwrap();
+    assert!(receiver.recv_timeout(Duration::from_millis(50)).is_err());
+    assert!(table.states.lock().unwrap().is_empty());
+
+    table
+        .event_tx
+        .send(QueryUnitFile::Finished(
+            current_context,
+            HashMap::from([("current.service".into(), "disabled".into())]),
+        ))
+        .unwrap();
+    assert!(matches!(
+        receiver.recv_timeout(Duration::from_secs(1)),
+        Ok(AppEvent::Action(Actions::Redraw))
+    ));
+    assert_eq!(
+        table
+            .states
+            .lock()
+            .unwrap()
+            .get("current.service")
+            .map(String::as_str),
+        Some("disabled")
+    );
 }
 
 #[test]

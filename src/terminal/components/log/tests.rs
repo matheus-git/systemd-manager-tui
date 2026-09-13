@@ -1,8 +1,16 @@
 use super::*;
+use crate::infrastructure::systemd_service_adapter::ConnectionType;
 use crate::test_support::{FakeRepository, service};
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use std::sync::mpsc;
+
+fn request_context(name: &str) -> ServiceRequestContext {
+    ServiceRequestContext {
+        connection: ConnectionType::System,
+        service_name: name.to_string(),
+    }
+}
 
 fn log_with(repository: FakeRepository) -> (ServiceLog, mpsc::Receiver<AppEvent>) {
     let (sender, receiver) = mpsc::channel();
@@ -54,12 +62,12 @@ fn fetch_dispatches_log_update_event() {
     let (mut log, receiver) = log_with(fake);
     let unit = service("demo.service", "active", "enabled");
 
-    log.fetch_log_and_dispatch(&unit);
+    log.fetch_log_and_dispatch(request_context(unit.name()));
 
     assert!(matches!(
         receiver.recv().unwrap(),
-        AppEvent::Action(Actions::Updatelog((name, content)))
-            if name == "demo.service" && content == "journal output"
+        AppEvent::Action(Actions::UpdateLog(context, content))
+            if context == request_context("demo.service") && content == "journal output"
     ));
     assert_eq!(observer.calls(), ["log:demo.service"]);
 }

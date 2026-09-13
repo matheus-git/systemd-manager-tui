@@ -47,7 +47,7 @@ pub enum Actions {
     ResetList,
     GoLog,
     GoDetails,
-    Updatelog((String, String)),
+    UpdateLog(ServiceRequestContext, String),
     #[allow(dead_code)]
     UpdateDetails,
     Filter(String),
@@ -56,7 +56,13 @@ pub enum Actions {
     ServiceAction(ServiceAction),
     ShowHelp,
     Redraw,
-    UpdateTimestamp(String, Option<u64>),
+    UpdateTimestamp(ServiceRequestContext, Option<u64>),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ServiceRequestContext {
+    pub connection: ConnectionType,
+    pub service_name: String,
 }
 
 pub enum AppEvent {
@@ -244,14 +250,17 @@ impl App {
                     self.table_service.set_selected_index(0);
                     self.table_service.refresh(&input);
                 }
-                AppEvent::Action(Actions::Updatelog(data)) => {
-                    self.service_log.update(data.0, data.1);
+                AppEvent::Action(Actions::UpdateLog(context, log)) => {
+                    if self.status == Status::Log && self.is_current_service_context(&context) {
+                        self.service_log.update(context.service_name, log);
+                    }
                 }
                 AppEvent::Action(Actions::RefreshLog) => {
                     if self.status == Status::Log
                         && let Some(service) = self.table_service.get_selected_service()
                     {
-                        self.service_log.fetch_log_and_dispatch(&service);
+                        self.service_log
+                            .fetch_log_and_dispatch(self.service_context(&service));
                     }
                 }
                 AppEvent::Action(Actions::GoLog) => {
@@ -262,8 +271,8 @@ impl App {
                 AppEvent::Action(Actions::ResetList) => {
                     self.table_service.set_usecase(self.usecases.clone());
                 }
-                AppEvent::Action(Actions::UpdateTimestamp(name, ts)) => {
-                    self.table_service.update_timestamp(name, ts);
+                AppEvent::Action(Actions::UpdateTimestamp(context, ts)) => {
+                    self.table_service.update_timestamp(context, ts);
                 }
                 AppEvent::Action(Actions::UpdateDetails | Actions::Redraw) => {}
                 AppEvent::Action(Actions::RefreshDetails) => {
@@ -745,10 +754,27 @@ impl App {
 
         self.active_connection = requested_connection;
         self.selected_tab_index = requested_tab_index;
+        self.table_service
+            .set_active_connection(requested_connection);
         self.table_service.invalidate_timestamp();
         self.event_tx
             .send(AppEvent::Action(Actions::ResetList))
             .expect("Failed to send ResetList event");
+    }
+
+    fn service_context(&self, service: &crate::domain::service::Service) -> ServiceRequestContext {
+        ServiceRequestContext {
+            connection: self.active_connection,
+            service_name: service.name().to_string(),
+        }
+    }
+
+    fn is_current_service_context(&self, context: &ServiceRequestContext) -> bool {
+        context.connection == self.active_connection
+            && self
+                .table_service
+                .get_selected_service()
+                .is_some_and(|service| service.name() == context.service_name)
     }
 
     fn quit(&mut self) {
