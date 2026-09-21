@@ -14,8 +14,15 @@ fn cli_uses_expected_defaults() {
 
 #[test]
 fn cli_can_disable_failure_notifications() {
-    let args =
-        Args::try_parse_from(["systemd-manager-tui", "--disable-failure-notifications"]).unwrap();
+    let args = Args::try_parse_from(["systemd-manager-tui", "--no-notifications"]).unwrap();
+    let config = Config::from(args);
+
+    assert!(!config.failure_notifications);
+}
+
+#[test]
+fn cli_accepts_short_no_notifications_flag() {
+    let args = Args::try_parse_from(["systemd-manager-tui", "-n"]).unwrap();
     let config = Config::from(args);
 
     assert!(!config.failure_notifications);

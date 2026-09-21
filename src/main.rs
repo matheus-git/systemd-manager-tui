@@ -36,9 +36,9 @@ struct Args {
     #[arg(long, default_value_t = 10, value_parser = clap::value_parser!(u64).range(1..))]
     operation_timeout_secs: u64,
 
-    /// Disable notifications when system or user units enter the failed state
-    #[arg(long)]
-    disable_failure_notifications: bool,
+    /// Disable notifications for failed system and user units
+    #[arg(short = 'n', long)]
+    no_notifications: bool,
 }
 
 #[derive(Clone)]
@@ -53,7 +53,7 @@ impl From<Args> for Config {
         Self {
             filter: args.filter.unwrap_or_default(),
             operation_timeout: Duration::from_secs(args.operation_timeout_secs),
-            failure_notifications: !args.disable_failure_notifications,
+            failure_notifications: !args.no_notifications,
         }
     }
 }
