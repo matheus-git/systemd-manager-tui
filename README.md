@@ -19,6 +19,9 @@ systemd-manager-tui
 
 # With a filter
 systemd-manager-tui -f docker
+
+# Without watching system and user units for failure notifications
+systemd-manager-tui --disable-failure-notifications
 ```
 
 ## Install

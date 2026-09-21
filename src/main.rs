@@ -35,12 +35,17 @@ struct Args {
     /// Maximum time to wait for a systemd service operation to settle
     #[arg(long, default_value_t = 10, value_parser = clap::value_parser!(u64).range(1..))]
     operation_timeout_secs: u64,
+
+    /// Disable notifications when system or user units enter the failed state
+    #[arg(long)]
+    disable_failure_notifications: bool,
 }
 
 #[derive(Clone)]
 pub struct Config {
     pub filter: String,
     pub operation_timeout: Duration,
+    pub failure_notifications: bool,
 }
 
 impl From<Args> for Config {
@@ -48,6 +53,7 @@ impl From<Args> for Config {
         Self {
             filter: args.filter.unwrap_or_default(),
             operation_timeout: Duration::from_secs(args.operation_timeout_secs),
+            failure_notifications: !args.disable_failure_notifications,
         }
     }
 }
@@ -80,7 +86,9 @@ fn main() -> color_eyre::Result<()> {
         }
     });
 
-    start_notifier();
+    if args.failure_notifications {
+        start_notifier();
+    }
     let mut systemd_adapter =
         SystemdServiceAdapter::new(ConnectionType::System, args.operation_timeout)?;
     systemd_adapter.set_completion_sender(completion_tx);

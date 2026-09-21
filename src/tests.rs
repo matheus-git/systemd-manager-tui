@@ -9,6 +9,16 @@ fn cli_uses_expected_defaults() {
 
     assert!(config.filter.is_empty());
     assert_eq!(config.operation_timeout, Duration::from_secs(10));
+    assert!(config.failure_notifications);
+}
+
+#[test]
+fn cli_can_disable_failure_notifications() {
+    let args =
+        Args::try_parse_from(["systemd-manager-tui", "--disable-failure-notifications"]).unwrap();
+    let config = Config::from(args);
+
+    assert!(!config.failure_notifications);
 }
 
 #[test]
