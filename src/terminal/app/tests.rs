@@ -189,3 +189,58 @@ fn plain_c_does_not_stop_the_app_or_change_cursor_visibility() {
     assert!(app.running);
     assert_eq!(terminal.backend(), &visible_backend);
 }
+
+#[test]
+fn instance_dialog_keeps_shortcut_letters_and_navigation_out_of_main_ui() {
+    let (mut app, observer) = test_app_with_repository(FakeRepository::default());
+    app.table_service.services = vec![crate::test_support::service(
+        "worker@.service",
+        "inactive",
+        "disabled",
+    )];
+    app.table_service.refresh("");
+    app.table_service
+        .act_on_selected_service(&ServiceAction::Start);
+    let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+    for c in "hlfs".chars() {
+        app.handle_instance_key(
+            KeyEvent::new(KeyCode::Char(c), KeyModifiers::NONE),
+            &mut terminal,
+        )
+        .unwrap();
+    }
+    app.handle_instance_key(
+        KeyEvent::new(KeyCode::Left, KeyModifiers::NONE),
+        &mut terminal,
+    )
+    .unwrap();
+    app.handle_instance_key(
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+        &mut terminal,
+    )
+    .unwrap();
+    assert_eq!(app.selected_tab_index, 0);
+    assert!(app.filter.input.is_empty());
+    assert_eq!(observer.calls(), ["start:worker@hlfs.service"]);
+}
+
+#[test]
+fn ctrl_c_in_instance_dialog_quits_without_executing_the_action() {
+    let (mut app, observer) = test_app_with_repository(FakeRepository::default());
+    app.table_service.services = vec![crate::test_support::service(
+        "worker@.service",
+        "inactive",
+        "disabled",
+    )];
+    app.table_service.refresh("");
+    app.table_service
+        .act_on_selected_service(&ServiceAction::Start);
+    let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+    app.handle_instance_key(
+        KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
+        &mut terminal,
+    )
+    .unwrap();
+    assert!(!app.running);
+    assert!(observer.calls().is_empty());
+}

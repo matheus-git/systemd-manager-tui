@@ -801,3 +801,138 @@ fn global_shortcuts_work_when_no_units_match() {
     assert!(table.filtered_services.is_empty());
     assert!(table.table_state.selected().is_none());
 }
+
+fn instance_key(table: &mut TableServices, code: KeyCode) {
+    table.on_instance_key(KeyEvent::new(code, crossterm::event::KeyModifiers::NONE));
+}
+
+#[test]
+fn template_operations_wait_for_instance_and_preserve_template_row() {
+    for (action, operation) in [
+        (ServiceAction::Start, "start"),
+        (ServiceAction::Stop, "stop"),
+        (ServiceAction::Restart, "restart"),
+        (ServiceAction::Enable, "enable"),
+        (ServiceAction::Disable, "disable"),
+    ] {
+        let fake = FakeRepository::default();
+        let observer = fake.clone();
+        let (mut table, _receiver) = table_with_repository(fake);
+        table.services = vec![service("worker@.service", "inactive")];
+        table.refresh("worker");
+        table.act_on_selected_service(&action);
+        assert!(table.has_instance_prompt());
+        assert!(observer.calls().is_empty());
+        instance_key(&mut table, KeyCode::Enter);
+        assert!(table.has_instance_prompt());
+        assert!(observer.calls().is_empty());
+        for c in "tenant-1".chars() {
+            instance_key(&mut table, KeyCode::Char(c));
+        }
+        instance_key(&mut table, KeyCode::Enter);
+        assert!(!table.has_instance_prompt());
+        assert!(!table.ignore_key_events);
+        assert!(
+            observer
+                .calls()
+                .contains(&format!("{operation}:worker@tenant-1.service"))
+        );
+        assert!(
+            !observer
+                .calls()
+                .iter()
+                .any(|call| call.ends_with(":worker@.service"))
+        );
+        assert_eq!(
+            table.get_selected_service().unwrap().name(),
+            "worker@tenant-1.service"
+        );
+        assert!(
+            table
+                .services
+                .iter()
+                .any(|unit| unit.name() == "worker@.service")
+        );
+        assert_eq!(table.old_filter_text, "worker");
+    }
+}
+
+#[test]
+fn cancel_and_connection_change_discard_pending_instance_actions() {
+    let fake = FakeRepository::default();
+    let observer = fake.clone();
+    let (mut table, _receiver) = table_with_repository(fake);
+    table.services = vec![service("worker@.service", "inactive")];
+    table.refresh("");
+    table.act_on_selected_service(&ServiceAction::Start);
+    instance_key(&mut table, KeyCode::Char('a'));
+    instance_key(&mut table, KeyCode::Esc);
+    assert!(!table.has_instance_prompt());
+    assert!(!table.ignore_key_events);
+    assert!(observer.calls().is_empty());
+    table.act_on_selected_service(&ServiceAction::Enable);
+    instance_key(&mut table, KeyCode::Char('b'));
+    table.set_active_connection(ConnectionType::Session);
+    instance_key(&mut table, KeyCode::Enter);
+    assert!(!table.has_instance_prompt());
+    assert!(!table.ignore_key_events);
+    assert!(observer.calls().is_empty());
+}
+
+#[test]
+fn existing_instances_execute_directly_and_instance_failures_unlock_input() {
+    let fake = FakeRepository::default();
+    let observer = fake.clone();
+    let (mut table, receiver) = table_with_repository(fake);
+    table.services = vec![service("worker@existing.service", "inactive")];
+    table.refresh("");
+    table.act_on_selected_service(&ServiceAction::Start);
+    assert!(!table.has_instance_prompt());
+    assert_eq!(observer.calls(), ["start:worker@existing.service"]);
+
+    observer.fail("start");
+    table.services = vec![service("worker@.service", "inactive")];
+    table.refresh("");
+    table.act_on_selected_service(&ServiceAction::Start);
+    instance_key(&mut table, KeyCode::Char('a'));
+    instance_key(&mut table, KeyCode::Enter);
+    assert!(!table.has_instance_prompt());
+    assert!(!table.ignore_key_events);
+    assert!(
+        matches!(receiver.recv_timeout(Duration::from_secs(1)), Ok(AppEvent::Error(error)) if error == "start failed")
+    );
+}
+
+#[test]
+fn pending_instance_keeps_original_template_when_selection_changes() {
+    let fake = FakeRepository::default();
+    let observer = fake.clone();
+    let (mut table, _receiver) = table_with_repository(fake);
+    table.services = vec![
+        service("worker@.service", "inactive"),
+        service("other@.service", "inactive"),
+    ];
+    table.refresh("");
+    table.act_on_selected_service(&ServiceAction::Start);
+    table.set_selected_index(1);
+    instance_key(&mut table, KeyCode::Char('a'));
+    instance_key(&mut table, KeyCode::Enter);
+    assert_eq!(observer.calls(), ["start:worker@a.service"]);
+}
+
+#[test]
+fn masking_a_template_keeps_template_scope_without_prompting() {
+    let fake = FakeRepository::default();
+    let observer = fake.clone();
+    let (mut table, _receiver) = table_with_repository(fake);
+    table.services = vec![service("worker@.service", "inactive")];
+    table.refresh("");
+    table
+        .states
+        .lock()
+        .unwrap()
+        .insert("worker@.service".into(), "disabled".into());
+    table.act_on_selected_service(&ServiceAction::ToggleMask);
+    assert!(!table.has_instance_prompt());
+    assert!(observer.calls().contains(&"mask:worker@.service".into()));
+}
