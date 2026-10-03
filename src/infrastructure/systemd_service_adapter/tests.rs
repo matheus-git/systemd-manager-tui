@@ -143,9 +143,14 @@ struct InstalledUserUnit {
 
 impl InstalledUserUnit {
     fn new(command: &str) -> Result<Self, Box<dyn Error>> {
+        Self::with_template(command, false)
+    }
+
+    fn with_template(command: &str, template: bool) -> Result<Self, Box<dyn Error>> {
         let unique = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
+        let marker = if template { "@" } else { "" };
         let name = format!(
-            "systemd-manager-tui-installed-{}-{unique}.service",
+            "systemd-manager-tui-installed-{}-{unique}{marker}.service",
             process::id()
         );
         let source_dir = systemd_user_dir("user-shared")?;
@@ -158,15 +163,17 @@ impl InstalledUserUnit {
             &source_path,
             format!(
                 "[Unit]\nDescription=systemd-manager-tui integration fixture\n\
-                 [Service]\nType=oneshot\nExecStart={command}\nRemainAfterExit=yes\n"
+                 [Service]\nType=oneshot\nExecStart={command}\nRemainAfterExit=yes\n\
+                 [Install]\nWantedBy=default.target\n"
             ),
         )?;
-        reload_user_daemon()?;
-        Ok(Self {
+        let unit = Self {
             name,
             source_path,
             mask_path,
-        })
+        };
+        reload_user_daemon()?;
+        Ok(unit)
     }
 }
 
@@ -383,4 +390,62 @@ fn job_failure_identifies_the_operation_and_systemd_result() {
     assert!(message.contains("start"));
     assert!(message.contains("demo.service"));
     assert!(message.contains("dependency"));
+}
+
+struct InstalledUserTemplate {
+    unit: InstalledUserUnit,
+    instance: String,
+}
+
+impl Drop for InstalledUserTemplate {
+    fn drop(&mut self) {
+        let _ = Command::new("systemctl")
+            .args(["--user", "disable", "--now", "--", self.instance.as_str()])
+            .output();
+        let _ = Command::new("systemctl")
+            .args(["--user", "reset-failed", "--", self.instance.as_str()])
+            .output();
+        // The owned template is removed and the manager reloaded afterwards.
+    }
+}
+
+#[test]
+#[ignore = "requires a running systemd user manager"]
+fn user_template_instance_supports_enable_and_full_lifecycle() -> Result<(), Box<dyn Error>> {
+    use crate::usecases::services_manager::ServicesManager;
+
+    let unit = InstalledUserUnit::with_template("/usr/bin/true", true)?;
+    let instance = loaded_service(&unit.name).instantiate("tenant-1")?;
+    let fixture = InstalledUserTemplate {
+        unit,
+        instance: instance.name().to_string(),
+    };
+    let adapter = SystemdServiceAdapter::new(ConnectionType::Session, INTEGRATION_TIMEOUT)?;
+    let manager = ServicesManager::new(Box::new(adapter));
+
+    // Enable before starting: this instance has never been loaded or run.
+    let enabled = manager.enable_service(&instance)?;
+    assert_eq!(enabled.name(), fixture.instance);
+    assert_eq!(enabled.state().file(), "enabled");
+    let started = manager.start_service(&instance)?;
+    assert_eq!(started.state().active(), "active");
+    assert!(
+        manager
+            .systemctl_cat(&instance)?
+            .contains("RemainAfterExit=yes")
+    );
+    assert_eq!(
+        manager.restart_service(&instance)?.state().active(),
+        "active"
+    );
+    assert_eq!(
+        manager.stop_service(&instance)?.state().active(),
+        "inactive"
+    );
+    assert_eq!(
+        manager.disable_service(&instance)?.state().file(),
+        "disabled"
+    );
+    assert!(fixture.unit.source_path.exists());
+    Ok(())
 }

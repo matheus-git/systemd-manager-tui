@@ -217,6 +217,9 @@ impl App {
             };
 
             match event {
+                AppEvent::Key(key) if self.table_service.has_instance_prompt() => {
+                    self.handle_instance_key(key, terminal)?;
+                }
                 AppEvent::Key(key) => match self.status {
                     Status::Log => {
                         if self.show_help {
@@ -466,7 +469,8 @@ impl App {
             Line::from("s - Start service    x - Stop service"),
             Line::from("r - Restart service"),
             Line::from("e - Enable service    d - Disable service"),
-            Line::from("m - Mask/Unmask service"),
+            Line::from("m - Mask/Unmask selected unit or template"),
+            Line::from("Templates (@.): s/x/r/e/d ask for an instance name"),
             Line::from(""),
             Line::from(vec![Span::styled(
                 "View & Filter list:",
@@ -662,6 +666,7 @@ impl App {
             if self.show_help {
                 self.draw_help_popup(frame, area);
             }
+            self.table_service.render_instance_prompt(frame, area);
         })?;
 
         Ok(())
@@ -701,6 +706,17 @@ impl App {
             .wrap(ratatui::widgets::Wrap { trim: true });
 
         frame.render_widget(help_block, help_area);
+    }
+
+    fn handle_instance_key<B: Backend>(
+        &mut self,
+        key: KeyEvent,
+        terminal: &mut Terminal<B>,
+    ) -> Result<()> {
+        if !self.handle_quit_key(key, terminal)? {
+            self.table_service.on_instance_key(key);
+        }
+        Ok(())
     }
 
     fn on_key_event(&mut self, key: KeyEvent, terminal: &mut DefaultTerminal) -> Result<()> {

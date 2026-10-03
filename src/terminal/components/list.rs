@@ -1,3 +1,4 @@
+use super::instance::{InstancePrompt, PromptResult};
 use crate::usecases::list_query::{ListRequestContext, QueryUnitFile};
 use crate::usecases::services_manager::ServicesManager;
 use crossterm::event::{KeyCode, KeyEvent};
@@ -167,6 +168,7 @@ impl ActiveFilterState {
     }
 }
 
+#[derive(Clone, Copy)]
 pub enum ServiceAction {
     Start,
     Stop,
@@ -178,7 +180,21 @@ pub enum ServiceAction {
     ToggleMask,
 }
 
+impl ServiceAction {
+    fn instance_action(self) -> Option<&'static str> {
+        match self {
+            Self::Start => Some("Start"),
+            Self::Stop => Some("Stop"),
+            Self::Restart => Some("Restart"),
+            Self::Enable => Some("Enable"),
+            Self::Disable => Some("Disable"),
+            _ => None,
+        }
+    }
+}
+
 pub struct TableServices {
+    instance_prompt: Option<(ServiceAction, InstancePrompt)>,
     pub table_state: TableState,
     pub services: Vec<Service>,
     filtered_services: Vec<Service>,
@@ -222,6 +238,7 @@ impl TableServices {
         table_state.select(Some(0));
 
         Self {
+            instance_prompt: None,
             table_state,
             filtered_services: Vec::new(),
             services: Vec::new(),
@@ -543,6 +560,8 @@ impl TableServices {
     }
 
     pub fn set_active_connection(&mut self, connection: ConnectionType) {
+        self.instance_prompt = None;
+        self.set_ignore_key_events(false);
         self.active_connection = connection;
         self.list_generation = self.list_generation.wrapping_add(1);
         if let Ok(mut current) = self.current_list_context.lock() {
@@ -741,10 +760,57 @@ impl TableServices {
         }
     }
 
+    pub fn has_instance_prompt(&self) -> bool {
+        self.instance_prompt.is_some()
+    }
+
+    pub fn render_instance_prompt(&self, frame: &mut Frame, area: Rect) {
+        if let Some((_, prompt)) = &self.instance_prompt {
+            prompt.render(frame, area);
+        }
+    }
+
+    pub fn on_instance_key(&mut self, key: KeyEvent) {
+        let Some((action, mut prompt)) = self.instance_prompt.take() else {
+            return;
+        };
+        match prompt.on_key(key) {
+            PromptResult::Editing => self.instance_prompt = Some((action, prompt)),
+            PromptResult::Cancelled => self.set_ignore_key_events(false),
+            PromptResult::Submitted(service) => {
+                let name = service.name().to_string();
+                self.execute_action(&action, Some(service));
+                if let Some(index) = self
+                    .filtered_services
+                    .iter()
+                    .position(|service| service.name() == name)
+                {
+                    self.table_state.select(Some(index));
+                }
+                self.invalidate_timestamp();
+            }
+        }
+    }
+
     pub fn act_on_selected_service(&mut self, action: &ServiceAction) {
+        if self.has_instance_prompt() {
+            return;
+        }
+        let service = self.get_selected_service();
+        if let Some(template) = service.as_ref().filter(|service| service.is_template())
+            && let Some(label) = action.instance_action()
+        {
+            self.instance_prompt = Some((*action, InstancePrompt::new(template.clone(), label)));
+            self.set_ignore_key_events(true);
+            return;
+        }
+        self.execute_action(action, service);
+    }
+
+    fn execute_action(&mut self, action: &ServiceAction, service: Option<Service>) {
         let binding_usecase = self.usecase.clone();
         let usecase = binding_usecase.borrow();
-        match (action, self.get_selected_service()) {
+        match (action, service) {
             (ServiceAction::ToggleMask, Some(service)) => {
                 let state_opt = match self.states.lock() {
                     Ok(guard) => guard.get(service.name()).cloned(),
