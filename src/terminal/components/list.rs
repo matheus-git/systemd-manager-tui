@@ -1,3 +1,4 @@
+use crate::usecases::list_query::{ListRequestContext, QueryUnitFile};
 use crate::usecases::services_manager::ServicesManager;
 use crossterm::event::{KeyCode, KeyEvent};
 use ratatui::layout::Rect;
@@ -20,8 +21,8 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use crate::Config;
+use crate::domain::connection_type::ConnectionType;
 use crate::domain::service::Service;
-use crate::infrastructure::systemd_service_adapter::ConnectionType;
 use crate::terminal::app::{Actions, AppEvent, ServiceRequestContext};
 
 const PADDING: Padding = Padding::new(1, 1, 1, 1);
@@ -175,17 +176,6 @@ pub enum ServiceAction {
     RefreshAll,
     ToggleFilter,
     ToggleMask,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct ListRequestContext {
-    pub connection: ConnectionType,
-    pub generation: u64,
-}
-
-pub enum QueryUnitFile {
-    Finished(ListRequestContext, HashMap<String, String>),
-    Error(ListRequestContext, String),
 }
 
 pub struct TableServices {

@@ -6,8 +6,9 @@ mod test_support;
 #[cfg(test)]
 mod tests;
 mod usecases;
+use domain::connection_type::ConnectionType;
 use infrastructure::notifier::start_notifier;
-use infrastructure::systemd_service_adapter::{ConnectionType, SystemdServiceAdapter};
+use infrastructure::systemd_service_adapter::SystemdServiceAdapter;
 use terminal::app::App;
 use usecases::services_manager::ServicesManager;
 

@@ -1,7 +1,7 @@
+use crate::domain::connection_type::ConnectionType;
 use crate::domain::service::Service;
 use crate::domain::service_repository::ServiceRepository;
 use crate::domain::service_state::ServiceState;
-use crate::infrastructure::systemd_service_adapter::ConnectionType;
 use std::collections::{HashMap, HashSet};
 use std::error::Error;
 use std::sync::{Arc, Mutex};

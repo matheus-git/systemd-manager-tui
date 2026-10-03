@@ -1,4 +1,4 @@
-use crate::infrastructure::systemd_service_adapter::ConnectionType;
+use crate::domain::connection_type::ConnectionType;
 
 use super::service::Service;
 use std::collections::HashMap;

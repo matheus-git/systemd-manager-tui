@@ -1,7 +1,7 @@
+use crate::domain::connection_type::ConnectionType;
 use crate::domain::service::Service;
 use crate::domain::service_repository::ServiceRepository;
-use crate::infrastructure::systemd_service_adapter::ConnectionType;
-use crate::terminal::components::list::{ListRequestContext, QueryUnitFile};
+use crate::usecases::list_query::{ListRequestContext, QueryUnitFile};
 use std::collections::HashSet;
 use std::error::Error;
 use std::sync::mpsc;

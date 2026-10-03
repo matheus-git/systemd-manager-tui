@@ -26,7 +26,8 @@ use std::{
 };
 
 use crate::Config;
-use crate::infrastructure::systemd_service_adapter::{CompletedOperation, ConnectionType};
+use crate::domain::connection_type::ConnectionType;
+use crate::infrastructure::systemd_service_adapter::CompletedOperation;
 use crate::terminal::components::list::ActiveFilterState;
 use crate::usecases::services_manager::ServicesManager;
 
