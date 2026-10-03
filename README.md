@@ -25,19 +25,6 @@ systemd-manager-tui -n
 # or: systemd-manager-tui --no-notifications
 ```
 
-### Template instances
-
-Press `f` to include unit files, then select a template such as `worker@.service`.
-The `s`, `x`, `r`, `e`, and `d` actions open an instance-name dialog for start,
-stop, restart, enable, and disable respectively. Enter `tenant-1` to target
-`worker@tenant-1.service`; review the target and press Enter, or Esc to cancel.
-Existing instances operate directly without a prompt.
-
-Enter the instance identifier as it appears in a systemd unit name. For names
-containing spaces or paths, use the output of `systemd-escape`. Empty names,
-unsupported characters, and unit names longer than 255 bytes are rejected.
-The `m` action still masks or unmasks the selected unit or template itself.
-
 ## Install
 
 After installation, you can create an `alias` to make it easier to use.
