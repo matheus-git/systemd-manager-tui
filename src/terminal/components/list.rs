@@ -813,7 +813,11 @@ impl TableServices {
         match (action, service) {
             (ServiceAction::ToggleMask, Some(service)) => {
                 let state_opt = match self.states.lock() {
-                    Ok(guard) => guard.get(service.name()).cloned(),
+                    Ok(guard) => {
+                        let state = resolve_file(&service, Some(&guard));
+                        (!matches!(state, "" | "unknown" | LOADING_PLACEHOLDER))
+                            .then(|| state.to_string())
+                    }
                     Err(e) => {
                         let _ = self.sender.send(AppEvent::Error(format!(
                             "Could not read the service state: {e}"

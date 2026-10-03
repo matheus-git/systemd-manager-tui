@@ -14,6 +14,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Padding, Paragraph, Tabs};
 use rayon::prelude::*;
 use std::cell::RefCell;
+use std::collections::VecDeque;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -109,6 +110,7 @@ pub struct App {
     selected_tab_index: usize,
     active_connection: ConnectionType,
     show_help: bool,
+    errors: VecDeque<String>,
 }
 
 impl App {
@@ -137,6 +139,7 @@ impl App {
             selected_tab_index: 0,
             active_connection: ConnectionType::System,
             show_help: false,
+            errors: VecDeque::new(),
         }
     }
 
@@ -197,10 +200,14 @@ impl App {
         self.running = true;
 
         while self.running {
-            match self.status {
-                Status::Log => self.draw_log_status(terminal)?,
-                Status::List => self.draw_list_status(terminal)?,
-                Status::Details => self.draw_details_status(terminal)?,
+            if let Some(error) = self.errors.front() {
+                terminal.draw(|frame| self.draw_error_popup(frame, frame.area(), error))?;
+            } else {
+                match self.status {
+                    Status::Log => self.draw_log_status(terminal)?,
+                    Status::List => self.draw_list_status(terminal)?,
+                    Status::Details => self.draw_details_status(terminal)?,
+                }
             }
 
             let use_timeout =
@@ -217,8 +224,10 @@ impl App {
             };
 
             match event {
-                AppEvent::Key(key) if self.table_service.has_instance_prompt() => {
-                    self.handle_instance_key(key, terminal)?;
+                AppEvent::Key(key)
+                    if !self.errors.is_empty() || self.table_service.has_instance_prompt() =>
+                {
+                    self.handle_modal_key(key, terminal)?;
                 }
                 AppEvent::Key(key) => match self.status {
                     Status::Log => {
@@ -327,7 +336,7 @@ impl App {
                     }
                 }
                 AppEvent::Error(error_msg) => {
-                    self.error_popup(terminal, &error_msg)?;
+                    self.errors.push_back(error_msg);
                 }
                 AppEvent::Action(Actions::ShowHelp) => {
                     self.show_help = !self.show_help;
@@ -359,20 +368,20 @@ impl App {
 
         if let Err(e) = disable_raw_mode() {
             self.resume_tui(terminal)?;
-            self.error_popup(terminal, &format!("Failed to disable raw mode: {e}"))?;
+            self.report_error(&format!("Failed to disable raw mode: {e}"))?;
             return Ok(());
         }
 
         let mut stdout = io::stdout();
         if let Err(e) = execute!(stdout, LeaveAlternateScreen) {
             self.resume_tui(terminal)?;
-            self.error_popup(terminal, &format!("Failed to leave alternate screen: {e}"))?;
+            self.report_error(&format!("Failed to leave alternate screen: {e}"))?;
             return Ok(());
         }
 
         if let Err(e) = terminal.show_cursor() {
             self.resume_tui(terminal)?;
-            self.error_popup(terminal, &format!("Failed to show cursor: {e}"))?;
+            self.report_error(&format!("Failed to show cursor: {e}"))?;
             return Ok(());
         }
 
@@ -390,19 +399,16 @@ impl App {
             Ok(s) if s.success() => {}
             Ok(_s) => {
                 self.resume_tui(terminal)?;
-                self.error_popup(
-                    terminal,
-                    "'systemctl edit' failed. Try running the program with sudo!",
-                )?;
+                self.report_error("'systemctl edit' failed. Try running the program with sudo!")?;
             }
             Err(e) => {
                 self.resume_tui(terminal)?;
-                self.error_popup(terminal, &format!("Error executing systemctl: {e}"))?;
+                self.report_error(&format!("Error executing systemctl: {e}"))?;
             }
         }
 
         if let Err(e) = self.resume_tui(terminal) {
-            self.error_popup(terminal, &format!("Failed to return to TUI: {e}"))?;
+            self.report_error(&format!("Failed to return to TUI: {e}"))?;
             return Ok(());
         }
 
@@ -527,59 +533,80 @@ impl App {
         );
     }
 
-    #[allow(clippy::unused_self)]
-    fn error_popup(&self, terminal: &mut DefaultTerminal, error_msg: &str) -> Result<()> {
-        let user_friendly_message = get_user_friendly_error(error_msg);
+    fn report_error(&self, error: &str) -> Result<()> {
+        self.event_tx.send(AppEvent::Error(error.to_string()))?;
+        Ok(())
+    }
 
-        terminal.draw(|frame| {
-            let area = frame.area();
+    fn handle_modal_key<B: Backend>(
+        &mut self,
+        key: KeyEvent,
+        terminal: &mut Terminal<B>,
+    ) -> Result<()> {
+        if !self.errors.is_empty() {
+            self.handle_error_key(key, terminal)
+        } else {
+            self.handle_instance_key(key, terminal)
+        }
+    }
 
-            let popup_width = std::cmp::min(70, area.width.saturating_sub(4));
-            let popup_height = std::cmp::min(10, area.height.saturating_sub(4));
-
-            let popup_x = (area.width.saturating_sub(popup_width)) / 2;
-            let popup_y = (area.height.saturating_sub(popup_height)) / 2;
-
-            let popup_area = Rect::new(
-                area.x + popup_x,
-                area.y + popup_y,
-                popup_width,
-                popup_height,
-            );
-
-            frame.render_widget(Clear, popup_area);
-
-            let text = vec![
-                Line::from(vec![Span::styled(
-                    "ERROR",
-                    Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
-                )]),
-                Line::from(""),
-                Line::from(user_friendly_message),
-                Line::from(""),
-                Line::from(vec![Span::styled(
-                    "Press any key to dismiss",
-                    Style::default().fg(Color::Gray),
-                )]),
-            ];
-
-            let error_block = Paragraph::new(text)
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .border_style(Style::default().fg(Color::Red))
-                        .title("Error"),
-                )
-                .alignment(Alignment::Center)
-                .wrap(ratatui::widgets::Wrap { trim: true });
-
-            frame.render_widget(error_block, popup_area);
-        })?;
-
-        if let Ok(Event::Key(_)) = event::read() {
-            // Continue after key press
+    fn handle_error_key<B: Backend>(
+        &mut self,
+        key: KeyEvent,
+        terminal: &mut Terminal<B>,
+    ) -> Result<()> {
+        if key.kind != KeyEventKind::Press {
+            return Ok(());
+        }
+        if !self.handle_quit_key(key, terminal)? {
+            self.errors.pop_front();
         }
         Ok(())
+    }
+
+    #[allow(clippy::unused_self)]
+    fn draw_error_popup(&self, frame: &mut Frame, area: Rect, error_msg: &str) {
+        let user_friendly_message = get_user_friendly_error(error_msg);
+        let popup_width = std::cmp::min(70, area.width.saturating_sub(4));
+        let popup_height = std::cmp::min(10, area.height.saturating_sub(4));
+
+        let popup_x = (area.width.saturating_sub(popup_width)) / 2;
+        let popup_y = (area.height.saturating_sub(popup_height)) / 2;
+
+        let popup_area = Rect::new(
+            area.x + popup_x,
+            area.y + popup_y,
+            popup_width,
+            popup_height,
+        );
+
+        frame.render_widget(Clear, popup_area);
+
+        let text = vec![
+            Line::from(vec![Span::styled(
+                "ERROR",
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            )]),
+            Line::from(""),
+            Line::from(user_friendly_message),
+            Line::from(""),
+            Line::from(vec![Span::styled(
+                "Press any key to dismiss",
+                Style::default().fg(Color::Gray),
+            )]),
+        ];
+
+        let error_block = Paragraph::new(text)
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_style(Style::default().fg(Color::Red))
+                    .title("Error"),
+            )
+            .alignment(Alignment::Center)
+            .wrap(ratatui::widgets::Wrap { trim: true });
+
+        frame.render_widget(error_block, popup_area);
     }
 
     fn draw_details_status(&mut self, terminal: &mut DefaultTerminal) -> Result<()> {
