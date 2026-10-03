@@ -30,6 +30,45 @@ jobs:
           bash -n build.sh
           ./build.sh --help > /dev/null
 
+  systemd-integration:
+    name: Systemd integration
+    # Use a full VM: these tests require both system and user systemd managers.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Prepare systemd user manager
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes dbus-user-session
+          runner_uid="$(id -u)"
+          sudo loginctl enable-linger "$(id -un)"
+          sudo systemctl start "user@${runner_uid}.service"
+          export XDG_RUNTIME_DIR="/run/user/${runner_uid}"
+          export DBUS_SESSION_BUS_ADDRESS="unix:path=${XDG_RUNTIME_DIR}/bus"
+          systemctl --user start dbus.socket
+          systemctl --system list-units --no-pager > /dev/null
+          systemctl --user list-units --no-pager > /dev/null
+          echo "XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR}" >> "$GITHUB_ENV"
+          echo "DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS}" >> "$GITHUB_ENV"
+
+      - name: Run real systemd integration tests
+        run: cargo test --locked infrastructure::systemd_service_adapter::tests -- --ignored --test-threads=1
+
+      - name: Show systemd diagnostics on failure
+        if: failure()
+        run: |
+          systemctl --user --failed --no-pager || true
+          journalctl --user --no-pager -n 100 || true
+          sudo journalctl -u "user@$(id -u).service" --no-pager -n 100 || true
+
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
