@@ -1,3 +1,4 @@
+use crate::domain::connection_type::ConnectionType;
 use crate::domain::service::Service;
 use crate::domain::service_repository::ServiceRepository;
 use crate::domain::service_state::ServiceState;
@@ -126,21 +127,6 @@ type SystemdUnit = (
     String,
     OwnedObjectPath,
 );
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ConnectionType {
-    Session,
-    System,
-}
-
-impl fmt::Display for ConnectionType {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(match self {
-            Self::Session => "user",
-            Self::System => "system",
-        })
-    }
-}
 
 pub struct SystemdServiceAdapter {
     connection: Connection,

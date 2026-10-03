@@ -1,5 +1,5 @@
 use super::*;
-use crate::infrastructure::systemd_service_adapter::ConnectionType;
+use crate::domain::connection_type::ConnectionType;
 use crate::test_support::{FakeRepository, service};
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;

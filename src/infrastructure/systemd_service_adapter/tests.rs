@@ -6,9 +6,10 @@
 //! `cargo test infrastructure::systemd_service_adapter::tests -- --ignored --test-threads=1`
 
 use super::{
-    ConnectionType, OperationTimeout, ServiceAction, SystemdJobFailed, SystemdServiceAdapter,
+    OperationTimeout, ServiceAction, SystemdJobFailed, SystemdServiceAdapter,
     resolve_unit_file_states, unit_name_from_path,
 };
+use crate::domain::connection_type::ConnectionType;
 use crate::domain::service::Service;
 use crate::domain::service_repository::ServiceRepository;
 use crate::domain::service_state::ServiceState;
