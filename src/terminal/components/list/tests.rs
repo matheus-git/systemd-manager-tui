@@ -382,6 +382,89 @@ fn unit_file_states_are_applied_only_for_the_current_list_request() {
 }
 
 #[test]
+fn older_refresh_cannot_overwrite_current_states_on_the_same_connection() {
+    let (mut table, receiver) = table_with_receiver();
+    let stale_context = *table.current_list_context.lock().unwrap();
+    let current_context = ListRequestContext {
+        generation: stale_context.generation + 1,
+        ..stale_context
+    };
+    *table.current_list_context.lock().unwrap() = current_context;
+    table.spawn_query_listener();
+
+    for (context, state) in [(current_context, "disabled"), (stale_context, "enabled")] {
+        table
+            .event_tx
+            .send(QueryUnitFile::Finished(
+                context,
+                HashMap::from([("demo.service".into(), state.into())]),
+            ))
+            .unwrap();
+    }
+    // A current error acts as a FIFO barrier: receiving it proves both results
+    // were processed, without sleeping to guess when the worker has finished.
+    table
+        .event_tx
+        .send(QueryUnitFile::Error(current_context, "barrier".into()))
+        .unwrap();
+
+    assert!(matches!(
+        receiver.recv_timeout(Duration::from_secs(1)),
+        Ok(AppEvent::Action(Actions::Redraw))
+    ));
+    assert!(matches!(
+        receiver.recv_timeout(Duration::from_secs(1)),
+        Ok(AppEvent::Error(message)) if message == "barrier"
+    ));
+    assert_eq!(
+        table
+            .states
+            .lock()
+            .unwrap()
+            .get("demo.service")
+            .map(String::as_str),
+        Some("disabled")
+    );
+    assert!(receiver.try_recv().is_err());
+}
+
+#[test]
+fn stale_lookup_errors_are_ignored_but_current_errors_are_reported() {
+    let (mut table, receiver) = table_with_receiver();
+    let current_context = *table.current_list_context.lock().unwrap();
+    table.spawn_query_listener();
+
+    for context in [
+        ListRequestContext {
+            generation: current_context.generation.wrapping_sub(1),
+            ..current_context
+        },
+        ListRequestContext {
+            connection: ConnectionType::Session,
+            ..current_context
+        },
+    ] {
+        table
+            .event_tx
+            .send(QueryUnitFile::Error(context, "stale failure".into()))
+            .unwrap();
+    }
+    table
+        .event_tx
+        .send(QueryUnitFile::Error(
+            current_context,
+            "current failure".into(),
+        ))
+        .unwrap();
+
+    assert!(matches!(
+        receiver.recv_timeout(Duration::from_secs(1)),
+        Ok(AppEvent::Error(message)) if message == "current failure"
+    ));
+    assert!(receiver.try_recv().is_err());
+}
+
+#[test]
 fn background_workers_start_once_and_are_signalled_on_drop() {
     let (mut table, receiver) = table_with_receiver();
     let shutdown = table.workers_shutdown.clone();
