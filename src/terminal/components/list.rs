@@ -742,55 +742,58 @@ impl TableServices {
     }
 
     pub fn act_on_selected_service(&mut self, action: &ServiceAction) {
-        if let Some(service) = self.get_selected_service() {
-            let binding_usecase = self.usecase.clone();
-            let usecase = binding_usecase.borrow();
-            match action {
-                ServiceAction::ToggleMask => {
-                    let state_opt = match self.states.lock() {
-                        Ok(guard) => guard.get(service.name()).cloned(),
-                        Err(e) => {
-                            let _ = self.sender.send(AppEvent::Error(format!(
-                                "Could not read the service state: {e}"
-                            )));
-                            return;
-                        }
-                    };
-
-                    if let Some(state) = state_opt {
-                        match state.as_str() {
-                            "masked" | "masked-runtime" => {
-                                self.handle_service_result(usecase.unmask_service(&service));
-                            }
-                            _ => {
-                                self.handle_service_result(usecase.mask_service(&service));
-                            }
-                        }
-
-                        let _ = self.fetch_services();
-                        self.fetch_and_refresh(&self.old_filter_text.clone());
+        let binding_usecase = self.usecase.clone();
+        let usecase = binding_usecase.borrow();
+        match (action, self.get_selected_service()) {
+            (ServiceAction::ToggleMask, Some(service)) => {
+                let state_opt = match self.states.lock() {
+                    Ok(guard) => guard.get(service.name()).cloned(),
+                    Err(e) => {
+                        let _ = self.sender.send(AppEvent::Error(format!(
+                            "Could not read the service state: {e}"
+                        )));
+                        return;
                     }
-                }
-                ServiceAction::Start => self.handle_service_result(usecase.start_service(&service)),
-                ServiceAction::Stop => self.handle_service_result(usecase.stop_service(&service)),
-                ServiceAction::Restart => {
-                    self.handle_service_result(usecase.restart_service(&service))
-                }
-                ServiceAction::Enable => {
-                    self.handle_service_result(usecase.enable_service(&service))
-                }
-                ServiceAction::Disable => {
-                    self.handle_service_result(usecase.disable_service(&service))
-                }
-                ServiceAction::ToggleFilter => {
-                    self.table_state.select(Some(0));
-                    self.filter_all = !self.filter_all;
-                    self.fetch_and_refresh(&self.old_filter_text.clone());
-                }
-                ServiceAction::RefreshAll => {
+                };
+
+                if let Some(state) = state_opt {
+                    match state.as_str() {
+                        "masked" | "masked-runtime" => {
+                            self.handle_service_result(usecase.unmask_service(&service));
+                        }
+                        _ => {
+                            self.handle_service_result(usecase.mask_service(&service));
+                        }
+                    }
+
+                    let _ = self.fetch_services();
                     self.fetch_and_refresh(&self.old_filter_text.clone());
                 }
             }
+            (ServiceAction::Start, Some(service)) => {
+                self.handle_service_result(usecase.start_service(&service))
+            }
+            (ServiceAction::Stop, Some(service)) => {
+                self.handle_service_result(usecase.stop_service(&service))
+            }
+            (ServiceAction::Restart, Some(service)) => {
+                self.handle_service_result(usecase.restart_service(&service))
+            }
+            (ServiceAction::Enable, Some(service)) => {
+                self.handle_service_result(usecase.enable_service(&service))
+            }
+            (ServiceAction::Disable, Some(service)) => {
+                self.handle_service_result(usecase.disable_service(&service))
+            }
+            (ServiceAction::ToggleFilter, _) => {
+                self.table_state.select(Some(0));
+                self.filter_all = !self.filter_all;
+                self.fetch_and_refresh(&self.old_filter_text.clone());
+            }
+            (ServiceAction::RefreshAll, _) => {
+                self.fetch_and_refresh(&self.old_filter_text.clone());
+            }
+            (_, None) => {}
         }
         self.set_ignore_key_events(false);
     }
