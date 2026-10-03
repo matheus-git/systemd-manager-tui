@@ -735,3 +735,69 @@ fn toggle_mask_masks_an_unmasked_service() {
     assert!(calls.contains(&"mask:demo.service".to_string()));
     assert!(!calls.contains(&"unmask:demo.service".to_string()));
 }
+
+fn run_list_shortcut(table: &mut TableServices, receiver: &mpsc::Receiver<AppEvent>, key: char) {
+    table.on_key_event(KeyEvent::new(
+        KeyCode::Char(key),
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    let AppEvent::Action(Actions::ServiceAction(action)) =
+        receiver.recv_timeout(Duration::from_secs(1)).unwrap()
+    else {
+        panic!("expected a list action");
+    };
+    table.act_on_selected_service(&action);
+    assert!(!table.ignore_key_events);
+}
+
+#[test]
+fn list_all_shortcut_reveals_inactive_units_after_empty_search() {
+    let fake = FakeRepository::with_services(
+        vec![service("running.service", "active")],
+        vec![
+            service("hidden.service", "inactive"),
+            service("unrelated.service", "inactive"),
+        ],
+    );
+    let (mut table, receiver) = table_with_repository(fake);
+    table.fetch_and_refresh("hidden");
+    assert!(table.get_selected_service().is_none());
+    assert!(table.filtered_services.is_empty());
+
+    run_list_shortcut(&mut table, &receiver, 'f');
+
+    assert!(table.filter_all);
+    assert_eq!(table.old_filter_text, "hidden");
+    assert_eq!(table.filtered_services.len(), 1);
+    assert_eq!(
+        table.get_selected_service().unwrap().name(),
+        "hidden.service"
+    );
+    assert_eq!(
+        table.get_selected_service().unwrap().state().active(),
+        "inactive"
+    );
+
+    run_list_shortcut(&mut table, &receiver, 'f');
+    assert!(!table.filter_all);
+    assert!(table.filtered_services.is_empty());
+    assert!(table.table_state.selected().is_none());
+}
+
+#[test]
+fn global_shortcuts_work_when_no_units_match() {
+    let fake = FakeRepository::default();
+    let observer = fake.clone();
+    let (mut table, receiver) = table_with_repository(fake);
+    table.refresh("missing");
+
+    run_list_shortcut(&mut table, &receiver, 'u');
+    assert!(observer.calls().contains(&"list:false".to_string()));
+    run_list_shortcut(&mut table, &receiver, 'f');
+    assert!(table.filter_all);
+    run_list_shortcut(&mut table, &receiver, 'f');
+    assert!(!table.filter_all);
+    assert_eq!(table.old_filter_text, "missing");
+    assert!(table.filtered_services.is_empty());
+    assert!(table.table_state.selected().is_none());
+}
