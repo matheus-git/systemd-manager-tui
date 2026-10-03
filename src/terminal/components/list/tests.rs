@@ -573,7 +573,7 @@ fn toggle_mask_chooses_operation_from_loaded_file_state() {
     let fake = FakeRepository::default();
     let observer = fake.clone();
     let (mut table, _receiver) = table_with_repository(fake);
-    let unit = service("demo.service", "inactive");
+    let unit = crate::test_support::service("demo.service", "inactive", LOADING_PLACEHOLDER);
     table.services = vec![unit.clone()];
     table.filtered_services = vec![unit];
     table.table_state.select(Some(0));
@@ -935,4 +935,67 @@ fn masking_a_template_keeps_template_scope_without_prompting() {
     table.act_on_selected_service(&ServiceAction::ToggleMask);
     assert!(!table.has_instance_prompt());
     assert!(observer.calls().contains(&"mask:worker@.service".into()));
+}
+
+#[test]
+fn new_instance_can_be_masked_without_refreshing_the_state_cache() {
+    let fake = FakeRepository::default();
+    let observer = fake.clone();
+    let (mut table, _) = table_with_repository(fake);
+    table.services = vec![service("worker@.service", "inactive")];
+    table.refresh("");
+    table.act_on_selected_service(&ServiceAction::Start);
+    instance_key(&mut table, KeyCode::Char('a'));
+    instance_key(&mut table, KeyCode::Enter);
+    assert_eq!(
+        table.get_selected_service().unwrap().name(),
+        "worker@a.service"
+    );
+    assert!(
+        !table
+            .states
+            .lock()
+            .unwrap()
+            .contains_key("worker@a.service")
+    );
+
+    table.act_on_selected_service(&ServiceAction::ToggleMask);
+
+    assert!(
+        observer
+            .calls()
+            .contains(&"mask:worker@a.service".to_string())
+    );
+    assert!(!table.ignore_key_events);
+}
+
+#[test]
+fn mask_action_prefers_fresh_unit_state_to_stale_cache() {
+    let fake = FakeRepository::default();
+    let observer = fake.clone();
+    let (mut table, _) = table_with_repository(fake);
+    table.services = vec![crate::test_support::service(
+        "worker@a.service",
+        "inactive",
+        "masked",
+    )];
+    table.refresh("");
+    table
+        .states
+        .lock()
+        .unwrap()
+        .insert("worker@a.service".into(), "disabled".into());
+
+    table.act_on_selected_service(&ServiceAction::ToggleMask);
+
+    assert!(
+        observer
+            .calls()
+            .contains(&"unmask:worker@a.service".to_string())
+    );
+    assert!(
+        !observer
+            .calls()
+            .contains(&"mask:worker@a.service".to_string())
+    );
 }

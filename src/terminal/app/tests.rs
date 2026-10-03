@@ -244,3 +244,108 @@ fn ctrl_c_in_instance_dialog_quits_without_executing_the_action() {
     assert!(!app.running);
     assert!(observer.calls().is_empty());
 }
+
+#[test]
+fn error_dismissal_consumes_shortcut_keys_and_preserves_pending_errors() {
+    let (mut app, observer) = test_app_with_repository(FakeRepository::default());
+    app.errors.push_back("first failure".into());
+    app.errors.push_back("second failure".into());
+    let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+
+    app.handle_modal_key(
+        KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE),
+        &mut terminal,
+    )
+    .unwrap();
+
+    assert_eq!(
+        app.errors.front().map(String::as_str),
+        Some("second failure")
+    );
+    assert!(observer.calls().is_empty());
+    assert!(app.event_rx.try_recv().is_err());
+    assert!(app.filter.input.is_empty());
+    app.handle_modal_key(
+        KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE),
+        &mut terminal,
+    )
+    .unwrap();
+    assert!(app.errors.is_empty());
+    assert!(app.running);
+}
+
+#[test]
+fn enter_dismisses_error_without_submitting_underlying_instance_prompt() {
+    let (mut app, observer) = test_app_with_repository(FakeRepository::default());
+    app.table_service.services = vec![crate::test_support::service(
+        "worker@.service",
+        "inactive",
+        "disabled",
+    )];
+    app.table_service.refresh("");
+    app.table_service
+        .act_on_selected_service(&ServiceAction::Start);
+    let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+    app.handle_modal_key(
+        KeyEvent::new(KeyCode::Char('a'), KeyModifiers::NONE),
+        &mut terminal,
+    )
+    .unwrap();
+    app.errors.push_back("background lookup failed".into());
+
+    app.handle_modal_key(
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+        &mut terminal,
+    )
+    .unwrap();
+
+    assert!(app.errors.is_empty());
+    assert!(app.table_service.has_instance_prompt());
+    assert!(observer.calls().is_empty());
+    app.handle_modal_key(
+        KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+        &mut terminal,
+    )
+    .unwrap();
+    assert_eq!(observer.calls(), ["start:worker@a.service"]);
+}
+
+#[test]
+fn error_modal_ignores_key_release_and_allows_ctrl_c() {
+    let mut app = test_app();
+    app.errors.push_back("failure".into());
+    let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+    let mut key = KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE);
+    key.kind = KeyEventKind::Release;
+    app.handle_modal_key(key, &mut terminal).unwrap();
+    assert_eq!(app.errors.len(), 1);
+    app.handle_modal_key(
+        KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
+        &mut terminal,
+    )
+    .unwrap();
+    assert!(!app.running);
+}
+
+#[test]
+fn editor_errors_use_event_queue_and_error_popup_renders_without_reading_input() {
+    let app = test_app();
+    app.report_error("editor unavailable").unwrap();
+    let AppEvent::Error(message) = app.event_rx.recv_timeout(Duration::from_secs(1)).unwrap()
+    else {
+        panic!("expected error event");
+    };
+    let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+    terminal
+        .draw(|frame| app.draw_error_popup(frame, frame.area(), &message))
+        .unwrap();
+    let text: String = terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect();
+    assert!(text.contains("editor unavailable"));
+    assert!(text.contains("Press any key to dismiss"));
+}
