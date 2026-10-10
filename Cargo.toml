@@ -1,6 +1,6 @@
 [package]
 name = "systemd-manager-tui"
-version = "1.2.5"
+version = "1.3.0"
 description = "TUI for managing systemd services"
 authors = ["Matheus-git <mathiew0@gmail.com>"]
 license = "MIT"
@@ -40,11 +40,20 @@ log = "0.4.29"
 [package.metadata.deb]
 name = "systemd-manager-tui"
 maintainer = "Matheus-git <mathiew0@gmail.com>"
-depends = ""
+depends = "$auto, systemd"
+recommends = "default-dbus-session-bus | dbus-session-bus"
 license-file = "LICENSE"
-copyright = "MIT @ Matheus-git"
+copyright = "2025 Matheus-git"
 
 [package.metadata.generate-rpm]
 name = "systemd-manager-tui"
 summary = "TUI for managing systemd services"
 license = "MIT"
+assets = [
+    { source = "target/release/systemd-manager-tui", dest = "/usr/bin/systemd-manager-tui", mode = "755" },
+    { source = "LICENSE", dest = "/usr/share/licenses/systemd-manager-tui/LICENSE", mode = "644" },
+    { source = "README.md", dest = "/usr/share/doc/systemd-manager-tui/README.md", mode = "644", doc = true },
+]
+
+[package.metadata.generate-rpm.requires]
+systemd = "*"

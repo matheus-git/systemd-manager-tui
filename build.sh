@@ -193,13 +193,11 @@ fi
 if [[ "$build_rpm" == true ]]; then
     ensure_tool cargo-generate-rpm cargo-generate-rpm
     for target in "${TARGETS[@]}"; do
-        binary="target/${target}/release/${PACKAGE_NAME}"
-        rpm_metadata="assets = [{ source = \"${binary}\", dest = \"/usr/bin/${PACKAGE_NAME}\", mode = \"755\" }]"
         log "Generating RPM for ${target} (${RPM_ARCH[$target]})"
+        # cargo-generate-rpm maps target/release assets to the selected target.
         cargo generate-rpm \
             --target "$target" \
-            --arch "${RPM_ARCH[$target]}" \
-            --set-metadata "$rpm_metadata"
+            --arch "${RPM_ARCH[$target]}"
     done
 fi
 
