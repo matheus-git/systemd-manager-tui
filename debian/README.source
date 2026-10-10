@@ -1,0 +1,48 @@
+Source and scope
+================
+
+This packaging targets Debian unstable and upstream tag v1.3.0, commit
+9f810aefe9d3a59bbd97583631bc5e5de67e8301. The initial upload closes ITP
+#1149848. The changelog remains UNRELEASED while the package is under review.
+
+The Debian patch updates Ratatui/Crossterm to the versions available in
+unstable, adapts the terminal error conversion and removes unused development
+dependencies. Upstream files in the Git checkout are not modified.
+
+dh-cargo builds offline against /usr/share/cargo/registry. It regenerates
+Cargo.lock for Debian's dependency versions; debian/rules preserves and
+restores the upstream lockfile on clean. No vendored crates are included.
+
+Generate an unsigned source package
+===================================
+
+Run from the repository root, with an empty target/debian-source directory:
+
+  mkdir -p target/debian-source
+  git archive --format=tar --prefix=systemd-manager-tui-1.3.0/ v1.3.0 | \
+    gzip -n > target/debian-source/systemd-manager-tui_1.3.0.orig.tar.gz
+  tar -xzf target/debian-source/systemd-manager-tui_1.3.0.orig.tar.gz \
+    -C target/debian-source
+  cp -a debian target/debian-source/systemd-manager-tui-1.3.0/
+  (cd target/debian-source && \
+    dpkg-source --before-build systemd-manager-tui-1.3.0 && \
+    dpkg-source -b systemd-manager-tui-1.3.0)
+
+Validate
+========
+
+With an unstable sbuild environment already configured:
+
+  sbuild --dist=unstable --arch=amd64 \
+    target/debian-source/systemd-manager-tui_1.3.0-1.dsc
+
+Run Lintian on the resulting .changes and autopkgtest against a disposable
+unstable testbed. The CLI autopkgtest is deliberately marked superficial:
+it verifies the installed executable without requiring a running systemd.
+The normal build runs the unit suite. Eight integration tests are ignored
+there because they need running system and user systemd managers; the
+upstream CI runs those separately.
+
+An interactive test must additionally cover service listing and operations
+in a systemd-based VM. No upload, signing or RFS submission is automated by
+this packaging.

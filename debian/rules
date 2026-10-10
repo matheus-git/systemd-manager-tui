@@ -1,0 +1,20 @@
+#!/usr/bin/make -f
+
+export DEB_BUILD_MAINT_OPTIONS = hardening=+all
+export CARGO_NET_OFFLINE = true
+export CARGO_PROFILE_RELEASE_STRIP = false
+
+%:
+	dh $@ --buildsystem=cargo
+
+# Resolve against Debian's registry, preserving the upstream lockfile on clean.
+override_dh_auto_configure:
+	test -f debian/Cargo.lock.upstream || cp Cargo.lock debian/Cargo.lock.upstream
+	dh_auto_configure
+
+override_dh_auto_test:
+	dh_auto_test -- test --all-targets
+
+override_dh_auto_clean:
+	dh_auto_clean
+	if test -f debian/Cargo.lock.upstream; then mv debian/Cargo.lock.upstream Cargo.lock; fi

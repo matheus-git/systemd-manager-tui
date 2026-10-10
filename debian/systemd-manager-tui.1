@@ -1,0 +1,47 @@
+.TH SYSTEMD-MANAGER-TUI 1 "October 2026" "systemd-manager-tui 1.3.0" "User Commands"
+.SH NAME
+systemd-manager-tui \- terminal user interface for managing systemd services
+.SH SYNOPSIS
+.B systemd-manager-tui
+.RI [ options ]
+.SH DESCRIPTION
+.B systemd-manager-tui
+manages system and user units through D-Bus from an interactive terminal.
+It can control services, inspect properties, display journal logs, edit unit
+files and create instances of template services.
+System operations require the permissions enforced by systemd and D-Bus.
+.SH OPTIONS
+.TP
+.BR \-f ", " \-\-filter " " \fITEXT\fR
+Apply a filter on startup.
+.TP
+.B \-\-operation-timeout-secs \fISECONDS\fR
+Maximum time to wait for a service operation to settle.
+Must be at least 1; defaults to 10 seconds.
+.TP
+.BR \-n ", " \-\-no-notifications
+Disable notifications for failed system and user units.
+.TP
+.BR \-h ", " \-\-help
+Display command-line help.
+.TP
+.BR \-V ", " \-\-version
+Display the version.
+.SH KEYBOARD
+In the service list, use the up and down arrow keys or j and k to navigate.
+Use the left and right arrow keys to switch between system and user units.
+.PP
+Press s to start, x to stop, r to restart, e to enable, d to disable,
+and m to mask or unmask the selected service.
+Press a to filter, f to toggle listing all units, and u to refresh.
+Press v to view logs, c to view the unit file, and ? for help.
+Press Ctrl+C to quit.
+.SH EXAMPLES
+.nf
+systemd-manager-tui \-f ssh
+systemd-manager-tui \-n
+.fi
+.SH SEE ALSO
+.BR systemctl (1),
+.BR journalctl (1),
+.BR systemd (1)

@@ -1,0 +1,42 @@
+Source: systemd-manager-tui
+Section: admin
+Priority: optional
+Maintainer: Matheus <mathiew0@gmail.com>
+Build-Depends:
+ debhelper-compat (= 13),
+ dh-cargo (>= 32),
+ cargo (>= 1.88),
+ rustc (>= 1.88),
+ librust-async-io-2+default-dev (>= 2.6),
+ librust-chrono-0.4+default-dev,
+ librust-clap-4+default-dev (>= 4.6.4),
+ librust-clap-4+derive-dev (>= 4.6.4),
+ librust-color-eyre-0.6+default-dev (>= 0.6.3),
+ librust-crossterm-0.29+default-dev,
+ librust-futures-lite-2+default-dev (>= 2.6),
+ librust-libc-0.2+default-dev (>= 0.2.182),
+ librust-ratatui-0.30+crossterm-dev,
+ librust-ratatui-0.30+layout-cache-dev,
+ librust-ratatui-0.30+underline-color-dev,
+ librust-rayon-1+default-dev (>= 1.11),
+ librust-textwrap-0.16+default-dev (>= 0.16.2),
+ librust-zbus-5+default-dev (>= 5.5)
+Standards-Version: 4.7.4
+Rules-Requires-Root: no
+Homepage: https://github.com/matheus-git/systemd-manager-tui
+Vcs-Git: https://github.com/matheus-git/systemd-manager-tui.git -b packaging/debian-rfs
+Vcs-Browser: https://github.com/matheus-git/systemd-manager-tui/tree/packaging/debian-rfs
+
+Package: systemd-manager-tui
+Architecture: linux-any
+Depends: ${misc:Depends}, ${shlibs:Depends}, systemd
+Recommends: default-dbus-session-bus | dbus-session-bus
+Built-Using: ${cargo:Built-Using}
+Static-Built-Using: ${cargo:Static-Built-Using}
+Description: terminal user interface for managing systemd services
+ Manage system and user services through an interactive terminal interface
+ with keyboard navigation and filtering. Start, stop, restart, enable,
+ disable, mask and unmask services through D-Bus.
+ .
+ Inspect unit properties, view journal logs, edit unit files and create
+ instances of template services without leaving the interface.

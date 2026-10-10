@@ -1,0 +1,45 @@
+Description: Build against Rust libraries available in Debian unstable
+ Update Ratatui and Crossterm together and enable only the required features.
+ Remove unused log/logcast development dependencies. Ratatui 0.30 uses a
+ backend-specific error, which needs conversion at the eyre boundary.
+Author: Matheus <mathiew0@gmail.com>
+Forwarded: not-needed
+Last-Update: 2026-10-10
+
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -23,19 +23,15 @@
+ [dependencies]
+ chrono = "0.4"
+ zbus = "5.5.0"
+-crossterm = "0.28.1"
++crossterm = "0.29"
+ color-eyre = "0.6.3"
+-ratatui = "0.29"
++ratatui = { version = "0.30", default-features = false, features = ["crossterm", "layout-cache", "underline-color"] }
+ textwrap = "0.16.2"
+ rayon = "1.11.0"
+ libc = "0.2.182"
+ clap = { version = "4.6.4", features = ["derive"] }
+ async-io = "2.6"
+ futures-lite = "2.6"
+-
+-[dev-dependencies]
+-logcast = "0.2.9"
+-log = "0.4.29"
+ 
+ [package.metadata.deb]
+ name = "systemd-manager-tui"
+--- a/src/terminal/app.rs
++++ b/src/terminal/app.rs
+@@ -772,7 +772,9 @@
+             // The filter may have made the cursor visible in the last rendered frame.
+             // Hide it before shutdown work starts so it cannot remain visible on the
+             // alternate screen while workers are being joined.
+-            terminal.hide_cursor()?;
++            terminal
++                .hide_cursor()
++                .map_err(|error| color_eyre::eyre::eyre!("Failed to hide cursor: {error}"))?;
+             self.quit();
+             return Ok(true);
+         }
