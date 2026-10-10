@@ -3,7 +3,7 @@ Source and scope
 
 This packaging targets Debian unstable and upstream tag v1.3.0, commit
 9f810aefe9d3a59bbd97583631bc5e5de67e8301. The initial upload closes ITP
-#1149848. The changelog remains UNRELEASED while the package is under review.
+#1149848. The changelog targets unstable; publication is a separate step.
 
 The Debian patch updates Ratatui/Crossterm to the versions available in
 unstable, adapts the terminal error conversion and removes unused development
@@ -27,6 +27,15 @@ Run from the repository root, with an empty target/debian-source directory:
   (cd target/debian-source && \
     dpkg-source --before-build systemd-manager-tui-1.3.0 && \
     dpkg-source -b systemd-manager-tui-1.3.0)
+
+To also generate the source .changes and .buildinfo, run the following in
+an unstable environment with the declared build dependencies installed:
+
+  cd target/debian-source/systemd-manager-tui-1.3.0
+  dpkg-buildpackage -S -sa -us -uc
+
+The -sa option includes the original source archive for the initial upload.
+The result is unsigned; review and signing remain separate steps.
 
 Validate
 ========
