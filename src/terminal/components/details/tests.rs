@@ -1,5 +1,6 @@
 use super::*;
 use crate::test_support::{FakeRepository, service};
+use crossterm::event::KeyCode;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use std::sync::mpsc;
@@ -8,9 +9,37 @@ fn details_with(repository: FakeRepository) -> (ServiceDetails, mpsc::Receiver<A
     let (sender, receiver) = mpsc::channel();
     let manager = ServicesManager::new(Box::new(repository));
     (
-        ServiceDetails::new(sender, Rc::new(RefCell::new(manager))),
+        ServiceDetails::new(
+            sender,
+            Rc::new(RefCell::new(manager)),
+            Arc::new(KeyBindings::default()),
+        ),
         receiver,
     )
+}
+
+#[test]
+fn a_custom_edit_key_only_applies_to_the_unit_file_view() {
+    let (sender, receiver) = mpsc::channel();
+    let manager = ServicesManager::new(Box::new(FakeRepository::default()));
+    let keybindings =
+        Arc::new(crate::keybindings::parse("[keybindings.unit_file]\nedit = \"E\"\n").unwrap());
+    let mut details = ServiceDetails::new(sender, Rc::new(RefCell::new(manager)), keybindings);
+
+    details.on_key_event(KeyEvent::new(
+        KeyCode::Char('e'),
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    assert!(receiver.try_recv().is_err());
+
+    details.on_key_event(KeyEvent::new(
+        KeyCode::Char('E'),
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    assert!(matches!(
+        receiver.recv().unwrap(),
+        AppEvent::Action(Actions::EditCurrentService)
+    ));
 }
 
 fn rendered_text(details: &mut ServiceDetails, width: u16, height: u16) -> String {

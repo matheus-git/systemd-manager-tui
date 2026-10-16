@@ -10,9 +10,10 @@ use std::rc::Rc;
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::KeyEvent;
 
 use crate::domain::service::Service;
+use crate::keybindings::{Action, Context, KeyBindings};
 use crate::terminal::app::{Actions, AppEvent};
 use crate::usecases::services_manager::ServicesManager;
 
@@ -22,6 +23,7 @@ pub struct ServiceDetails {
     sender: Sender<AppEvent>,
     scroll: u16,
     usecase: Rc<RefCell<ServicesManager>>,
+    keybindings: Arc<KeyBindings>,
 }
 
 #[cfg(test)]
@@ -29,13 +31,18 @@ pub struct ServiceDetails {
 mod tests;
 
 impl ServiceDetails {
-    pub fn new(sender: Sender<AppEvent>, usecase: Rc<RefCell<ServicesManager>>) -> Self {
+    pub fn new(
+        sender: Sender<AppEvent>,
+        usecase: Rc<RefCell<ServicesManager>>,
+        keybindings: Arc<KeyBindings>,
+    ) -> Self {
         Self {
             service: None,
             sender,
             unit_file: String::new(),
             scroll: 0,
             usecase,
+            keybindings,
         }
     }
 
@@ -89,46 +96,37 @@ impl ServiceDetails {
     }
 
     pub fn on_key_event(&mut self, key: KeyEvent) {
-        let right_keys = [KeyCode::Right, KeyCode::Char('l')];
-        let left_keys = [KeyCode::Left, KeyCode::Char('h')];
-        let up_keys = [KeyCode::Up, KeyCode::Char('k')];
-        let down_keys = [KeyCode::Down, KeyCode::Char('j')];
-
-        match key.code {
-            code if right_keys.contains(&code) => {
+        match self.keybindings.action(Context::UnitFile, key) {
+            Some(Action::NavLeft | Action::NavRight) => {
                 self.reset();
                 let _ = self.sender.send(AppEvent::Action(Actions::GoLog));
             }
-            code if left_keys.contains(&code) => {
-                self.reset();
-                let _ = self.sender.send(AppEvent::Action(Actions::GoLog));
-            }
-            code if up_keys.contains(&code) => {
+            Some(Action::MoveUp) => {
                 self.scroll = self.scroll.saturating_sub(1);
             }
-            code if down_keys.contains(&code) => {
+            Some(Action::MoveDown) => {
                 self.scroll += 1;
             }
-            KeyCode::PageUp => {
+            Some(Action::PageUp) => {
                 self.scroll = self.scroll.saturating_sub(10);
             }
-            KeyCode::PageDown => {
+            Some(Action::PageDown) => {
                 self.scroll += 10;
             }
-            KeyCode::Char('e') => {
+            Some(Action::EditUnit) => {
                 let _ = self
                     .sender
                     .send(AppEvent::Action(Actions::EditCurrentService));
             }
-            KeyCode::Char('q') | KeyCode::Esc => {
+            Some(Action::Back) => {
                 self.exit();
             }
             _ => {}
         }
     }
 
-    #[allow(clippy::unused_self)]
     pub fn shortcuts(&self) -> Vec<Line<'_>> {
+        let keys = &self.keybindings;
         let help_text = vec![
             Line::from(vec![Span::styled(
                 "Actions",
@@ -136,7 +134,15 @@ impl ServiceDetails {
                     .fg(Color::LightMagenta)
                     .add_modifier(Modifier::BOLD),
             )]),
-            Line::from("Switch tabs: ←/→ | Edit: e | Go back: q/Esc"),
+            Line::from(format!(
+                "Switch tabs: {}/{} | {}: {} | {}: {}",
+                keys.primary_label(Context::UnitFile, Action::NavLeft),
+                keys.primary_label(Context::UnitFile, Action::NavRight),
+                Action::EditUnit.title(),
+                keys.label(Context::UnitFile, Action::EditUnit),
+                Action::Back.title(),
+                keys.label(Context::UnitFile, Action::Back),
+            )),
         ];
 
         help_text

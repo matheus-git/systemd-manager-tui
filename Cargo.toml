@@ -32,6 +32,8 @@ libc = "0.2.182"
 clap = { version = "4.6.4", features = ["derive"] }
 async-io = "2.6"
 futures-lite = "2.6"
+serde = { version = "1.0.229", features = ["derive"] }
+toml = "1.1.8"
 
 [dev-dependencies]
 logcast = "0.2.9"

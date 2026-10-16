@@ -1,7 +1,7 @@
 use super::instance::{InstancePrompt, PromptResult};
 use crate::usecases::list_query::{ListRequestContext, QueryUnitFile};
 use crate::usecases::services_manager::ServicesManager;
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::KeyEvent;
 use ratatui::layout::Rect;
 use ratatui::style::{Color, Modifier, Style};
 use ratatui::text::{Line, Span};
@@ -24,6 +24,7 @@ use std::time::{Duration, Instant};
 use crate::Config;
 use crate::domain::connection_type::ConnectionType;
 use crate::domain::service::Service;
+use crate::keybindings::{Action, Context, KeyBindings};
 use crate::terminal::app::{Actions, AppEvent, ServiceRequestContext};
 
 const PADDING: Padding = Padding::new(1, 1, 1, 1);
@@ -193,6 +194,21 @@ impl ServiceAction {
     }
 }
 
+/// The list actions that run a systemd operation on the selected unit.
+const fn service_action_for(action: Action) -> Option<ServiceAction> {
+    Some(match action {
+        Action::Start => ServiceAction::Start,
+        Action::Stop => ServiceAction::Stop,
+        Action::Restart => ServiceAction::Restart,
+        Action::Enable => ServiceAction::Enable,
+        Action::Disable => ServiceAction::Disable,
+        Action::ToggleMask => ServiceAction::ToggleMask,
+        Action::Refresh => ServiceAction::RefreshAll,
+        Action::ListAllUnits => ServiceAction::ToggleFilter,
+        _ => return None,
+    })
+}
+
 pub struct TableServices {
     instance_prompt: Option<(ServiceAction, InstancePrompt)>,
     pub table_state: TableState,
@@ -218,6 +234,7 @@ pub struct TableServices {
     workers_shutdown: Arc<AtomicBool>,
     query_listener_handle: Option<JoinHandle<()>>,
     timestamp_worker_handle: Option<JoinHandle<()>>,
+    keybindings: Arc<KeyBindings>,
 }
 
 impl TableServices {
@@ -225,7 +242,11 @@ impl TableServices {
         let _ = self.sender.send(AppEvent::Action(action));
     }
 
-    pub fn new(sender: Sender<AppEvent>, usecase: Rc<RefCell<ServicesManager>>) -> Self {
+    pub fn new(
+        sender: Sender<AppEvent>,
+        usecase: Rc<RefCell<ServicesManager>>,
+        keybindings: Arc<KeyBindings>,
+    ) -> Self {
         let (event_tx, event_rx) = mpsc::channel::<QueryUnitFile>();
         let (timestamp_request_tx, timestamp_request_rx) = mpsc::channel::<ServiceRequestContext>();
         let filter_all = false;
@@ -262,6 +283,7 @@ impl TableServices {
             workers_shutdown: Arc::new(AtomicBool::new(false)),
             query_listener_handle: None,
             timestamp_worker_handle: None,
+            keybindings,
         }
     }
 
@@ -612,38 +634,21 @@ impl TableServices {
             return;
         }
 
+        let Some(action) = self.keybindings.action(Context::List, key) else {
+            return;
+        };
+
+        // Actions that talk to systemd keep the list deaf until they report
+        // back, so a held key cannot queue up a second operation.
         self.set_ignore_key_events(true);
 
-        match key.code {
-            KeyCode::Char('r') => {
-                self.dispatch(Actions::ServiceAction(ServiceAction::Restart));
-                return;
-            }
-            KeyCode::Char('s') => {
-                self.dispatch(Actions::ServiceAction(ServiceAction::Start));
-                return;
-            }
-            KeyCode::Char('x') => {
-                self.dispatch(Actions::ServiceAction(ServiceAction::Stop));
-                return;
-            }
-            KeyCode::Char('e') => {
-                self.dispatch(Actions::ServiceAction(ServiceAction::Enable));
-                return;
-            }
-            KeyCode::Char('d') => {
-                self.dispatch(Actions::ServiceAction(ServiceAction::Disable));
-                return;
-            }
-            KeyCode::Char('u') => {
-                self.dispatch(Actions::ServiceAction(ServiceAction::RefreshAll));
-                return;
-            }
-            KeyCode::Char('f') => {
-                self.dispatch(Actions::ServiceAction(ServiceAction::ToggleFilter));
-                return;
-            }
-            KeyCode::Char('a') => {
+        if let Some(service_action) = service_action_for(action) {
+            self.dispatch(Actions::ServiceAction(service_action));
+            return;
+        }
+
+        match action {
+            Action::CycleStateFilter => {
                 self.active_filter_state = self.active_filter_state.next();
                 self.refresh(&self.old_filter_text.clone());
                 // Select the first element only if the list is not empty
@@ -655,11 +660,9 @@ impl TableServices {
                 self.set_ignore_key_events(false);
                 return;
             }
-            KeyCode::Char('m') => {
-                self.dispatch(Actions::ServiceAction(ServiceAction::ToggleMask));
-                return;
-            }
-            KeyCode::Char('?') => {
+            // The help popup stays on top of the list, which must not react to
+            // the key that closes it again.
+            Action::Help => {
                 self.dispatch(Actions::ShowHelp);
                 return;
             }
@@ -668,18 +671,15 @@ impl TableServices {
 
         self.set_ignore_key_events(false);
 
-        let up_keys = [KeyCode::Up, KeyCode::Char('k')];
-        let down_keys = [KeyCode::Down, KeyCode::Char('j')];
-
-        match key.code {
-            code if down_keys.contains(&code) => self.select_next(),
-            code if up_keys.contains(&code) => self.select_previous(),
-            KeyCode::PageDown => self.select_page_down(),
-            KeyCode::PageUp => self.select_page_up(),
-            KeyCode::Char('c') => {
+        match action {
+            Action::MoveDown => self.select_next(),
+            Action::MoveUp => self.select_previous(),
+            Action::PageDown => self.select_page_down(),
+            Action::PageUp => self.select_page_up(),
+            Action::ViewUnitFile => {
                 self.dispatch(Actions::GoDetails);
             }
-            KeyCode::Char('v') => {
+            Action::ViewLog => {
                 self.dispatch(Actions::GoLog);
             }
             _ => {}
@@ -908,9 +908,44 @@ impl TableServices {
                     .add_modifier(Modifier::BOLD),
             )));
 
-            help_text.push(Line::from(
-                "Navigate: ↑/↓ | Switch tab: ←/→ | Start: s | Stop: x | Restart: r | Enable: e | Disable: d | List all units: f | Filter: a | Mask/Unmask: m | Refresh: u | Log: v | Unit File: c | Help: ?"
-            ));
+            let keys = &self.keybindings;
+            let mut entries = vec![
+                format!(
+                    "{}: {}/{}",
+                    Action::MoveUp.title(),
+                    keys.primary_label(Context::List, Action::MoveUp),
+                    keys.primary_label(Context::List, Action::MoveDown)
+                ),
+                format!(
+                    "{}: {}/{}",
+                    Action::NavLeft.title(),
+                    keys.primary_label(Context::List, Action::NavLeft),
+                    keys.primary_label(Context::List, Action::NavRight)
+                ),
+            ];
+
+            for action in [
+                Action::Start,
+                Action::Stop,
+                Action::Restart,
+                Action::Enable,
+                Action::Disable,
+                Action::ListAllUnits,
+                Action::CycleStateFilter,
+                Action::ToggleMask,
+                Action::Refresh,
+                Action::ViewLog,
+                Action::ViewUnitFile,
+                Action::Help,
+            ] {
+                entries.push(format!(
+                    "{}: {}",
+                    action.title(),
+                    keys.label(Context::List, action)
+                ));
+            }
+
+            help_text.push(Line::from(entries.join(" | ")));
         }
 
         help_text

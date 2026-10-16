@@ -3,6 +3,7 @@ use crate::domain::connection_type::ConnectionType;
 use crate::domain::service_repository::ServiceRepository;
 use crate::domain::service_state::ServiceState;
 use crate::test_support::FakeRepository;
+use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use std::collections::HashMap;
@@ -74,13 +75,31 @@ fn table_with_repository(
     let (sender, receiver) = mpsc::channel();
     let manager = ServicesManager::new(Box::new(repository));
     (
-        TableServices::new(sender, Rc::new(RefCell::new(manager))),
+        TableServices::new(
+            sender,
+            Rc::new(RefCell::new(manager)),
+            Arc::new(KeyBindings::default()),
+        ),
         receiver,
     )
 }
 
 fn table_with_receiver() -> (TableServices, mpsc::Receiver<AppEvent>) {
     table_with_repository(EmptyRepository)
+}
+
+fn table_with_configuration(configuration: &str) -> (TableServices, mpsc::Receiver<AppEvent>) {
+    let (sender, receiver) = mpsc::channel();
+    let manager = ServicesManager::new(Box::new(EmptyRepository));
+    let keybindings = crate::keybindings::parse(configuration).unwrap();
+    (
+        TableServices::new(
+            sender,
+            Rc::new(RefCell::new(manager)),
+            Arc::new(keybindings),
+        ),
+        receiver,
+    )
 }
 
 fn table() -> TableServices {
@@ -278,6 +297,60 @@ fn service_shortcut_dispatches_action_and_locks_input() {
         AppEvent::Action(Actions::ServiceAction(ServiceAction::Start))
     ));
     assert!(table.shortcuts().is_empty());
+}
+
+#[test]
+fn a_custom_binding_replaces_the_default_shortcut() {
+    let (mut table, receiver) =
+        table_with_configuration("[keybindings.list]\nstart = \"S\"\nstop = \"s\"\n");
+
+    table.on_key_event(KeyEvent::new(KeyCode::Char('S'), KeyModifiers::NONE));
+    assert!(matches!(
+        receiver.recv().unwrap(),
+        AppEvent::Action(Actions::ServiceAction(ServiceAction::Start))
+    ));
+
+    table.set_ignore_key_events(false);
+    table.on_key_event(KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE));
+    assert!(matches!(
+        receiver.recv().unwrap(),
+        AppEvent::Action(Actions::ServiceAction(ServiceAction::Stop))
+    ));
+}
+
+#[test]
+fn a_custom_navigation_key_moves_the_selection_and_keeps_the_arrow() {
+    let (mut table, _receiver) = table_with_configuration("[keybindings]\nmove_down = \"n\"\n");
+    table.filtered_services = vec![
+        service("a.service", "active"),
+        service("b.service", "active"),
+    ];
+    table.table_state.select(Some(0));
+
+    table.on_key_event(KeyEvent::new(KeyCode::Char('n'), KeyModifiers::NONE));
+    assert_eq!(table.table_state.selected(), Some(1));
+
+    table.on_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+    assert_eq!(table.table_state.selected(), Some(0));
+
+    // The character that was replaced no longer moves the selection.
+    table.on_key_event(KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE));
+    assert_eq!(table.table_state.selected(), Some(0));
+}
+
+#[test]
+fn the_shortcut_bar_shows_the_configured_keys() {
+    let (table, _receiver) = table_with_configuration("[keybindings.list]\nrestart = \"ctrl+r\"\n");
+
+    let rendered = table
+        .shortcuts()
+        .iter()
+        .flat_map(|line| line.spans.iter())
+        .map(|span| span.content.to_string())
+        .collect::<String>();
+
+    assert!(rendered.contains("Restart: Ctrl+r"), "{rendered}");
+    assert!(!rendered.contains("Restart: r"), "{rendered}");
 }
 
 #[test]

@@ -1,4 +1,4 @@
-use crossterm::event::{KeyCode, KeyEvent};
+use crossterm::event::KeyEvent;
 use ratatui::layout::{Constraint, Direction, Layout};
 use ratatui::{
     Frame,
@@ -16,6 +16,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 use textwrap::wrap;
 
+use crate::keybindings::{Action, Context, KeyBindings};
 use crate::terminal::app::{Actions, AppEvent, ServiceRequestContext};
 use crate::usecases::services_manager::ServicesManager;
 
@@ -75,6 +76,7 @@ pub struct ServiceLog {
     auto_refresh_worker: Option<LogRefreshWorker>,
     usecase: Rc<RefCell<ServicesManager>>,
     log: String,
+    keybindings: Arc<KeyBindings>,
 }
 
 struct LogRefreshWorker {
@@ -83,7 +85,11 @@ struct LogRefreshWorker {
 }
 
 impl ServiceLog {
-    pub fn new(sender: Sender<AppEvent>, usecase: Rc<RefCell<ServicesManager>>) -> Self {
+    pub fn new(
+        sender: Sender<AppEvent>,
+        usecase: Rc<RefCell<ServicesManager>>,
+        keybindings: Arc<KeyBindings>,
+    ) -> Self {
         Self {
             border_color: BorderColor::White,
             service_name: String::new(),
@@ -93,6 +99,7 @@ impl ServiceLog {
             auto_refresh_worker: None,
             usecase,
             log: String::new(),
+            keybindings,
         }
     }
 
@@ -155,36 +162,27 @@ impl ServiceLog {
     }
 
     pub fn on_key_event(&mut self, key: KeyEvent) {
-        let right_keys = [KeyCode::Right, KeyCode::Char('l')];
-        let left_keys = [KeyCode::Left, KeyCode::Char('h')];
-        let up_keys = [KeyCode::Up, KeyCode::Char('k')];
-        let down_keys = [KeyCode::Down, KeyCode::Char('j')];
-
-        match key.code {
-            code if right_keys.contains(&code) => {
+        match self.keybindings.action(Context::Log, key) {
+            Some(Action::NavLeft | Action::NavRight) => {
                 self.reset();
                 let _ = self.sender.send(AppEvent::Action(Actions::GoDetails));
             }
-            code if left_keys.contains(&code) => {
-                self.reset();
-                let _ = self.sender.send(AppEvent::Action(Actions::GoDetails));
-            }
-            code if up_keys.contains(&code) => {
+            Some(Action::MoveUp) => {
                 self.scroll = self.scroll.saturating_add(1);
             }
-            code if down_keys.contains(&code) => {
+            Some(Action::MoveDown) => {
                 self.scroll = self.scroll.saturating_sub(1);
             }
-            KeyCode::PageUp => {
+            Some(Action::PageUp) => {
                 self.scroll = self.scroll.saturating_add(10);
             }
-            KeyCode::PageDown => {
+            Some(Action::PageDown) => {
                 self.scroll = self.scroll.saturating_sub(10);
             }
-            KeyCode::Char('a') => {
+            Some(Action::ToggleAutoRefresh) => {
                 self.toggle_auto_refresh();
             }
-            KeyCode::Char('q') | KeyCode::Esc => {
+            Some(Action::Back) => {
                 self.reset();
                 self.exit();
             }
@@ -199,6 +197,7 @@ impl ServiceLog {
             auto_refresh_label = "Disable auto-refresh";
         }
 
+        let keys = &self.keybindings;
         let help_text = vec![
             Line::from(vec![Span::styled(
                 "Actions",
@@ -207,7 +206,14 @@ impl ServiceLog {
                     .add_modifier(Modifier::BOLD),
             )]),
             Line::from(format!(
-                "Scroll: ↑/↓ | Switch tabs: ←/→ | {auto_refresh_label}: a | Go back: q/Esc",
+                "Scroll: {}/{} | Switch tabs: {}/{} | {auto_refresh_label}: {} | {}: {}",
+                keys.primary_label(Context::Log, Action::MoveUp),
+                keys.primary_label(Context::Log, Action::MoveDown),
+                keys.primary_label(Context::Log, Action::NavLeft),
+                keys.primary_label(Context::Log, Action::NavRight),
+                keys.label(Context::Log, Action::ToggleAutoRefresh),
+                Action::Back.title(),
+                keys.label(Context::Log, Action::Back),
             )),
         ];
 
