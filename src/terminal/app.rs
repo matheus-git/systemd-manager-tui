@@ -1,5 +1,5 @@
 use color_eyre::Result;
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{self, Event, KeyEvent, KeyEventKind};
 use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
@@ -29,6 +29,7 @@ use std::{
 use crate::Config;
 use crate::domain::connection_type::ConnectionType;
 use crate::infrastructure::systemd_service_adapter::CompletedOperation;
+use crate::keybindings::{Action, Context, KeyBind, KeyBindings};
 use crate::terminal::components::list::ActiveFilterState;
 use crate::usecases::services_manager::ServicesManager;
 
@@ -111,9 +112,13 @@ pub struct App {
     active_connection: ConnectionType,
     show_help: bool,
     errors: VecDeque<String>,
+    keybindings: Arc<KeyBindings>,
 }
 
 impl App {
+    // The components are built before the app so each one can own a reference
+    // to the key map; passing them individually keeps them testable.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         event_tx: Sender<AppEvent>,
         event_rx: Receiver<AppEvent>,
@@ -122,6 +127,7 @@ impl App {
         service_log: ServiceLog,
         details: ServiceDetails,
         usecases: Rc<RefCell<ServicesManager>>,
+        keybindings: Arc<KeyBindings>,
     ) -> Self {
         Self {
             running: true,
@@ -140,6 +146,7 @@ impl App {
             active_connection: ConnectionType::System,
             show_help: false,
             errors: VecDeque::new(),
+            keybindings,
         }
     }
 
@@ -417,10 +424,106 @@ impl App {
         Ok(())
     }
 
-    #[allow(clippy::unused_self)]
+    /// Builds the help popup from the active key map, so a customized
+    /// configuration is what the user is shown.
+    fn help_lines(&self) -> Vec<Line<'static>> {
+        let keys = &self.keybindings;
+        let entry = |context: Context, action: Action| {
+            format!("{} - {}", keys.label(context, action), action.description())
+        };
+        let pair = |context: Context, left: Action, right: Action| {
+            format!("{}    {}", entry(context, left), entry(context, right))
+        };
+        let section = |title: &str| {
+            Line::from(vec![Span::styled(
+                title.to_string(),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
+            )])
+        };
+
+        let list = Context::List;
+        vec![
+            Line::from(vec![Span::styled(
+                "SYSTEMD MANAGER TUI - HELP",
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
+            )]),
+            Line::from(""),
+            section("Navigation:"),
+            Line::from(pair(list, Action::MoveUp, Action::MoveDown)),
+            Line::from(pair(list, Action::NavLeft, Action::NavRight)),
+            Line::from(format!(
+                "{}/{} - Jump 10 items",
+                keys.label(list, Action::PageUp),
+                keys.label(list, Action::PageDown)
+            )),
+            Line::from(""),
+            section("Filter:"),
+            Line::from(pair(list, Action::FocusFilter, Action::ClearFilter)),
+            Line::from("Ctrl+u - Delete until the start of the input "),
+            Line::from("Ctrl+k - Delete until the end of the input "),
+            Line::from("Alt+b or Ctrl+← - Go backwards a word "),
+            Line::from("Alt+f or Ctrl+→ - Go fowards a word "),
+            Line::from("Ctrl+e or End - Go to the end of the input "),
+            Line::from("Ctrl+a or Home - Go to the end of input  "),
+            Line::from("Ctrl+w or Ctrl+Backspace - Delete a word backwards "),
+            Line::from(""),
+            section("Service Control:"),
+            Line::from(pair(list, Action::Start, Action::Stop)),
+            Line::from(pair(list, Action::Restart, Action::ToggleMask)),
+            Line::from(pair(list, Action::Enable, Action::Disable)),
+            Line::from(format!(
+                "Templates (@.): {}/{}/{}/{}/{} ask for an instance name",
+                keys.label(list, Action::Start),
+                keys.label(list, Action::Stop),
+                keys.label(list, Action::Restart),
+                keys.label(list, Action::Enable),
+                keys.label(list, Action::Disable)
+            )),
+            Line::from(""),
+            section("View & Filter list:"),
+            Line::from(entry(list, Action::ListAllUnits)),
+            Line::from(entry(list, Action::CycleStateFilter)),
+            Line::from(entry(list, Action::Refresh)),
+            Line::from(""),
+            section("Information:"),
+            Line::from(pair(list, Action::ViewLog, Action::ViewUnitFile)),
+            Line::from(""),
+            section("Log & unit file views:"),
+            Line::from(format!(
+                "Log: {}    {}",
+                entry(Context::Log, Action::ToggleAutoRefresh),
+                entry(Context::Log, Action::Back)
+            )),
+            Line::from(format!(
+                "Unit file: {}    {}",
+                entry(Context::UnitFile, Action::EditUnit),
+                entry(Context::UnitFile, Action::Back)
+            )),
+            Line::from(""),
+            section("Application:"),
+            Line::from(pair(Context::Global, Action::Suspend, Action::Quit)),
+            Line::from(""),
+            Line::from(vec![Span::styled(
+                format!(
+                    "Press {} or any key to close",
+                    keys.label(list, Action::Help)
+                ),
+                Style::default().fg(Color::Gray),
+            )]),
+        ]
+    }
+
     fn draw_help_popup(&self, frame: &mut Frame, area: Rect) {
+        let text = self.help_lines();
         let popup_width = std::cmp::min(80, area.width.saturating_sub(4));
-        let popup_height = std::cmp::min(38, area.height.saturating_sub(4));
+        let popup_height = std::cmp::min(
+            u16::try_from(text.len() + 2).unwrap_or(u16::MAX),
+            area.height.saturating_sub(4),
+        );
 
         let popup_x = (area.width.saturating_sub(popup_width)) / 2;
         let popup_y = (area.height.saturating_sub(popup_height)) / 2;
@@ -433,84 +536,6 @@ impl App {
         );
 
         frame.render_widget(Clear, popup_area);
-
-        let text = vec![
-            Line::from(vec![Span::styled(
-                "SYSTEMD MANAGER TUI - HELP",
-                Style::default()
-                    .fg(Color::Cyan)
-                    .add_modifier(Modifier::BOLD),
-            )]),
-            Line::from(""),
-            Line::from(vec![Span::styled(
-                "Navigation:",
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            )]),
-            Line::from("↑/k - Move up    ↓/j - Move down"),
-            Line::from("←/h - Previous tab    →/l - Next tab"),
-            Line::from("PageUp/PageDown - Jump 10 items"),
-            Line::from(""),
-            Line::from(vec![Span::styled(
-                "Filter:",
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            )]),
-            Line::from("Ctrl+u - Delete until the start of the input "),
-            Line::from("Ctrl+k - Delete until the end of the input "),
-            Line::from("Alt+b or Ctrl+← - Go backwards a word "),
-            Line::from("Alt+f or Ctrl+→ - Go fowards a word "),
-            Line::from("Ctrl+e or End - Go to the end of the input "),
-            Line::from("Ctrl+a or Home - Go to the end of input  "),
-            Line::from("Ctrl+w or Ctrl+Backspace - Delete a word backwards "),
-            Line::from(""),
-            Line::from(vec![Span::styled(
-                "Service Control:",
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            )]),
-            Line::from("s - Start service    x - Stop service"),
-            Line::from("r - Restart service"),
-            Line::from("e - Enable service    d - Disable service"),
-            Line::from("m - Mask/Unmask selected unit or template"),
-            Line::from("Templates (@.): s/x/r/e/d ask for an instance name"),
-            Line::from(""),
-            Line::from(vec![Span::styled(
-                "View & Filter list:",
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            )]),
-            Line::from("f - Toggle all/services filter"),
-            Line::from("a - Cycle filter (all→active→inactive→failed)"),
-            Line::from("u - Refresh service list"),
-            Line::from(""),
-            Line::from(vec![Span::styled(
-                "Information:",
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            )]),
-            Line::from("v - View service logs"),
-            Line::from("c - View unit file details"),
-            Line::from(""),
-            Line::from(vec![Span::styled(
-                "Application:",
-                Style::default()
-                    .fg(Color::Yellow)
-                    .add_modifier(Modifier::BOLD),
-            )]),
-            Line::from("Ctrl+z - Suspend"),
-            Line::from("Ctrl+c - Quit"),
-            Line::from(""),
-            Line::from(vec![Span::styled(
-                "Press ? or any key to close",
-                Style::default().fg(Color::Gray),
-            )]),
-        ];
 
         let help_block = Paragraph::new(text)
             .block(
@@ -699,7 +724,6 @@ impl App {
         Ok(())
     }
 
-    #[allow(clippy::unused_self)]
     fn draw_shortcuts(&self, frame: &mut Frame, help_area: Rect, shortcuts: &[Line<'_>]) {
         let mut help_text: Vec<Line<'_>> = Vec::new();
         let shortcuts_lens = shortcuts.len();
@@ -722,10 +746,13 @@ impl App {
 
         help_text.push(Line::from(vec![
             Span::styled(
-                "Exit",
+                Action::Quit.title(),
                 Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
             ),
-            Span::raw(": Ctrl + c"),
+            Span::raw(format!(
+                ": {}",
+                self.keybindings.label(Context::Global, Action::Quit)
+            )),
         ]));
 
         let help_block = Paragraph::new(help_text)
@@ -750,15 +777,27 @@ impl App {
         if self.handle_quit_key(key, terminal)? {
             return Ok(());
         }
-        if let KeyEvent {
-            modifiers: KeyModifiers::CONTROL,
-            code: KeyCode::Char('z'),
-            ..
-        } = key
-        {
+        if self.global_action(key) == Some(Action::Suspend) {
             self.suspend_tui(terminal)?;
         }
         Ok(())
+    }
+
+    /// The global action a key triggers. A key that produces text is left to
+    /// the focused input, so a global action bound to a plain character cannot
+    /// make the filter or the instance prompt impossible to type in.
+    fn global_action(&self, key: KeyEvent) -> Option<Action> {
+        let action = self.keybindings.action(Context::Global, key)?;
+
+        if KeyBind::from_event(key).is_text() && self.has_focused_text_input() {
+            return None;
+        }
+
+        Some(action)
+    }
+
+    fn has_focused_text_input(&self) -> bool {
+        self.filter.input_mode == InputMode::Editing || self.table_service.has_instance_prompt()
     }
 
     fn handle_quit_key<B: Backend>(
@@ -766,9 +805,7 @@ impl App {
         key: KeyEvent,
         terminal: &mut Terminal<B>,
     ) -> Result<bool> {
-        if matches!(key.code, KeyCode::Char('c' | 'C'))
-            && key.modifiers.contains(KeyModifiers::CONTROL)
-        {
+        if self.global_action(key) == Some(Action::Quit) {
             // The filter may have made the cursor visible in the last rendered frame.
             // Hide it before shutdown work starts so it cannot remain visible on the
             // alternate screen while workers are being joined.
@@ -794,23 +831,21 @@ impl App {
     }
 
     fn on_key_horizontal_event(&mut self, key: KeyEvent, is_filtering: bool) {
-        let left_keys = [KeyCode::Left, KeyCode::Char('h')];
-        let right_keys = [KeyCode::Right, KeyCode::Char('l')];
-        match key {
-            KeyEvent { code, .. } if left_keys.contains(&code) => {
-                if !is_filtering && self.status == Status::List {
-                    let requested_tab_index = if self.selected_tab_index == 0 {
-                        1
-                    } else {
-                        self.selected_tab_index - 1
-                    };
-                    self.update_connection_and_reset(requested_tab_index);
-                }
+        if is_filtering || self.status != Status::List {
+            return;
+        }
+
+        match self.keybindings.action(Context::List, key) {
+            Some(Action::NavLeft) => {
+                let requested_tab_index = if self.selected_tab_index == 0 {
+                    1
+                } else {
+                    self.selected_tab_index - 1
+                };
+                self.update_connection_and_reset(requested_tab_index);
             }
 
-            KeyEvent { code, .. }
-                if right_keys.contains(&code) && !is_filtering && self.status == Status::List =>
-            {
+            Some(Action::NavRight) => {
                 let requested_tab_index = (self.selected_tab_index + 1) % 2;
                 self.update_connection_and_reset(requested_tab_index);
             }

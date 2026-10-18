@@ -7,8 +7,10 @@ use ratatui::{
     text::{Line, Text},
     widgets::{Block, Paragraph},
 };
+use std::sync::Arc;
 use std::sync::mpsc::Sender;
 
+use crate::keybindings::{Action, Context, KeyBindings};
 use crate::terminal::app::{Actions, AppEvent};
 
 pub struct Filter {
@@ -16,6 +18,7 @@ pub struct Filter {
     character_index: usize,
     pub input_mode: InputMode,
     sender: Sender<AppEvent>,
+    keybindings: Arc<KeyBindings>,
 }
 
 #[derive(PartialEq)]
@@ -25,13 +28,14 @@ pub enum InputMode {
 }
 
 impl Filter {
-    pub const fn new(sender: Sender<AppEvent>, input: String) -> Self {
+    pub fn new(sender: Sender<AppEvent>, input: String, keybindings: Arc<KeyBindings>) -> Self {
         let character_index = input.len();
         Self {
             sender,
             input,
             input_mode: InputMode::Normal,
             character_index,
+            keybindings,
         }
     }
 
@@ -172,8 +176,8 @@ impl Filter {
 
     pub fn on_key_event(&mut self, key: KeyEvent) {
         match self.input_mode {
-            InputMode::Normal => match key.code {
-                KeyCode::Char('i') | KeyCode::Char('/') => {
+            InputMode::Normal => match self.keybindings.action(Context::List, key) {
+                Some(Action::FocusFilter) => {
                     let _ = self
                         .sender
                         .send(AppEvent::Action(Actions::UpdateIgnoreListKeys(true)));
@@ -183,7 +187,7 @@ impl Filter {
                     }
                 }
 
-                KeyCode::Esc => {
+                Some(Action::ClearFilter) => {
                     self.input = String::new();
                     let _ = self
                         .sender
@@ -261,9 +265,9 @@ impl Filter {
             InputMode::Normal => (
                 vec![
                     "Press ".into(),
-                    "i".bold(),
-                    " or ".into(),
-                    "/".bold(),
+                    self.keybindings
+                        .label_with(Context::List, Action::FocusFilter, " or ")
+                        .bold(),
                     " to start filtering.".into(),
                 ],
                 Style::default(),

@@ -1,6 +1,7 @@
 use super::*;
 use crate::domain::connection_type::ConnectionType;
 use crate::test_support::{FakeRepository, service};
+use crossterm::event::KeyCode;
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use std::sync::mpsc;
@@ -16,9 +17,50 @@ fn log_with(repository: FakeRepository) -> (ServiceLog, mpsc::Receiver<AppEvent>
     let (sender, receiver) = mpsc::channel();
     let manager = ServicesManager::new(Box::new(repository));
     (
-        ServiceLog::new(sender, Rc::new(RefCell::new(manager))),
+        ServiceLog::new(
+            sender,
+            Rc::new(RefCell::new(manager)),
+            Arc::new(KeyBindings::default()),
+        ),
         receiver,
     )
+}
+
+fn log_with_configuration(configuration: &str) -> (ServiceLog, mpsc::Receiver<AppEvent>) {
+    let (sender, receiver) = mpsc::channel();
+    let manager = ServicesManager::new(Box::new(FakeRepository::default()));
+    let keybindings = Arc::new(crate::keybindings::parse(configuration).unwrap());
+    (
+        ServiceLog::new(sender, Rc::new(RefCell::new(manager)), keybindings),
+        receiver,
+    )
+}
+
+#[test]
+fn custom_log_bindings_replace_the_defaults() {
+    let (mut log, receiver) =
+        log_with_configuration("[keybindings.log]\ntoggle_auto_refresh = \"R\"\nback = \"b\"\n");
+
+    log.on_key_event(KeyEvent::new(
+        KeyCode::Char('a'),
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    assert!(!*log.auto_refresh.lock().unwrap());
+
+    log.on_key_event(KeyEvent::new(
+        KeyCode::Char('R'),
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    assert!(*log.auto_refresh.lock().unwrap());
+
+    log.on_key_event(KeyEvent::new(
+        KeyCode::Char('b'),
+        crossterm::event::KeyModifiers::NONE,
+    ));
+    assert!(matches!(
+        receiver.recv().unwrap(),
+        AppEvent::Action(Actions::GoList)
+    ));
 }
 
 fn rendered_text(log: &mut ServiceLog, width: u16, height: u16) -> String {

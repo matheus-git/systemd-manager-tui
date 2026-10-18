@@ -1,5 +1,6 @@
 use super::*;
 use crate::test_support::FakeRepository;
+use crossterm::event::{KeyCode, KeyModifiers};
 use ratatui::Terminal;
 use ratatui::backend::TestBackend;
 use std::sync::mpsc;
@@ -8,17 +9,46 @@ fn test_app() -> App {
     test_app_with_repository(FakeRepository::default()).0
 }
 
+fn test_app_with_configuration(configuration: &str) -> App {
+    let keybindings = Arc::new(crate::keybindings::parse(configuration).unwrap());
+    let (event_tx, event_rx) = mpsc::channel();
+    let manager = Rc::new(RefCell::new(ServicesManager::new(Box::new(
+        FakeRepository::default(),
+    ))));
+
+    App::new(
+        event_tx.clone(),
+        event_rx,
+        TableServices::new(event_tx.clone(), manager.clone(), keybindings.clone()),
+        Filter::new(event_tx.clone(), String::new(), keybindings.clone()),
+        ServiceLog::new(event_tx.clone(), manager.clone(), keybindings.clone()),
+        ServiceDetails::new(event_tx, manager.clone(), keybindings.clone()),
+        manager,
+        keybindings,
+    )
+}
+
 fn test_app_with_repository(repository: FakeRepository) -> (App, FakeRepository) {
     let (event_tx, event_rx) = mpsc::channel();
     let observer = repository.clone();
     let manager = Rc::new(RefCell::new(ServicesManager::new(Box::new(repository))));
-    let table = TableServices::new(event_tx.clone(), manager.clone());
-    let filter = Filter::new(event_tx.clone(), String::new());
-    let log = ServiceLog::new(event_tx.clone(), manager.clone());
-    let details = ServiceDetails::new(event_tx.clone(), manager.clone());
+    let keybindings = Arc::new(KeyBindings::default());
+    let table = TableServices::new(event_tx.clone(), manager.clone(), keybindings.clone());
+    let filter = Filter::new(event_tx.clone(), String::new(), keybindings.clone());
+    let log = ServiceLog::new(event_tx.clone(), manager.clone(), keybindings.clone());
+    let details = ServiceDetails::new(event_tx.clone(), manager.clone(), keybindings.clone());
 
     (
-        App::new(event_tx, event_rx, table, filter, log, details, manager),
+        App::new(
+            event_tx,
+            event_rx,
+            table,
+            filter,
+            log,
+            details,
+            manager,
+            keybindings,
+        ),
         observer,
     )
 }
@@ -123,7 +153,88 @@ fn shortcuts_panel_renders_context_actions_and_global_exit() {
         .collect::<String>();
     assert!(rendered.contains("Shortcuts"));
     assert!(rendered.contains("Custom action: x"));
-    assert!(rendered.contains("Exit: Ctrl + c"));
+    assert!(rendered.contains("Exit: Ctrl+c"));
+}
+
+#[test]
+fn a_custom_quit_key_replaces_the_default_one() {
+    let mut app = test_app_with_configuration("[keybindings]\nquit = \"ctrl+q\"\n");
+    let mut terminal = Terminal::new(TestBackend::new(20, 5)).unwrap();
+
+    let ignored = app
+        .handle_quit_key(
+            KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
+            &mut terminal,
+        )
+        .unwrap();
+    assert!(!ignored);
+    assert!(app.running);
+
+    let handled = app
+        .handle_quit_key(
+            KeyEvent::new(KeyCode::Char('q'), KeyModifiers::CONTROL),
+            &mut terminal,
+        )
+        .unwrap();
+    assert!(handled);
+    assert!(!app.running);
+}
+
+#[test]
+fn a_global_action_on_a_plain_character_still_lets_the_filter_be_typed_in() {
+    let mut app = test_app_with_configuration(
+        "[keybindings]\nquit = \"Q\"\n\n[keybindings.log]\nback = \"b\"\n\n\
+         [keybindings.unit_file]\nback = \"b\"\n",
+    );
+    let mut terminal = Terminal::new(TestBackend::new(20, 5)).unwrap();
+    let quit_key = KeyEvent::new(KeyCode::Char('Q'), KeyModifiers::SHIFT);
+
+    app.filter.input_mode = InputMode::Editing;
+    assert!(!app.handle_quit_key(quit_key, &mut terminal).unwrap());
+    assert!(app.running);
+
+    app.filter.input_mode = InputMode::Normal;
+    assert!(app.handle_quit_key(quit_key, &mut terminal).unwrap());
+    assert!(!app.running);
+}
+
+#[test]
+fn a_global_chord_quits_even_while_the_filter_is_being_typed_in() {
+    let mut app = test_app();
+    let mut terminal = Terminal::new(TestBackend::new(20, 5)).unwrap();
+    app.filter.input_mode = InputMode::Editing;
+
+    let handled = app
+        .handle_quit_key(
+            KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL),
+            &mut terminal,
+        )
+        .unwrap();
+
+    assert!(handled);
+    assert!(!app.running);
+}
+
+#[test]
+fn the_help_popup_shows_the_configured_keys() {
+    let app = test_app_with_configuration(
+        "[keybindings]\nquit = \"ctrl+q\"\n\n[keybindings.list]\nstart = \"S\"\n",
+    );
+    let mut terminal = Terminal::new(TestBackend::new(100, 45)).unwrap();
+
+    terminal
+        .draw(|frame| app.draw_help_popup(frame, frame.area()))
+        .unwrap();
+
+    let rendered = terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect::<String>();
+    assert!(rendered.contains("Ctrl+q - Quit"), "{rendered}");
+    assert!(rendered.contains("S - Start service"), "{rendered}");
 }
 
 #[test]

@@ -1,5 +1,6 @@
 use super::{Args, Config};
 use clap::Parser;
+use std::path::Path;
 use std::time::Duration;
 
 #[test]
@@ -64,4 +65,51 @@ fn cli_rejects_unknown_arguments() {
     let result = Args::try_parse_from(["systemd-manager-tui", "--unknown"]);
 
     assert!(result.is_err());
+}
+
+#[test]
+fn cli_accepts_a_configuration_file() {
+    let args = Args::try_parse_from(["systemd-manager-tui", "--config", "/tmp/keys.toml"]).unwrap();
+
+    assert_eq!(args.config.as_deref(), Some(Path::new("/tmp/keys.toml")));
+}
+
+#[test]
+fn cli_defaults_to_no_explicit_configuration_file() {
+    let args = Args::try_parse_from(["systemd-manager-tui"]).unwrap();
+
+    assert!(args.config.is_none());
+    assert!(!args.print_default_config);
+}
+
+#[test]
+fn cli_can_print_the_default_configuration() {
+    let args = Args::try_parse_from(["systemd-manager-tui", "--print-default-config"]).unwrap();
+
+    assert!(args.print_default_config);
+}
+
+#[test]
+fn the_printed_default_configuration_is_loadable() {
+    let directory = std::env::temp_dir().join("systemd-manager-tui-config-test");
+    std::fs::create_dir_all(&directory).unwrap();
+    let path = directory.join("config.toml");
+    std::fs::write(&path, crate::keybindings::DEFAULT_CONFIG_TEMPLATE).unwrap();
+
+    let keybindings = crate::keybindings::load(Some(&path));
+    std::fs::remove_file(&path).unwrap();
+
+    assert!(keybindings.is_ok(), "{:?}", keybindings.err());
+}
+
+#[test]
+fn a_missing_explicit_configuration_file_is_an_error() {
+    let path = std::env::temp_dir().join("systemd-manager-tui-does-not-exist.toml");
+
+    let error = crate::keybindings::load(Some(&path)).unwrap_err();
+
+    assert!(
+        error.contains("Could not read the configuration file"),
+        "{error}"
+    );
 }

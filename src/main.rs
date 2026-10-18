@@ -1,5 +1,6 @@
 mod domain;
 mod infrastructure;
+mod keybindings;
 mod terminal;
 #[cfg(test)]
 mod test_support;
@@ -13,7 +14,9 @@ use terminal::app::App;
 use usecases::services_manager::ServicesManager;
 
 use std::cell::RefCell;
+use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::Arc;
 use std::sync::mpsc;
 use std::time::Duration;
 
@@ -40,6 +43,16 @@ struct Args {
     /// Disable notifications for failed system and user units
     #[arg(short = 'n', long)]
     no_notifications: bool,
+
+    /// Configuration file to read instead of the default
+    /// ~/.config/systemd-manager-tui/config.toml
+    #[arg(long, value_name = "PATH")]
+    config: Option<PathBuf>,
+
+    /// Print a commented configuration file with every keybind at its default
+    /// value, then exit
+    #[arg(long)]
+    print_default_config: bool,
 }
 
 #[derive(Clone)]
@@ -69,7 +82,24 @@ impl Drop for TerminalRestoreGuard {
 
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
-    let args: Config = Args::parse().into();
+    let parsed = Args::parse();
+
+    if parsed.print_default_config {
+        print!("{}", keybindings::DEFAULT_CONFIG_TEMPLATE);
+        return Ok(());
+    }
+
+    // Keybindings are resolved before the terminal is taken over so a bad
+    // configuration is reported on a normal screen instead of behind the TUI.
+    let keybindings = match keybindings::load(parsed.config.as_deref()) {
+        Ok(keybindings) => Arc::new(keybindings),
+        Err(error) => {
+            eprintln!("{error}");
+            std::process::exit(2);
+        }
+    };
+
+    let args: Config = parsed.into();
     let mut terminal = ratatui::init();
     let _terminal_restore_guard = TerminalRestoreGuard;
 
@@ -96,10 +126,10 @@ fn main() -> color_eyre::Result<()> {
     let usecase = Rc::new(RefCell::new(ServicesManager::new(Box::new(
         systemd_adapter,
     ))));
-    let table_services = TableServices::new(event_tx.clone(), usecase.clone());
-    let filter = Filter::new(event_tx.clone(), args.filter.clone());
-    let service_log = ServiceLog::new(event_tx.clone(), usecase.clone());
-    let details = ServiceDetails::new(event_tx.clone(), usecase.clone());
+    let table_services = TableServices::new(event_tx.clone(), usecase.clone(), keybindings.clone());
+    let filter = Filter::new(event_tx.clone(), args.filter.clone(), keybindings.clone());
+    let service_log = ServiceLog::new(event_tx.clone(), usecase.clone(), keybindings.clone());
+    let details = ServiceDetails::new(event_tx.clone(), usecase.clone(), keybindings.clone());
 
     let mut app = App::new(
         event_tx,
@@ -109,6 +139,7 @@ fn main() -> color_eyre::Result<()> {
         service_log,
         details,
         usecase,
+        keybindings,
     );
     app.init(args);
     app.run(&mut terminal)

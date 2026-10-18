@@ -1,11 +1,16 @@
 use super::*;
+use crate::keybindings::KeyBindings;
 use ratatui::Terminal;
 use ratatui::backend::{Backend, TestBackend};
+use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver};
 
 fn filter_with_input(input: &str) -> (Filter, Receiver<AppEvent>) {
     let (sender, receiver) = mpsc::channel();
-    (Filter::new(sender, input.to_string()), receiver)
+    (
+        Filter::new(sender, input.to_string(), Arc::new(KeyBindings::default())),
+        receiver,
+    )
 }
 
 #[test]

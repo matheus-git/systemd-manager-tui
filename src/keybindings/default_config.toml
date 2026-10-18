@@ -1,0 +1,77 @@
+# systemd-manager-tui configuration
+#
+# Default location: ~/.config/systemd-manager-tui/config.toml
+# (or $XDG_CONFIG_HOME/systemd-manager-tui/config.toml)
+# Another file can be passed with --config <PATH>.
+#
+# Every entry below is set to its default value, so this file changes nothing
+# as it stands. Delete what you do not want to customize: anything missing
+# keeps its default.
+#
+# A binding is either a single key or a list of keys:
+#
+#     start = "s"
+#     move_down = ["down", "j"]
+#
+# Key names: single characters ("s", "?", "/", "+"), named keys (up, down,
+# left, right, pageup, pagedown, home, end, insert, delete, backspace, enter,
+# tab, backtab, esc, space, f1-f12) and modifiers joined with "+"
+# (ctrl, alt, shift, super), for example "ctrl+c" or "alt+f".
+#
+# How overrides are applied:
+#
+#   * Rebinding an action replaces the character keys it had, so
+#     `start = "S"` makes `s` free for something else.
+#   * Named keys stay bound unless you take them away, so
+#     `move_down = "n"` adds `n` and keeps the down arrow.
+#   * Binding a named key explicitly somewhere else takes it away from its
+#     default action, so `page_down = "down"` moves the down arrow.
+#   * `unbind = ["key", ...]` drops keys completely, and `action = []`
+#     leaves an action with no keys at all.
+#   * Binding one key to two actions in the same view is an error and is
+#     reported at startup.
+#   * A global action on a plain character (quit = "Q") is suppressed while the
+#     filter input or the instance-name prompt has focus, so the character can
+#     still be typed. Chords such as "ctrl+c" always apply.
+
+# Bindings that apply in every view. move_* and page_* move the selection in
+# the service list and scroll the log and unit-file views; nav_left/nav_right
+# switch between the system and user tabs in the list, and between the log and
+# unit-file views.
+[keybindings]
+quit = "ctrl+c"
+suspend = "ctrl+z"
+move_up = ["up", "k"]
+move_down = ["down", "j"]
+page_up = "pageup"
+page_down = "pagedown"
+nav_left = ["left", "h"]
+nav_right = ["right", "l"]
+
+# The service list.
+[keybindings.list]
+start = "s"
+stop = "x"
+restart = "r"
+enable = "e"
+disable = "d"
+toggle_mask = "m"
+refresh = "u"
+list_all_units = "f"
+cycle_state_filter = "a"
+view_log = "v"
+view_unit_file = "c"
+focus_filter = ["i", "/"]
+clear_filter = "esc"
+help = "?"
+
+# The log view. Text editing inside the filter input (ctrl+a, ctrl+e, ctrl+w,
+# alt+b, alt+f, ...) and the instance-name prompt are not configurable.
+[keybindings.log]
+toggle_auto_refresh = "a"
+back = ["q", "esc"]
+
+# The unit-file view.
+[keybindings.unit_file]
+edit = "e"
+back = ["q", "esc"]

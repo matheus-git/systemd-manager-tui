@@ -23,7 +23,108 @@ systemd-manager-tui -f docker
 # Without watching system and user units for failure notifications
 systemd-manager-tui -n
 # or: systemd-manager-tui --no-notifications
+
+# With a configuration file from somewhere else
+systemd-manager-tui --config ./keys.toml
 ```
+
+## Configuration
+
+Every keybind can be remapped in `~/.config/systemd-manager-tui/config.toml`
+(or `$XDG_CONFIG_HOME/systemd-manager-tui/config.toml`). The file is optional:
+without it, the defaults below apply. `--config <PATH>` reads another file
+instead.
+
+To start from a complete, commented file with every action at its default key:
+
+```bash
+mkdir -p ~/.config/systemd-manager-tui
+systemd-manager-tui --print-default-config > ~/.config/systemd-manager-tui/config.toml
+```
+
+A binding is a single key or a list of keys, and anything you leave out keeps
+its default:
+
+```toml
+# Applies in every view
+[keybindings]
+quit = "ctrl+q"
+move_down = ["down", "n"]
+
+# The service list
+[keybindings.list]
+start = "S"
+stop = "K"
+restart = "ctrl+r"
+
+# The log view
+[keybindings.log]
+back = ["b", "esc"]
+
+# The unit-file view
+[keybindings.unit_file]
+edit = "E"
+```
+
+Key names are single characters (`"s"`, `"?"`, `"/"`, `"+"`), named keys (`up`,
+`down`, `left`, `right`, `pageup`, `pagedown`, `home`, `end`, `insert`,
+`delete`, `backspace`, `enter`, `tab`, `backtab`, `esc`, `space`, `f1`-`f12`)
+and modifiers joined with `+` (`ctrl`, `alt`, `shift`, `super`), as in
+`"ctrl+c"` or `"alt+f"`.
+
+How overrides are applied:
+
+- Rebinding an action replaces the **character** keys it had, so `start = "S"`
+  frees up `s` for another action.
+- **Named** keys stay bound unless you take them away, so `move_down = "n"`
+  adds `n` and keeps `↓`.
+- Binding a named key explicitly somewhere else takes it from its default
+  action, so `page_down = "down"` moves the down arrow.
+- `unbind = ["key", ...]` in a section drops keys entirely, and `action = []`
+  leaves an action with no key at all.
+- Binding one key to two actions in the same view, or taking over a key that
+  another action still relies on, is reported at startup and the program exits
+  without starting.
+- A global action bound to a plain character (`quit = "Q"`) is suppressed while
+  the filter input or the instance-name prompt has focus, so the character can
+  still be typed. Chords such as `ctrl+c` always apply.
+
+The same key can mean different things in different views, which is why `a`
+cycles the list filter but toggles auto-refresh in the log view. The shortcut
+bar and the `?` help popup are generated from the active configuration, so they
+always show your own keys.
+
+### Actions
+
+| Section | Action | Default | Description |
+| --- | --- | --- | --- |
+| `[keybindings]` | `quit` | `ctrl+c` | Quit |
+| | `suspend` | `ctrl+z` | Suspend to the shell |
+| | `move_up` / `move_down` | `up`/`k`, `down`/`j` | Move the selection, scroll the log and unit-file views |
+| | `page_up` / `page_down` | `pageup`, `pagedown` | Jump 10 items |
+| | `nav_left` / `nav_right` | `left`/`h`, `right`/`l` | Switch system/user tab; switch between the log and unit-file views |
+| `[keybindings.list]` | `start` | `s` | Start the selected unit |
+| | `stop` | `x` | Stop the selected unit |
+| | `restart` | `r` | Restart the selected unit |
+| | `enable` | `e` | Enable the selected unit |
+| | `disable` | `d` | Disable the selected unit |
+| | `toggle_mask` | `m` | Mask/unmask the selected unit or template |
+| | `refresh` | `u` | Refresh the service list |
+| | `list_all_units` | `f` | Toggle all units/services only |
+| | `cycle_state_filter` | `a` | Cycle all → active → inactive → failed |
+| | `view_log` | `v` | Open the log view |
+| | `view_unit_file` | `c` | Open the unit-file view |
+| | `focus_filter` | `i`, `/` | Start filtering |
+| | `clear_filter` | `esc` | Clear the filter |
+| | `help` | `?` | Toggle the help popup |
+| `[keybindings.log]` | `toggle_auto_refresh` | `a` | Toggle log auto-refresh |
+| | `back` | `q`, `esc` | Return to the list |
+| `[keybindings.unit_file]` | `edit` | `e` | Edit the unit file |
+| | `back` | `q`, `esc` | Return to the list |
+
+Text editing inside the filter input (`ctrl+a`, `ctrl+e`, `ctrl+k`, `ctrl+u`,
+`ctrl+w`, `alt+b`, `alt+f`, …) and the instance-name prompt are fixed and not
+configurable.
 
 ## Install
 
